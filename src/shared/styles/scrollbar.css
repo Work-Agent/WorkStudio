@@ -1,0 +1,34 @@
+/*
+ * 全域滚动条规范 —— 单一事实源（主窗口 + 全部插件扩展视图）。
+ *
+ * 消费方：主窗口渲染层 src/renderer/index.css 里 @import（构建期内联）。
+ * 方案：标准属性（scrollbar-width / scrollbar-color）→ 原生 overlay 滚动条。
+ * 注意：一旦页面里出现任何自定义 ::-webkit-scrollbar 规则，Chrome 会忽略标准属性
+ *       —— 两者互斥，这份文件里只能有一套生效。
+ */
+
+/* 亮色：黑系半透明（原生 overlay 自会叠一层平台模糊，故不再额外降 alpha） */
+:root {
+  --biz-scrollbar-thumb: rgb(24 24 27 / 0.35);
+  --biz-scrollbar-track: transparent;
+}
+
+/* 写在 * 上（而非只写 :root）：scrollbar-width 在 Chromium 下只在实际声明的元素上生效
+   （子元素解析出的是 used value）—— * 保证每个滚动面都直接拿到 thin。
+   注意：token 必须留在 :root —— 写进 * 会把值钉在每个元素上，主题覆盖就失效了。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--biz-scrollbar-thumb) var(--biz-scrollbar-track);
+}
+
+/* 亮暗切换的两种标记：主窗口 = .dark class；插件页 = html[data-theme]。
+   挂在 <html> 上即可：变量沿树继承，子元素上的 scrollbar-color 会重新解析到新值。 */
+.dark,
+html[data-theme='dark'] {
+  --biz-scrollbar-thumb: rgb(255 255 255 / 0.4);
+}
+
+/* 标签栏：整条隐藏滚动条（保留滚动手势），由左右箭头按钮驱动 */
+.tab-scroll {
+  scrollbar-width: none;
+}

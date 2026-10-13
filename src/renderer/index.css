@@ -1,0 +1,119 @@
+@import 'tailwindcss';
+/* 全域滚动条规范（与插件扩展视图共用同一份；改它即改两处） */
+@import '../shared/styles/scrollbar.css';
+
+/* 让 dark: variant 跟随 .dark class 而非系统偏好 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── 统一主题 Token（主应用 + 扩展视图共用） ─────────── */
+@layer base {
+  :root {
+    --biz-bg: #f4f4f5;
+    --biz-surface: #ffffff;
+    --biz-surface-2: #e4e4e7;
+    --biz-surface-hover: #d4d4d8;
+    --biz-surface-input: #f9fafb;
+    --biz-border: #d4d4d8;
+    --biz-border-subtle: #e4e4e7;
+    --biz-text: #18181b;
+    --biz-text-secondary: #3f3f46;
+    --biz-text-muted: #71717a;
+    --biz-text-subtle: #a1a1aa;
+    --biz-accent: #4f6bed;
+    --biz-accent-hover: #3d56e0;
+    --biz-accent-dim: #e7ecfc;
+    --biz-danger: #ef4444;
+    --biz-warning: #f59e0b;
+  }
+
+  .dark {
+    --biz-bg: #1a1c1d;
+    --biz-surface: #1a1c1d;
+    --biz-surface-2: #252829;
+    --biz-surface-hover: #2a2d2e;
+    --biz-surface-input: #1c1e1f;
+    --biz-border: #333536;
+    --biz-border-subtle: rgba(63, 63, 70, 0.5);
+    --biz-text: #f4f4f5;
+    --biz-text-secondary: #d4d4d8;
+    --biz-text-muted: #71717a;
+    --biz-text-subtle: #52525b;
+    --biz-accent: #4f6bed;
+    --biz-accent-hover: #3d56e0;
+    --biz-accent-dim: #1e2a52;
+    --biz-danger: #ef4444;
+    --biz-warning: #f59e0b;
+  }
+}
+
+/* 集成式标题栏：保留系统原生控制按钮（macOS:'hiddenInset' 红绿灯 / Windows·Linux:
+   titleBarOverlay 原生三键），应用自身渲染融入标题区的 TitleBar。
+   三键位置由平台决定——左右留白与高度不写死，由 windowControls.ts 写入
+   --titlebar-inset-* / --titlebar-height。 */
+.titlebar {
+  -webkit-app-region: drag;
+  padding-left: calc(0.5rem + var(--titlebar-inset-left, 0px));
+  padding-right: calc(0.5rem + var(--titlebar-inset-right, 0px));
+  height: var(--titlebar-height, 2.5rem);
+}
+
+.titlebar button,
+.titlebar input,
+.titlebar select,
+.titlebar a,
+.titlebar .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 移除默认 focus outline */
+@layer base {
+  *:focus,
+  *:focus-visible {
+    outline: none;
+  }
+}
+
+/* 标签栏：隐藏滚动条（保留滚动手势），由左右箭头按钮驱动 */
+.tab-scroll {
+  scrollbar-width: none;
+}
+
+/* ── 会话状态图标：完成过渡动画（✓ 弹入 → 停留 → 淡出，1.5s）── */
+@keyframes session-check-pop {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  78% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+}
+.session-check-pop {
+  animation: session-check-pop 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── FloatingPanel 首帧淡入：掩盖 floatingStyles 定位完成前的 0,0 帧 ── */
+@keyframes floating-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.floating-fade-in {
+  animation: floating-fade-in 0.08s ease-out;
+}

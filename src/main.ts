@@ -1,20 +1,52 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from './shared/titlebar';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
+// live-dev（.pi/extensions/dev-mode）：WA_DEBUG_PORT 时开放 CDP，供 e2e/调试 attach
+if (process.env.WA_DEBUG_PORT && /^\d+$/.test(process.env.WA_DEBUG_PORT)) {
+  app.commandLine.appendSwitch(
+    'remote-debugging-port',
+    process.env.WA_DEBUG_PORT,
+  );
+  console.log(
+    `[live-dev] CDP listening on 127.0.0.1:${process.env.WA_DEBUG_PORT}`,
+  );
+}
+
 const createWindow = () => {
-  // Create the browser window.
+  const isMac = process.platform === 'darwin';
+
+  // 集成式标题栏（ui-design.md §三）：隐藏系统标题栏，应用自绘 TitleBar；
+  // macOS 保留左侧红绿灯（hiddenInset），Windows/Linux 用原生三键覆盖层。
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1440,
+    height: 900,
+    minWidth: 960,
+    minHeight: 600,
+    show: false,
+    backgroundColor: '#1a1c1d',
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac
+      ? {}
+      : {
+          titleBarOverlay: {
+            ...TITLEBAR_OVERLAY_COLORS.dark,
+            height: TITLEBAR_HEIGHT,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // and load the index.html of the app.
@@ -26,9 +58,17 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // DevTools 默认不打开（live-dev 的 CDP 9222 已足够调试/截图）；
+  // 需要时用 WA_DEVTOOLS=1 pnpm start 手动开启。
+  if (process.env.WA_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools();
+  }
 };
+
+// shell 能力（preload electronAPI.openPath）
+ipcMain.handle('shell:openPath', (_event, pathToOpen: string) =>
+  shell.openPath(pathToOpen),
+);
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -53,6 +93,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and import them here.
