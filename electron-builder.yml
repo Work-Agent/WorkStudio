@@ -1,0 +1,48 @@
+# electron-builder 打包配置（构建产物由 electron-vite 输出到 out/，见 electron.vite.config.ts）
+appId: com.qingo.workstudio
+productName: WorkStudio
+copyright: Copyright © 2026 qingo
+
+directories:
+  output: dist
+
+# 只打包 electron-vite 的产物，不含源码与开发依赖
+files:
+  - out/**/*
+  - package.json
+
+asar: true
+
+# Electron 二进制开关（与安全基线一致：禁 Node 注入、禁调试参数、只从 asar 加载）
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
+mac:
+  category: public.app-category.productivity
+  # ad-hoc 签名：fuses 会改写二进制，原签名失效后 macOS 会直接 SIGKILL。
+  # 正式分发改为 Developer ID（或经 CSC_LINK / CSC_IDENTITY_AUTO_DISCOVERY 注入证书）。
+  identity: '-'
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  category: Utility
+  maintainer: qingo <97383102@qq.com>
+  target:
+    - AppImage
+    - deb
+    - rpm

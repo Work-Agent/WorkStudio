@@ -2,4 +2,5 @@ nodeLinker: hoisted
 
 allowBuilds:
   electron: true
-  electron-winstaller: true
+  # electron-builder 的传递依赖（Squirrel.Windows 用）；本项目 Windows 目标为 NSIS，不需要它跑安装脚本
+  electron-winstaller: false

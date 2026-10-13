@@ -1,12 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
-import started from 'electron-squirrel-startup';
 import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from './shared/titlebar';
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  app.quit();
-}
 
 // live-dev（.pi/extensions/dev-mode）：WA_DEBUG_PORT 时开放 CDP，供 e2e/调试 attach
 if (process.env.WA_DEBUG_PORT && /^\d+$/.test(process.env.WA_DEBUG_PORT)) {
@@ -41,7 +35,7 @@ const createWindow = () => {
           },
         }),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, '../preload/preload.cjs'),
     },
   });
 
@@ -49,17 +43,17 @@ const createWindow = () => {
     mainWindow.show();
   });
 
-  // and load the index.html of the app.
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  // 开发：electron-vite dev 注入 ELECTRON_RENDERER_URL（renderer dev server）；
+  // 打包：加载 out/renderer/index.html（base 为 './'，可 file:// 直开）。
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
   // DevTools 默认不打开（live-dev 的 CDP 9222 已足够调试/截图）；
-  // 需要时用 WA_DEVTOOLS=1 pnpm start 手动开启。
+  // 需要时用 WA_DEVTOOLS=1 pnpm dev 手动开启。
   if (process.env.WA_DEVTOOLS === '1') {
     mainWindow.webContents.openDevTools();
   }

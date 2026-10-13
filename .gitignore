@@ -151,8 +151,11 @@ vite.config.ts.timestamp-*
 # Optional oxlint cache
 .oxlintcache
 
-# Electron-Forge
+# Electron：electron-vite 构建产物
 out/
+
+# Electron：electron-builder 打包产物
+dist/
 
 # pi (local agent tooling)
 .pi/
