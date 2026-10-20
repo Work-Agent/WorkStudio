@@ -1,92 +1,67 @@
 /**
- * S3 中栏 资源面板（工作台）—— docs/tabs-design.md。
+ * S3 资源面板（DOM 部分）—— docs/views-design.md §四/§六/§七。
  *
- * 组装层：tabs 集合（state/tabs.ts）→ TabsBar 属性；内容区按内置视图注册表分流——
- * builtin（如 session-manager）渲染 DOM 组件，其余走 ExtensionView（原生视图占位）。
+ * DOM 只承载 chrome：标签栏与空态；全部视图内容一律由原生视图（WebContentsView）承载。
+ * 矩形全部取主进程 layout（`tabbar` / `resourceContent`）；本组件不渲染 mock 内容、不丈量容器、
+ * 不做分栏——文档与网页内容由主进程的原生视图承载（`layout.resourceContent`）。
  */
-import { BotMessageSquare, FileText, Globe, Package } from 'lucide-react';
-import { useTabServiceStore } from '../../state/tabService';
-import { useTabsStore } from '../../state/tabs';
-import { BUILTIN_VIEWS } from './builtinViews';
-import { ExtensionView } from './ExtensionView';
+import { FileText } from 'lucide-react';
+import { rectStyle, runViewCommand, useShellStore } from '../../state/shell';
+import { kindIcon } from './kindIcon';
 import { TabsBar } from './TabsBar';
 
-const KIND_ICON = {
-  document: FileText,
-  plugin: Package,
-  builtin: BotMessageSquare,
-  browser: Globe,
-} as const;
-
 export function ResourcePane() {
-  const tabs = useTabsStore((s) => s.tabs);
-  const activeId = useTabsStore((s) => s.activeId);
-  const host = useTabServiceStore;
+  const layout = useShellStore((s) => s.layout);
+  const views = useShellStore((s) => s.views);
+  if (!layout) return null;
 
-  const items = tabs.map((t) => ({
-    id: t.instanceId,
-    label: t.title,
-    icon: KIND_ICON[t.kind],
-    dirty: t.dirty,
-    pinned: t.pinned,
-    error: t.state === 'error',
-  }));
+  const active = views.find((v) => v.active) ?? null;
 
   return (
-    <div className="h-full w-full bg-zinc-200 dark:bg-[#1A1C1D] flex flex-col">
+    <>
       {/* ── 统一标签栏（空时不渲染） ── */}
-      {tabs.length > 0 && (
-        <TabsBar
-          testId="doc-tabs"
-          items={items}
-          active={activeId ?? ''}
-          onSelect={(id) => void host.getState().selectInstance(id)}
-          onClose={(id) => void host.getState().closeInstance(id)}
-          onTogglePin={(id) => useTabsStore.getState().togglePin(id)}
-          onMove={(fromId, toId) =>
-            useTabsStore.getState().moveTab(fromId, toId)
-          }
-          onRetry={(id) => void host.getState().reloadInstance(id)}
-          bulkClose={{
-            closeOthers: (id) => void host.getState().closeOthers(id),
-            closeLeft: (id) => void host.getState().closeToLeft(id),
-            closeRight: (id) => void host.getState().closeToRight(id),
-            closeAll: () => void host.getState().closeAll(),
-          }}
-        />
+      {views.length > 0 && (
+        <div className="absolute" style={rectStyle(layout.tabbar)}>
+          <TabsBar
+            testId="doc-tabs"
+            items={views.map((v) => ({
+              id: v.id,
+              label: v.title,
+              icon: kindIcon(v.kind),
+              dirty: v.dirty,
+              pinned: v.pinned,
+              error: v.state === 'error',
+            }))}
+            active={active?.id ?? ''}
+            onSelect={(id) => runViewCommand('views.activate', { id })}
+            onClose={(id) => runViewCommand('views.close', { id })}
+            onTogglePin={(id) => runViewCommand('views.togglePin', { id })}
+            onMove={(fromId, toId) =>
+              runViewCommand('views.move', { fromId, toId })
+            }
+            onRetry={(id) => runViewCommand('views.reload', { id })}
+            bulkClose={{
+              closeOthers: (id) => runViewCommand('views.closeOthers', { id }),
+              closeLeft: (id) => runViewCommand('views.closeToLeft', { id }),
+              closeRight: (id) => runViewCommand('views.closeToRight', { id }),
+              closeAll: () => runViewCommand('views.closeAll'),
+            }}
+          />
+        </div>
       )}
 
-      {/* ── 内容区（内置 DOM 视图 / 原生视图占位 + 空态引导） ── */}
-      <div className="relative flex-1 min-h-0">
-        {tabs.length > 0 ? (
-          tabs.map((tab) => {
-            const Builtin = BUILTIN_VIEWS[tab.extensionId];
-            const active = tab.instanceId === activeId;
-            if (Builtin) {
-              return (
-                <div
-                  key={tab.instanceId}
-                  className={active ? 'absolute inset-0' : 'hidden'}
-                >
-                  <Builtin />
-                </div>
-              );
-            }
-            return (
-              <ExtensionView
-                key={tab.instanceId}
-                instanceId={tab.instanceId}
-                active={active}
-              />
-            );
-          })
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 text-[12px] gap-2 px-6 text-center">
+      {/* ── 内容区：仅空态占位；视图内容全部由 WebContentsView 覆盖 ── */}
+      <div
+        className="absolute overflow-hidden"
+        style={rectStyle(layout.resourceContent)}
+      >
+        {views.length === 0 && (
+          <div className="pointer-events-none h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 text-[12px] gap-2 px-6 text-center">
             <FileText className="w-6 h-6 opacity-50" />
             <span>从左侧打开文档后，将在此处编辑</span>
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

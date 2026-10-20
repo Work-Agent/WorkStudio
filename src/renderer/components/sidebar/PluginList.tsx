@@ -6,8 +6,7 @@
  */
 import { useEffect } from 'react';
 import { Package } from 'lucide-react';
-import { usePluginsStore } from '../../state/plugins';
-import { useTabServiceStore } from '../../state/tabService';
+import { openPluginView, usePluginsStore } from '../../state/plugins';
 import { useUiStore } from '../../state/uiState';
 import { SubListView } from './SubListView';
 
@@ -15,7 +14,11 @@ import { SubListView } from './SubListView';
 const SETTINGS_DOMAIN = new Set([
   'settings-manager',
   'model-config',
+  'extension-manager',
+  'skills',
   'session-manager',
+  'workspaces',
+  'storage',
   'resources',
 ]);
 
@@ -37,9 +40,7 @@ export function PluginList() {
           ? visible.map((p) => (
               <div
                 key={p.id}
-                onClick={() =>
-                  void useTabServiceStore.getState().openPluginConfig(p)
-                }
+                onClick={() => openPluginView(p)}
                 className="group flex items-center px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors min-h-[42px]"
                 title={p.name}
               >

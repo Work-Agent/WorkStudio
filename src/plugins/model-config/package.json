@@ -1,0 +1,12 @@
+{
+  "name": "@workstudio/plugin-model-config",
+  "version": "1.0.0",
+  "description": "模型供应商与目录管理：供应商 / 模型 CRUD（models.json，与 pi 同构）、默认模型与思考档位、API Key（经 pi AuthStorage 持久化）",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "model-config",
+    "label": "模型设置",
+    "icon": "cpu",
+    "settings": "index.html"
+  }
+}

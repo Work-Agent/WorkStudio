@@ -1,0 +1,16 @@
+{
+  "name": "@workstudio/plugin-markdown-viewer",
+  "version": "1.0.0",
+  "description": "Markdown 文件渲染与编辑：安全内联渲染（标题 / 列表 / 表格 / 代码块 / 链接），源码模式可直接编辑保存",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "markdown-viewer",
+    "label": "Markdown 阅读器",
+    "icon": "file-text",
+    "page": "index.html",
+    "settings": "settings.html"
+  },
+  "exports": {
+    "./ura": "./ura.ts"
+  }
+}

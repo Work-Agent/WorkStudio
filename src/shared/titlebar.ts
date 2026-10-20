@@ -7,8 +7,10 @@
  *   1. 建窗参数（高度 / 覆盖层配色）
  *   2. 无 WCO 几何信息时的平台兜底留白
  */
+import { TITLEBAR_HEIGHT } from './layout';
+
 /** 标题栏高度（px）——与渲染层 .titlebar 一致（WCO 覆盖层高度 / 兜底高度）。 */
-export const TITLEBAR_HEIGHT = 40;
+export { TITLEBAR_HEIGHT };
 
 /** WCO 覆盖层配色（与渲染层标题栏底色一致：亮 zinc-100 / 暗 #1A1C1D）。 */
 export const TITLEBAR_OVERLAY_COLORS = {

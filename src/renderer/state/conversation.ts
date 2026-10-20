@@ -25,6 +25,29 @@ import {
 } from './message';
 import { useUiStore, setUiState } from './uiState';
 
+/** 主进程桥（新架构）；存在时全线走 `session.*` 命令，mock 路径仅供独立页面开发。 */
+const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
+
+type CmdResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** 命令调用（新桥 `session.*` / 旧 mock 命令名双轨）。 */
+async function run<T>(
+  bridgeCommand: string,
+  legacyCommand: string,
+  params?: unknown,
+): Promise<CmdResult<T>> {
+  if (mainBridge) {
+    const r = await mainBridge.cmd<T>(bridgeCommand, params);
+    return r.ok
+      ? { ok: true, data: r.data }
+      : { ok: false, error: r.error.message };
+  }
+  const r = await piAPI.cmd.invoke<T>(legacyCommand, params);
+  return r.ok
+    ? { ok: true, data: r.data }
+    : { ok: false, error: String(r.error) };
+}
+
 export type Tokens = { input: number; output: number };
 const ZERO_TOKENS: Tokens = { input: 0, output: 0 };
 
@@ -484,8 +507,11 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
             : [...s.piQueue.followUp],
       },
     }));
-    const cmd = behavior === 'followUp' ? 'follow_up' : 'steer';
-    const res = await piAPI.cmd.invoke(cmd, { text });
+    const res = await run<unknown>(
+      behavior === 'followUp' ? 'session.followUp' : 'session.steer',
+      behavior === 'followUp' ? 'follow_up' : 'steer',
+      { text },
+    );
     if (!res.ok) {
       // 失败回滚乐观项（queue_update 不会来）
       set((s) => ({
@@ -509,16 +535,20 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     const arrKey = kind === 'steer' ? 'steering' : 'followUp';
     const rest = get().piQueue[arrKey].filter((t) => t !== text);
     set((s) => ({ piQueue: { ...s.piQueue, [arrKey]: rest } }));
-    await piAPI.cmd.invoke('clear_queue');
-    const cmd = kind === 'followUp' ? 'follow_up' : 'steer';
-    for (const t of rest) await piAPI.cmd.invoke(cmd, { text: t });
+    await run('session.clearQueue', 'clear_queue');
+    const command = kind === 'followUp' ? 'session.followUp' : 'session.steer';
+    const legacy = kind === 'followUp' ? 'follow_up' : 'steer';
+    for (const t of rest) await run(command, legacy, { text: t });
   },
 
   /** Send Now：出队并立即以指定模式发送。 */
   sendNowQueueItem: async (kind, text) => {
     await get().removeQueueItem(kind, text);
-    const cmd = kind === 'followUp' ? 'follow_up' : 'steer';
-    const res = await piAPI.cmd.invoke(cmd, { text });
+    const res = await run(
+      kind === 'followUp' ? 'session.followUp' : 'session.steer',
+      kind === 'followUp' ? 'follow_up' : 'steer',
+      { text },
+    );
     if (!res.ok) writeErrorToLast(get().currentKey(), res.error);
   },
 
@@ -532,10 +562,15 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   /** 清空全部队列。 */
   clearQueue: async () => {
     set({ piQueue: { steering: [], followUp: [] } });
-    await piAPI.cmd.invoke('clear_queue');
+    await run('session.clearQueue', 'clear_queue');
   },
 
   refreshSessions: async () => {
+    if (mainBridge) {
+      const res = await run<SessionMeta[]>('session.list', 'list_sessions');
+      if (res.ok) set({ sessions: res.data, sessionDomains: {} });
+      return;
+    }
     const [res, domains] = await Promise.all([
       piAPI.cmd.invoke<SessionMeta[]>('list_sessions'),
       piAPI.cmd.invoke<Record<string, string>>('session_domains'),
@@ -548,6 +583,32 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     if (loaded.has(path)) return;
     loaded.add(path);
     try {
+      if (mainBridge) {
+        const res = await run<import('../../shared/types').ParsedMessage[]>(
+          'session.getMessages',
+          'switch_session',
+          { path },
+        );
+        if (!res.ok) throw new Error(res.error);
+        const messages = Array.isArray(res.data)
+          ? res.data
+          : ((
+              res.data as unknown as {
+                messages: import('../../shared/types').ParsedMessage[];
+              }
+            ).messages ?? []);
+        set((s) => ({
+          messagesBySession: {
+            ...s.messagesBySession,
+            [path]: parseParsedMessages(messages),
+          },
+          tokensBySession: {
+            ...s.tokensBySession,
+            [path]: s.tokensBySession[path] ?? ZERO_TOKENS,
+          },
+        }));
+        return;
+      }
       const res = await piAPI.cmd.invoke<{
         messages: import('../../shared/types').ParsedMessage[];
         tokens: Tokens;
@@ -621,7 +682,7 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     set({ streamingSessions: new Set(streamingKeys) });
     fsm.send('SEND');
 
-    const res = await piAPI.cmd.invoke('prompt', {
+    const res = await run<unknown>('session.prompt', 'prompt', {
       text,
       newSession: path === null && !isCommand,
       activeSkills: Array.isArray(activeSkills) ? [...activeSkills] : undefined,
@@ -638,7 +699,7 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   },
 
   abort: async (_path) => {
-    await piAPI.cmd.invoke('abort');
+    await run('session.abort', 'abort');
     promptFsmFor(get().currentKey()).send('ABORT');
   },
 
@@ -652,7 +713,7 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
   /** 真删除：后端 JSONL 删除 + 全部相关态清理 + 活跃重选。 */
   remove: async (path) => {
-    await piAPI.cmd.invoke('delete_session', { path });
+    await run('session.delete', 'delete_session', { path });
     set((s) => {
       const messages = { ...s.messagesBySession };
       const tokens = { ...s.tokensBySession };
@@ -679,7 +740,7 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   },
 
   rename: async (path, name) => {
-    await piAPI.cmd.invoke('rename_session', { path, name });
+    await run('session.rename', 'rename_session', { path, name });
     await get().refreshSessions();
   },
 
@@ -729,16 +790,20 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
       set({ streamingSessions: new Set(streamingKeys) });
       loaded.add(targetPath);
       loaded.delete('__new__');
-      useUiStore.getState().openSessionTab(targetPath);
+      // 注意：不在此调 openSessionTab（会发 session.openTab → runtime.switchSession，
+      // 把刚刚发出、正在流式的 prompt 换代中断）。主进程 onSessionCreated 已写入
+      // openPaths / activePath 并广播 ui-state，渲染层只消费广播。
       void get().refreshSessions();
       return;
     }
 
     if (ev.type === 'session_rebound') {
       set({ piSessionFile: ev.sessionFile || null });
-      void piAPI
-        .sync()
-        .then((s) => set({ piThinkingLevel: s.state.thinkingLevel }))
+      const sync = mainBridge
+        ? mainBridge.sync().then((s) => s.agent.thinkingLevel)
+        : piAPI.sync().then((s) => s.state.thinkingLevel);
+      void sync
+        .then((level) => set({ piThinkingLevel: level }))
         .catch(() => {
           /* ignore */
         });
@@ -853,20 +918,22 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
         fsm?.send('DONE');
         flashSettled(targetPath);
         void get().refreshSessions();
-        void piAPI.cmd
-          .invoke<{ tokens: Tokens }>('get_session_stats')
-          .then((res) => {
-            if (res.ok)
-              set((s) => ({
-                tokensBySession: {
-                  ...s.tokensBySession,
-                  [targetPath]: res.data.tokens,
-                },
-              }));
-          })
-          .catch(() => {
-            /* ignore */
-          });
+        if (!mainBridge) {
+          void piAPI.cmd
+            .invoke<{ tokens: Tokens }>('get_session_stats')
+            .then((res) => {
+              if (res.ok)
+                set((s) => ({
+                  tokensBySession: {
+                    ...s.tokensBySession,
+                    [targetPath]: res.data.tokens,
+                  },
+                }));
+            })
+            .catch(() => {
+              /* ignore */
+            });
+        }
         break;
       }
       default:
@@ -874,14 +941,27 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     }
   },
 
-  /** 启动初始化：pi:sync 握手 + 会话列表 + 恢复上次现场。 */
+  /** 启动初始化：握手 + 会话列表 + 恢复上次现场。 */
   init: async () => {
-    const sync = await piAPI.sync();
-    lastSeq = sync.seq;
-    set({ piThinkingLevel: sync.state.thinkingLevel });
-    if (sync.state.isStreaming) {
-      streamingKeys.add(get().piSessionFile ?? '__new__');
-      set({ streamingSessions: new Set(streamingKeys) });
+    if (mainBridge) {
+      const sync = await mainBridge.sync();
+      lastSeq = sync.seq;
+      set({
+        piThinkingLevel: sync.agent.thinkingLevel,
+        piSessionFile: sync.agent.sessionFile,
+      });
+      if (sync.agent.isStreaming) {
+        streamingKeys.add(sync.agent.sessionFile ?? '__new__');
+        set({ streamingSessions: new Set(streamingKeys) });
+      }
+    } else {
+      const sync = await piAPI.sync();
+      lastSeq = sync.seq;
+      set({ piThinkingLevel: sync.state.thinkingLevel });
+      if (sync.state.isStreaming) {
+        streamingKeys.add(get().piSessionFile ?? '__new__');
+        set({ streamingSessions: new Set(streamingKeys) });
+      }
     }
     await get().refreshSessions();
     const list = get().sessions;
@@ -909,6 +989,12 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
 // 全局事件监听（main.tsx init 时挂一次）
 export function bindPiEvents(): void {
+  if (mainBridge) {
+    mainBridge.onEvent((frame) =>
+      useConversationStore.getState().handlePiFrame(frame),
+    );
+    return;
+  }
   piAPI.onEvent((frame) =>
     useConversationStore.getState().handlePiFrame(frame),
   );

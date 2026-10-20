@@ -1,11 +1,11 @@
 /**
- * 视图宿主适配层（zustand）—— docs/tabs-design.md §六。
+ * 视图宿主适配层（zustand）—— docs/views-design.md §六。
  *
  * 职责：与视图宿主通信（getOrCreate / destroy / setActive / reload / syncBounds /
  * sendToView / broadcast）、生命周期状态机（FSM 槽）、内容投递、总线转译；
  * 把视图事实投影进 tabs 集合（state/tabs.ts）——本层不维护第二份 tab 列表。
  *
- * 状态机纪律（view-lifecycle.md §2.5）：
+ * 状态机纪律（views-design.md §2.5）：
  *   - 内容投递前置：CONTENT 仅在 ready 态接受（排队，不发进黑洞）
  *   - 就绪幂等收敛：任何状态收到 LOADED → ready（reload/重连统一）
  *   - RELOAD 转换内置清投递记录
@@ -34,7 +34,7 @@ import { setUiState, useUiStore } from './uiState';
 
 type InstanceEvent = 'LOADED' | 'ASSIGN_DOC' | 'CONTENT' | 'RELOAD' | 'FAIL';
 
-/** 转换表（tabs-design.md §三）——评审表 = 评审代码。 */
+/** 转换表（views-design.md §三）——评审表 = 评审代码。 */
 const INSTANCE_TRANSITIONS: Record<string, ViewState> = {
   'creating:LOADED': 'ready',
   'creating:FAIL': 'error',
@@ -202,7 +202,6 @@ interface TabServiceState {
     plugin: PluginInfo,
     labelOverride?: string,
   ) => Promise<void>;
-  openApprovalsView: () => Promise<void>;
   openPluginHome: (plugin: PluginInfo) => Promise<void>;
   closeInstance: (instanceId: string) => Promise<void>;
   closeAll: () => Promise<void>;
@@ -409,9 +408,6 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
     }, 300);
   },
 
-  /** 打开审批面板（approvals-viewer 扩展实例）。 */
-  openApprovalsView: () => openSingletonView('approvals-viewer', '审批'),
-
   /** 打开插件首页（<pluginId>-home 约定扩展）。 */
   openPluginHome: async (plugin) => {
     setUiState({ panelCollapsed: false });
@@ -553,42 +549,6 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
     useTabsStore.getState().patch(instanceId, { interactiveElements: on });
   },
 }));
-
-/** 通用单例视图打开（非文档型扩展实例）。 */
-async function openSingletonView(
-  extensionId: string,
-  label: string,
-): Promise<void> {
-  setUiState({ panelCollapsed: false });
-  const current = useTabServiceStore.getState();
-  const defs =
-    current.defs.length > 0
-      ? current.defs
-      : await agentAPI.extensions.definitions();
-  useTabServiceStore.setState({ defs });
-  const def = defs.find((x) => x.id === extensionId);
-  if (!def) {
-    console.warn(`No ${extensionId} extension`);
-    return;
-  }
-  const instanceId = await agentAPI.extensions.getOrCreate(def.id, { label });
-  const list = await agentAPI.extensions.list();
-  const mainFact = list.find((i) => i.instanceId === instanceId);
-  useTabsStore.getState().openOrActivate(
-    makeTab({
-      tabKey: `builtin:${def.id}`,
-      instanceId,
-      kind: 'builtin',
-      extensionId: def.id,
-      title: label,
-      url: `app://plugin/${def.pluginId}`,
-      state: mainFact?.loaded ? 'ready' : 'loading',
-    }),
-  );
-  await agentAPI.extensions.setActive(instanceId);
-  if (!slots.has(instanceId))
-    registerSlot(instanceId, null, mainFact?.loaded ? 'ready' : 'loading');
-}
 
 // ─── 总线消息处理 ──────────────────────────────────────────
 

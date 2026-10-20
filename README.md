@@ -66,9 +66,9 @@ pnpm dev
 
 ```
 ├── src/
-│   ├── main.ts               # 主进程入口（构建到 out/main/main.cjs）
-│   ├── preload.ts            # 预加载脚本（构建到 out/preload/preload.cjs）
-│   ├── declarations.d.ts     # 全局类型声明
+│   ├── main/                 # 主进程（index.ts 入口，构建到 out/main）
+│   ├── preload/              # 预加载脚本（多入口，构建到 out/preload）
+│   ├── vite-env.d.ts         # Vite 类型声明（?raw / CSS 导入）
 │   ├── renderer/             # 渲染进程（React + Tailwind）
 │   ├── shared/               # 主/渲染共享类型与样式
 │   └── ...

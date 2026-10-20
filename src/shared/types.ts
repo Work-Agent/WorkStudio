@@ -1,3 +1,4 @@
+import type { ViewActionView } from './ura';
 // ─── 共享类型（主进程 + 渲染层 + preload 三方共用） ─────────────────
 //
 // 本文件是三端之间的唯一契约面：渲染层只依赖这些类型（不 import 任何进程内模块）。
@@ -16,6 +17,125 @@ export interface ModelOption {
   provider: string;
   modelId: string;
   label: string;
+}
+
+/** 模型设置页视图（models.json 脱敏形态；apiKey 永不回传）。 */
+export interface ModelConfigView {
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  input?: Array<'text' | 'image'>;
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
+  thinkingLevelMap?: Record<string, string | null>;
+  compat?: Record<string, unknown>;
+}
+
+export interface ProviderConfigView {
+  name?: string;
+  baseUrl?: string;
+  api?: string;
+  models?: ModelConfigView[];
+  [key: string]: unknown;
+}
+
+export interface ModelsConfigView {
+  providers: Record<string, ProviderConfigView>;
+}
+
+/** 供应商认证状态（模型设置页；凭证值永不出现）。 */
+export interface ProviderInfoView {
+  id: string;
+  name: string;
+  /** 内置（pi 目录） / 自定义（models.json）。 */
+  builtin: boolean;
+  baseUrl?: string;
+  configured: boolean;
+  /** 配置来源：stored / runtime / environment / models_json_key… */
+  authSource?: string;
+  authLabel?: string;
+  hasApiKeyAuth: boolean;
+  hasOAuthAuth: boolean;
+  /** 可交互登录（apiKey.login / oauth.login 存在）。 */
+  canApiKeyLogin: boolean;
+  canOAuthLogin: boolean;
+  modelCount: number;
+  availableModelCount: number;
+}
+
+/** 模型目录条目（模型设置页；来源于 pi 组合后的目录）。 */
+export interface ModelCatalogItem {
+  provider: string;
+  modelId: string;
+  label: string;
+  reasoning: boolean;
+  input?: Array<'text' | 'image'>;
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
+  /** 供应商已配置凭证（可选中为默认模型）。 */
+  available: boolean;
+}
+
+/** 存储与数据设置页视图（路径全部为绝对路径；凭证文件不含内容）。 */
+export interface StorageView {
+  workspacePath: string;
+  workspaceId: string;
+  agentDir: string;
+  modelsJson: string;
+  authJson: string;
+  globalSettings: string;
+  workspaceSettings: string;
+  sessionsDir: string;
+  defaultSessionsDir: string;
+  /** settings.json 里显式配置的 sessionDir（null = 未配置）。 */
+  sessionsDirConfigured: string | null;
+  uiStateFile: string;
+  resourcesDir: string;
+  pluginsDirs: string[];
+  bootLog: string;
+  versions: {
+    app: string;
+    electron: string;
+    chrome: string;
+    node: string;
+  };
+}
+
+/** 已加载资源投影（安装 / 卸载 pi 包后的「已加载」视图）。 */
+export interface LoadedResourcesView {
+  extensions: Array<{
+    path: string;
+    hidden: boolean;
+    tools: string[];
+    commands: string[];
+  }>;
+  skills: Array<{ name: string; description: string; path: string }>;
+  prompts: Array<{ name: string; path: string }>;
+  themes: Array<{ name: string; path: string }>;
+  errors: Array<{ path: string; message: string }>;
+}
+
+/** 工作区清单项（工作区设置页）。 */
+export interface WorkspaceInfo {
+  path: string;
+  name: string;
+  wsId: string;
+  createdAt: number;
+  lastOpenedAt: number;
+  current: boolean;
+  exists: boolean;
 }
 
 export interface AgentStatus {
@@ -43,6 +163,10 @@ export type SessionMeta = {
   createdAt: number;
   /** 最后一条助手消息的文本预览（截断）。 */
   preview?: string;
+  /** token 统计（JSONL 累加；打开列表时不要求）。 */
+  tokens?: { input: number; output: number };
+  /** 消息条数（SessionManager 列表元数据）。 */
+  messageCount?: number;
 };
 
 /** 从主进程返回的已解析历史消息内容块。 */
@@ -198,6 +322,8 @@ export interface ExtensionDef {
   pluginId: string;
   /** 壳层动作贡献（声明式，源自 manifest extensions[].titlebarActions）。 */
   titlebarActions?: string[];
+  /** 兜底渲染器（无扩展名匹配时使用）。 */
+  default?: boolean;
 }
 
 /** 扩展视图实例的运行时元数据。 */
@@ -241,12 +367,28 @@ export interface PluginInfo {
   configId?: string;
 }
 
-/** Skill 信息（供 UI 选择器展示）。 */
+/** Skill 信息（供 UI 选择器 / 技能设置页展示）。 */
 export interface SkillInfo {
   name: string;
   description: string;
   pluginId: string;
   pluginName: string;
+  /** SKILL.md 绝对路径（展示 / 打开用）。 */
+  path?: string;
+  /** 装载作用域：user / project / temporary / builtin… */
+  scope?: string;
+  /** 来源标识（settings / package / builtin…）。 */
+  source?: string;
+  /** 仅手动调用（不注入提示词）。 */
+  manualOnly?: boolean;
+}
+
+/** 技能视图（设置页：清单 + 装载诊断 + 当前启用集合）。 */
+export interface SkillViewResult {
+  skills: SkillInfo[];
+  diagnostics: Array<{ type: string; message: string; path?: string }>;
+  /** 当前启用集合（空 = 全量注入，pi 默认）。 */
+  active: string[];
 }
 
 // ─── 用户操作状态（UiState，主进程 ui-state.json 持久化） ─────
@@ -268,7 +410,8 @@ export interface UiState {
     | 'data'
     | 'web'
     | 'plugins'
-    | 'settings';
+    | 'settings'
+    | 'find';
   /** web 二级列表当前选中的域分组（sidebarView='web' 时生效；null = 未选）。 */
   sidebarDomain?: string | null;
   /** 左栏 Sidebar 是否收起（收起 = 固定 56px 图标列，非整栏隐藏）。 */
@@ -285,6 +428,12 @@ export interface UiState {
   activePath: string | null;
   /** 已打开为标签的会话（工作现场恢复；与全部会话区分——关闭 ≠ 删除）。 */
   openPaths: string[];
+  /** 资源面板打开集合的持久化键（order / pinned / activeKey；实例不落盘）。 */
+  openTabs?: {
+    order: string[];
+    pinned: string[];
+    activeKey: string | null;
+  };
 }
 
 // ─── IPC 接口（preload 暴露给渲染层） ───────────────────────
@@ -498,3 +647,201 @@ export interface ElectronAPI {
   versions?: Record<string, string>;
   openPath: (path: string) => Promise<string | null>;
 }
+
+// ═══════════════════════════════════════════════════════════
+// 主进程新契约（architecture.md / views-design.md）
+// ═══════════════════════════════════════════════════════════
+
+// ─── Agent 快照与命令信封 ──────────────────────────────────
+
+/** AgentHost 快照（ws:sync 与 agent.status 共用）。 */
+export interface AgentSnapshot {
+  configured: boolean;
+  provider?: string;
+  modelId?: string;
+  modelName?: string;
+  thinkingLevel: ThinkingLevel | null;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  steeringMode: 'all' | 'one-at-a-time';
+  followUpMode: 'all' | 'one-at-a-time';
+  sessionFile: string | null;
+  sessionId: string | null;
+  sessionName: string | null;
+  messageCount: number;
+  pendingMessageCount: number;
+  cwd: string;
+  workspacePath: string;
+}
+
+/** 命令响应信封（ok:false 带错误码）。 */
+export type CommandResponse<T = unknown> =
+  | { ok: true; data: T }
+  | { ok: false; error: { code: string; message: string } };
+
+// ─── 视图（集合 + 几何） ────────────────────────────────────
+
+export type ViewState =
+  | 'dormant'
+  | 'creating'
+  | 'loading'
+  | 'ready'
+  | 'contentDelivered'
+  | 'reloading'
+  | 'error'
+  | 'destroyed';
+
+export type ViewKind = 'extension' | 'browser';
+
+/** 视图投影（渲染层唯一数据面）。 */
+/** 激活视图的渲染器（地址栏图标与动作作用域）。 */
+export interface RendererInfo {
+  /** surface / 渲染器 id（资源页）或插件 id（插件页）。 */
+  id: string;
+  label?: string;
+  /** 图标语义名（壳层映射）。 */
+  icon?: string;
+  /** 渲染器归属插件。 */
+  owner?: string;
+  /** 资源文档类型（资源页）。 */
+  docType?: string;
+}
+
+export interface ViewEntry {
+  id: string;
+  tabKey: string;
+  kind: ViewKind;
+  extensionId: string;
+  title: string;
+  url: string;
+  state: ViewState;
+  /** 是否当前激活项（集合语义的投影；渲染层据此渲染激活态）。 */
+  active: boolean;
+  pinned: boolean;
+  dirty: boolean;
+  temporary?: boolean;
+  interactiveElements?: boolean;
+  renderer?: RendererInfo;
+  document?: DocumentMeta;
+  plugin?: PluginInfo;
+  /** 声明式标题栏动作 id（manifest 声明；主窗口按语义渲染按钮）。 */
+  titlebarActions?: string[];
+  /** 插件注册的地址栏动作（URA 视图动作）。 */
+  actions?: ViewActionView[];
+  /** 声明式动作状态（视图页 actionState 上报；如 layout-switch / toggle-wrap / toggle-scripts）。 */
+  actionStates?: Record<string, string>;
+  layout?: string;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 布局引擎输出（DOM 条带与原生 bounds 共用）。 */
+export interface LayoutSnapshot {
+  window: { width: number; height: number };
+  titlebar: Rect;
+  workbench: Rect;
+  sidebar: Rect;
+  resourcePane: Rect;
+  tabbar: Rect;
+  resourceContent: Rect;
+  assistantDock: Rect;
+  assistantFloating: Rect;
+  overlay: Rect;
+}
+
+/** 交互预览（主进程 → 渲染层；渲染层只渲染不计算）。 */
+export interface InteractionPreview {
+  kind: InteractionKind;
+  /** pane-resize 的哪一侧。 */
+  side?: 'left' | 'right';
+  paneWidths?: { left: number; right: number };
+  sidebarCollapsed?: boolean;
+  floating?: Rect | null;
+  /** tab-reorder：指针窗口内 x（渲染层据此算插入位并画标记）。 */
+  cursorX?: number;
+  tabKey?: string;
+}
+
+export type InteractionKind =
+  | 'pane-resize'
+  | 'view-move'
+  | 'view-resize'
+  | 'tab-reorder';
+
+/** 缩放方向（view-resize；缺省 = 右下角 'se'）。 */
+export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+export interface InteractionBeginInput {
+  kind: InteractionKind;
+  /** pane-resize: 'left' | 'right'；view-*: 'assistant'；tab-reorder: tabKey。 */
+  target: string;
+  /** view-resize 的缩放方向（八向；缺省 'se'）。 */
+  direction?: ResizeDirection;
+  anchor: { x: number; y: number };
+}
+
+/** Shell 快照（ws:state）。 */
+export interface ShellSnapshot {
+  ui: UiState;
+  layout: LayoutSnapshot;
+  /** 运行期浮动助手几何（null = 未设置 → 使用默认位置）。 */
+  floating: Rect | null;
+  preview: InteractionPreview | null;
+}
+
+/** ws:sync 握手结果。 */
+export interface WorkSyncResult {
+  agent: AgentSnapshot;
+  seq: number;
+  shell: ShellSnapshot;
+  views: ViewEntry[];
+  plugins: PluginInfo[];
+}
+
+// ─── 扩展 UI（ws:ui） ──────────────────────────────────────
+
+export type UiDialogKind = 'select' | 'confirm' | 'input' | 'editor';
+
+export interface UiDialogRequest {
+  type: 'dialog';
+  id: string;
+  kind: UiDialogKind;
+  title: string;
+  message?: string;
+  options?: string[];
+  placeholder?: string;
+  prefill?: string;
+  /** 密文输入（凭证类）。 */
+  secret?: boolean;
+  timeoutMs?: number;
+}
+
+export interface UiDialogResponse {
+  id: string;
+  cancelled?: boolean;
+  value?: string;
+  confirmed?: boolean;
+}
+
+export interface UiNotifyMessage {
+  type: 'notify';
+  id: string;
+  message: string;
+  level: 'info' | 'warning' | 'error';
+  source?: string;
+}
+
+export type UiRequest = UiDialogRequest | UiNotifyMessage;
+
+// ─── 交互 ──────────────────────────────────────────────────
+
+/** ws:interaction:update 载荷。 */
+export interface InteractionUpdate {
+  preview: InteractionPreview;
+}
+

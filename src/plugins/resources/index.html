@@ -1,0 +1,420 @@
+<!doctype html>
+<!--
+  资源索引（resources 插件 config 页）。
+  数据面：app:ura.tree / app:views.openResource（在资源面板新标签打开）。
+-->
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>资源索引</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f4f5;
+        --panel: #ffffff;
+        --fg: #27272a;
+        --muted: #71717a;
+        --border: #e4e4e7;
+        --accent: #4f6bed;
+        --accent-hover: #3d56e0;
+        --input-bg: #ffffff;
+        --soft: #fafafa;
+      }
+      html[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #1a1c1d;
+        --panel: #202124;
+        --fg: #e4e4e7;
+        --muted: #8b8d8e;
+        --border: #2a2d2e;
+        --accent: #6c86f0;
+        --accent-hover: #5a76e8;
+        --input-bg: #1c1e1f;
+        --soft: #1c1e1f;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica,
+          Arial, sans-serif;
+        font-size: 13px;
+        overflow: auto;
+      }
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 24px 24px 80px;
+      }
+      header {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      header .grow {
+        flex: 1;
+      }
+      h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 14px;
+      }
+      input[type='text'] {
+        flex: 1;
+        background: var(--input-bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12.5px;
+        font-family: inherit;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      button {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--accent-hover);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .card {
+        margin-top: 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        padding: 10px 14px;
+        background: var(--soft);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+      }
+      .item:last-child {
+        border-bottom: none;
+      }
+      .item:hover {
+        background: var(--soft);
+      }
+      .item .body {
+        flex: 1;
+        min-width: 0;
+      }
+      .item .title {
+        font-size: 12.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .item .title span {
+        margin-left: 8px;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--soft);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .item .meta {
+        margin-top: 2px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .item .ext {
+        flex: none;
+        font-size: 10px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .empty {
+        padding: 22px 12px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%) translateY(8px);
+        background: rgba(24, 24, 27, 0.94);
+        color: #fafafa;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.16s ease,
+          transform 0.16s ease;
+        max-width: 80vw;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      .toast.error {
+        background: #991b1b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="grow">
+          <h1>资源索引</h1>
+          <p>
+            资源网关投影（本地文档 / 网页快照 /
+            业务数据）。目录变化经文件监视自动写穿；
+            需要时可全量重扫。资源地图（AGENTS.md）随每轮对话注入助手上下文。
+          </p>
+        </div>
+        <button class="primary" id="sync">重新索引</button>
+      </header>
+
+      <div class="row">
+        <input type="text" id="q" placeholder="过滤资源…" />
+      </div>
+
+      <div id="groups"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const SOURCE_LABEL = {
+        local: '本地文档',
+        web: '网站资料',
+        data: '业务数据',
+      };
+      const state = { documents: [], groups: [], q: '', syncing: false };
+      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s ?? '').replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[c],
+        );
+
+      function render() {
+        const q = state.q.trim().toLowerCase();
+        const bySource = new Map();
+        for (const doc of state.documents) {
+          if (
+            q &&
+            !(
+              (doc.title || '').toLowerCase().includes(q) ||
+              (doc.path || '').toLowerCase().includes(q)
+            )
+          )
+            continue;
+          const list = bySource.get(doc.source) ?? [];
+          list.push(doc);
+          bySource.set(doc.source, list);
+        }
+        if (bySource.size === 0) {
+          $('groups').innerHTML =
+            '<div class="card"><div class="empty">' +
+            (state.documents.length === 0
+              ? '当前工作区没有索引到资源。把文件放进工作区目录后会自动出现。'
+              : '没有匹配的资源。') +
+            '</div></div>';
+          return;
+        }
+        $('groups').innerHTML = [...bySource.entries()]
+          .map(([source, docs]) => {
+            const rows = docs
+              .slice(0, 200)
+              .map((d) => {
+                const group = d.group
+                  ? (state.groups.find(
+                      (g) => g.source === d.source && g.id === d.group.id,
+                    )?.title ?? d.group.id)
+                  : null;
+                return (
+                  '<div class="item" data-id="' +
+                  esc(d.id) +
+                  '">' +
+                  '<div class="body">' +
+                  '<div class="title">' +
+                  esc(d.title) +
+                  (group ? '<span>' + esc(group) + '</span>' : '') +
+                  '</div>' +
+                  '<div class="meta">' +
+                  esc(d.path ?? d.id) +
+                  ' · ' +
+                  esc(d.type) +
+                  ' · ' +
+                  (d.size ?? 0) +
+                  'B</div>' +
+                  '</div>' +
+                  '<span class="ext">' +
+                  esc(d.ext || '—') +
+                  '</span>' +
+                  '</div>'
+                );
+              })
+              .join('');
+            return (
+              '<div class="card"><h3><span>' +
+              esc(SOURCE_LABEL[source] ?? source) +
+              '</span><span>' +
+              docs.length +
+              ' 项</span></h3>' +
+              rows +
+              (docs.length > 200
+                ? '<div class="empty">仅显示前 200 项（共 ' +
+                  docs.length +
+                  '）。</div>'
+                : '') +
+              '</div>'
+            );
+          })
+          .join('');
+      }
+
+      async function refresh() {
+        try {
+          const tree = await invoke('app:ura.tree');
+          state.documents = tree
+            .filter((item) => item.kind === 'file')
+            .map((item) => ({
+              id: item.ref,
+              title: item.name,
+              path: item.ref,
+              ext: item.ext,
+              size: item.size,
+              type: 'content',
+              source: 'local',
+            }));
+          state.groups = [];
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+        render();
+      }
+
+      $('sync').onclick = async () => {
+        state.syncing = true;
+        $('sync').disabled = true;
+        $('sync').textContent = '索引中…';
+        try {
+          await refresh();
+          toast('已刷新');
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          state.syncing = false;
+          $('sync').disabled = false;
+          $('sync').textContent = '重新索引';
+        }
+      };
+
+      $('q').addEventListener('input', (e) => {
+        state.q = e.target.value;
+        render();
+      });
+
+      $('groups').addEventListener('click', (e) => {
+        const item = e.target.closest('[data-id]');
+        if (!item) return;
+        void invoke('app:views.openResource', {
+          ref: item.dataset.id,
+        }).catch((err) =>
+          toast(err && err.message ? err.message : String(err), true),
+        );
+      });
+
+      let toastTimer = 0;
+      function toast(message, error) {
+        const el = $('toast');
+        el.textContent = message;
+        el.className = 'toast show' + (error ? ' error' : '');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => (el.className = 'toast'), 2600);
+      }
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme =
+          theme === 'dark' ? 'dark' : 'light';
+      }
+
+      applyTheme(
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light',
+      );
+      window.extension.bus.on((msg) => {
+        if (msg && msg.type === 'theme') applyTheme(msg.theme);
+      });
+      window.extension.bus.loaded();
+      void refresh();
+    </script>
+  </body>
+</html>

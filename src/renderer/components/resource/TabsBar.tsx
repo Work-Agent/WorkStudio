@@ -1,5 +1,5 @@
 /**
- * TabsBar —— 中栏统一标签栏（tabs-design.md §六）。
+ * TabsBar —— 中栏统一标签栏（views-design.md §六）。
  *
  * 纯视图（不触达宿主）：滚动 / 激活标 / 脏点 / 错误标 / 固定 Pin / 拖拽排序 /
  * 右键菜单（关闭族 + 固定/取消固定）。集合语义全部在 state/tabs.ts，本组件只回调。
@@ -150,7 +150,7 @@ export function TabsBar({
   }, [items, onClose, bulkClose, onTogglePin]);
 
   return (
-    <div className="h-9 shrink-0 flex items-stretch bg-zinc-100 dark:bg-[#1A1C1D] border-b border-zinc-200 dark:border-zinc-800/60 select-none">
+    <div className="h-9 shrink-0 flex items-stretch bg-zinc-100 dark:bg-[#1A1C1D] border-b border-zinc-200 dark:border-zinc-800 select-none">
       <button
         onClick={() => scrollByAmount(-1)}
         disabled={!canLeft}
@@ -196,7 +196,7 @@ export function TabsBar({
                 openMenu(item.id);
               }}
               title={item.label}
-              className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors min-w-0 ${
+              className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors min-w-0 max-w-32 ${
                 isActive
                   ? 'bg-zinc-50 dark:bg-[#1E2021] text-zinc-900 dark:text-zinc-100'
                   : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-[#252829] hover:text-zinc-700 dark:hover:text-zinc-200'

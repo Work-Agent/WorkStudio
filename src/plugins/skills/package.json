@@ -1,0 +1,12 @@
+{
+  "name": "@workstudio/plugin-skills",
+  "version": "1.0.0",
+  "description": "已加载技能清单（名称 / 描述 / 来源 / 作用域 / 路径）· 装载诊断 · 重新装载",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "skills",
+    "label": "技能",
+    "icon": "book",
+    "settings": "index.html"
+  }
+}

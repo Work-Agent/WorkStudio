@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>浏览器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fafafa; --panel: #fff; --fg: #27272a; --muted: #71717a;
+        --border: #e4e4e7; --accent: #4f6bed; --hover: rgba(127,127,127,.1);
+      }
+      html[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #1a1c1d; --panel: #202124; --fg: #e4e4e7; --muted: #8b8d8e;
+        --border: #2a2d2e; --accent: #6c86f0; --hover: rgba(255,255,255,.06);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        background: var(--bg); color: var(--fg); padding: 32px 36px;
+        font: 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+      }
+      .head { max-width: 860px; }
+      h1 { margin: 0 0 6px; font-size: 18px; }
+      .sub { color: var(--muted); margin: 0 0 22px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; max-width: 1100px; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+      .card-head { display: flex; align-items: center; gap: 9px; }
+      .card-head img { width: 18px; height: 18px; border-radius: 5px; }
+      .card-head .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card-head .count { margin-left: auto; color: var(--muted); font-size: 11.5px; }
+      ul { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+      li { padding: 5px 7px; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+      li:hover { background: var(--hover); }
+      .bar { display: flex; gap: 8px; max-width: 760px; margin: 0 0 22px; }
+      .bar input {
+        flex: 1; height: 34px; padding: 0 10px; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--panel); color: var(--fg); font: inherit;
+      }
+      .bar input:focus { outline: none; border-color: var(--accent); }
+      .bar button {
+        height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border);
+        background: transparent; color: var(--fg); font: inherit; cursor: pointer;
+      }
+      .bar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .bar button:hover { background: var(--hover); }
+      .bar button.primary:hover { filter: brightness(1.06); background: var(--accent); }
+      .empty { color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; padding: 22px; text-align: center; max-width: 620px; }
+      .empty code { background: var(--hover); padding: 1px 5px; border-radius: 4px; }
+      .toast { position: fixed; right: 20px; bottom: 20px; background: var(--fg); color: var(--bg);
+        padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .18s; }
+      .toast.show { opacity: 1; }
+      .toast.error { background: #dc2626; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="head">
+      <h1>网站资料</h1>
+      <p class="sub">输入地址即打开实时网页；白名单内的域名在侧栏按域分组，快照以 Markdown 存到工作区 <code>sites/&lt;域&gt;/</code>。白名单在插件设置中维护。</p>
+      <div class="bar">
+        <input id="url" placeholder="https://example.com/page" spellcheck="false" />
+        <button class="primary" id="open">打开</button>
+        <button id="capture">抓取快照</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>
+      还没有网站资料。先在 <b>设置 → 浏览器</b> 里添加归档域名，浏览器打开页面后快照会落到对应分组。
+    </div>
+    <div class="toast" id="toast"></div>
+    <script>
+      const invoke = window.extension.invoke;
+      const $ = (id) => document.getElementById(id);
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+      }
+
+      function toast(message, error) {
+        const el = $('toast');
+        el.textContent = message;
+        el.className = 'toast show' + (error ? ' error' : '');
+        setTimeout(() => (el.className = 'toast'), 1800);
+      }
+
+      async function openResource(ref) {
+        try {
+          await invoke('app:views.openResource', { ref });
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+      }
+
+      function renderGroups(groups) {
+        $('empty').hidden = groups.length > 0;
+        $('grid').innerHTML = groups
+          .map((group) => {
+            const items = group.items
+              .map(
+                (item) =>
+                  '<li data-ref="' + encodeURIComponent(item.ref) + '">' + item.title + '</li>',
+              )
+              .join('');
+            return (
+              '<div class="card">' +
+              '<div class="card-head">' +
+              '<img src="https://' + group.id + '/favicon.ico" alt="" onerror="this.style.visibility=\'hidden\'" />' +
+              '<span class="name">' + group.title + '</span>' +
+              '<span class="count">' + group.items.length + ' 页</span>' +
+              '</div>' +
+              (items ? '<ul>' + items + '</ul>' : '<div class="count" style="margin-top:10px">暂无快照</div>') +
+              '</div>'
+            );
+          })
+          .join('');
+      }
+
+      $('grid').addEventListener('click', (e) => {
+        const li = e.target.closest('li[data-ref]');
+        if (!li) return;
+        void openResource(decodeURIComponent(li.dataset.ref));
+      });
+
+      async function openUrl() {
+        const input = $('url');
+        const value = input.value.trim();
+        if (!value) return;
+        const url = /^https?:\/\//i.test(value) ? value : 'https://' + value;
+        try {
+          await invoke('app:views.openBrowser', { url });
+          input.value = '';
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+      }
+
+      async function capture() {
+        try {
+          const result = await invoke('app:browser.snapshot');
+          if (!result) {
+            toast('没有可抓取的网页', true);
+            return;
+          }
+          toast(result.ref ? '已归档：' + result.ref.split('/').slice(-2).join('/') : '当前域名不在白名单');
+          await refresh();
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+      }
+
+      $('open').onclick = openUrl;
+      $('url').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') void openUrl();
+      });
+      $('capture').onclick = capture;
+
+      async function refresh() {
+        try {
+          const views = await invoke('app:ura.collections');
+          const web = (views || []).find((view) => view.source === 'web');
+          renderGroups(web ? web.groups : []);
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+      }
+
+      applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      window.extension.bus.on((msg) => {
+        if (msg.type === 'theme') applyTheme(msg.theme);
+        else if (msg.type === 'action' && msg.id === 'save') void refresh();
+      });
+      void refresh();
+      window.extension.bus.loaded();
+    </script>
+  </body>
+</html>

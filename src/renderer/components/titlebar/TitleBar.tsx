@@ -1,16 +1,14 @@
 /**
- * S1 应用壳层 TitleBar —— ui-design.md §三。
+ * S1 应用壳层 TitleBar —— views-design.md §3。
  *
- *   - 左段：Sidebar 收起/展开 toggle + 工作区下拉
- *   - 中央：资源地址栏（浏览器地址栏语义：url + spinner + 按类型动作）
- *   - 右侧：AI / 主题 / 插件 / 设置 / W 徽标；打开态 = 图标本体靛蓝高亮（非背景块）
+ *   - 左区：① 工作区选择器 + ② 侧栏开关（同一布局分组，次序可互换）
+ *   - 中区：资源地址栏（浏览器地址栏语义：url + spinner + 按类型动作）
+ *   - 右区：AI / 主题 / W 徽标（资源 / 插件 / 设置切换在 Sidebar 顶部导航，见 SidebarNav）
  */
 import {
   Moon,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
   Sparkles,
   Sun,
 } from 'lucide-react';
@@ -18,17 +16,10 @@ import { setUiState, toggleTheme, useUiStore } from '../../state/uiState';
 import { ResourceToolbar } from './ResourceToolbar';
 import { WorkspaceSelect } from './WorkspaceSelect';
 
-export function TitleBar({
-  onOpenPlugins,
-  onOpenSettings,
-}: {
-  onOpenPlugins: () => void;
-  onOpenSettings: () => void;
-}) {
+export function TitleBar() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const aiOpen = useUiStore((s) => s.aiOpen);
   const theme = useUiStore((s) => s.theme);
-  const sidebarView = useUiStore((s) => s.sidebarView);
 
   const iconButton = (active: boolean): string =>
     `h-8 w-8 rounded-md flex items-center justify-center transition-colors ${
@@ -39,8 +30,9 @@ export function TitleBar({
 
   return (
     <div className="titlebar shrink-0 flex items-center gap-1.5 border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-[#1A1C1D] select-none">
-      {/* ── 左段：Sidebar 收起/展开 toggle + 工作区下拉（弹出层 = 原生菜单） ── */}
+      {/* ── 左区：① 工作区选择器 + ② 侧栏开关（弹出层 = 原生菜单） ── */}
       <div className="flex items-center gap-0.5 shrink-0">
+        <WorkspaceSelect />
         <button
           onClick={() => setUiState({ sidebarCollapsed: !sidebarCollapsed })}
           data-testid="sidebar-toggle"
@@ -53,7 +45,6 @@ export function TitleBar({
             <PanelLeftClose className="w-4 h-4" />
           )}
         </button>
-        <WorkspaceSelect />
       </div>
 
       {/* 拖拽区 + 中央地址栏 */}
@@ -61,7 +52,7 @@ export function TitleBar({
         <ResourceToolbar />
       </div>
 
-      {/* ── 右侧动作：AI / 主题 / 插件 / 设置 / W 徽标（图标本色高亮制） ── */}
+      {/* ── 右区 · ④ 动作组：AI / 主题 / W 徽标（图标本色高亮制） ── */}
       <div className="flex items-center">
         <button
           onClick={() => setUiState({ aiOpen: !aiOpen })}
@@ -80,20 +71,6 @@ export function TitleBar({
           ) : (
             <Moon className="w-4 h-4" />
           )}
-        </button>
-        <button
-          onClick={onOpenPlugins}
-          title={sidebarView === 'plugins' ? '收起插件列表' : '打开插件列表'}
-          className={iconButton(sidebarView === 'plugins')}
-        >
-          <Package className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onOpenSettings}
-          title={sidebarView === 'settings' ? '收起设置列表' : '打开设置列表'}
-          className={iconButton(sidebarView === 'settings')}
-        >
-          <Settings className="w-4 h-4" />
         </button>
         <div
           title="Work Studio"

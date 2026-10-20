@@ -10,7 +10,7 @@
     "name": "qingo",
     "email": "97383102@qq.com"
   },
-  "main": "out/main/main.cjs",
+  "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -39,6 +39,10 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",
-    "zustand": "^5.0.15"
-  }
+    "zustand": "^5.0.15",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "typebox": "^1.3.27"
+  },
+  "type": "module",
+  "dependencies": {}
 }

@@ -1,5 +1,5 @@
 /**
- * S4 右栏 会话面板 —— ui-design.md §六。
+ * S4 右栏 会话面板 —— views-design.md §12.5。
  *
  * tabs 数据源 = openPaths（≠ 全部会话）；关闭标签 ≠ 删除数据；
  * streaming 脉冲点随标题居中；自动滚动（距底 <80px 才跟随）。

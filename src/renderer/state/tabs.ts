@@ -1,14 +1,14 @@
 /**
  * Tabs 域（zustand）—— 中栏打开集合（一个 tab = 一个视图实例）。
  *
- * 职责边界（docs/tabs-design.md §六）：纯集合语义——顺序 / 激活 / 固定 / 脏态 /
+ * 职责边界（docs/views-design.md §六）：纯集合语义——顺序 / 激活 / 固定 / 脏态 /
  * 生命周期状态投影；不触达 IPC、总线与视图宿主。视图事实由 tabService（宿主适配层）
  * 投影进来；tab 集合是 TabsBar / Sidebar 展开项 / 地址栏的共同数据源。
  */
 import { create } from 'zustand';
 import type { DocumentMeta, PluginInfo } from '../../shared/types';
 
-/** 视图生命周期状态（tabs-design.md §三，与 view-lifecycle.md 状态机一致）。 */
+/** 视图生命周期状态（views-design.md §三，与 views-design.md 状态机一致）。 */
 export type ViewState =
   | 'creating'
   | 'loading'
@@ -18,10 +18,10 @@ export type ViewState =
   | 'error'
   | 'destroyed';
 
-export type TabKind = 'document' | 'plugin' | 'builtin' | 'browser';
+export type TabKind = 'document' | 'plugin' | 'browser';
 
 export interface TabEntry {
-  /** 稳定键（跨重启持久化用；规则见 tabs-design.md §2.1）。 */
+  /** 稳定键（跨重启持久化用；规则见 views-design.md §2.1）。 */
   tabKey: string;
   /** 运行时句柄（视图宿主的 instanceId）。 */
   instanceId: string;

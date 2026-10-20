@@ -1,5 +1,5 @@
 /**
- * DocumentList —— 文档二级列表（ui-design.md §4.4）。
+ * DocumentList —— 文档二级列表（views-design.md §12.3）。
  *
  * 形态（按 sidebarView）：
  *   docs  → 本地文档
@@ -19,8 +19,8 @@ import {
 } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import { useDocumentsStore } from '../../state/documents';
+import { useOpenTabsProjection } from '../../state/openTabs';
 import { useTabServiceStore } from '../../state/tabService';
-import { activeDocIdOf, tempTabsOf, useTabsStore } from '../../state/tabs';
 import { useUiStore } from '../../state/uiState';
 import { EmptyState, SubListView } from './SubListView';
 import { TEMP_PAGES_DOMAIN, TEMP_PAGES_TITLE } from './tempPages';
@@ -105,10 +105,7 @@ export function DocumentList() {
   const sidebarDomain = useUiStore((s) => s.sidebarDomain);
   const documents = useDocumentsStore((s) => s.documents);
   const groups = useDocumentsStore((s) => s.groups);
-  const tabs = useTabsStore((s) => s.tabs);
-  const activeInstanceId = useTabsStore((s) => s.activeId);
-
-  const activeDocId = activeDocIdOf(tabs, activeInstanceId);
+  const { tempTabs, activeDocId, activeInstanceId } = useOpenTabsProjection();
 
   const webGroups = groups.filter((g) => g.source === 'web');
   const activeWebGroup =
@@ -116,7 +113,6 @@ export function DocumentList() {
 
   /** 临时网页形态：二级列表 = 打开的（名单外）标签页，而不是 URA 文档。 */
   const isTempPages = view === 'web' && sidebarDomain === TEMP_PAGES_DOMAIN;
-  const tempTabs = tempTabsOf(tabs);
 
   /** 当前形态的数据源（标题 / 空态图标 / 文档集）。 */
   const form = useMemo(() => {
@@ -202,11 +198,17 @@ export function DocumentList() {
               <div
                 key={tab.instanceId}
                 data-testid="temp-page-tab"
-                onClick={() =>
-                  void useTabServiceStore
-                    .getState()
-                    .activateInstance(tab.instanceId)
-                }
+                onClick={() => {
+                  const bridge = window.workbench;
+                  if (bridge)
+                    void bridge.cmd('views.activate', {
+                      id: tab.instanceId,
+                    });
+                  else
+                    void useTabServiceStore
+                      .getState()
+                      .activateInstance(tab.instanceId);
+                }}
                 className="group relative flex items-center px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200 dark:hover:bg-[#2a2c2d] transition-colors min-h-[42px]"
                 title={tab.url}
               >

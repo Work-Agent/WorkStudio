@@ -11,6 +11,8 @@ files:
   - out/**/*
   - package.json
 
+# pi 及其依赖已全部打进 out/main bundle（externalizeDeps: false），
+# 运行期不加载 node_modules；应用代码与 bundle 同处 asar。
 asar: true
 
 # Electron 二进制开关（与安全基线一致：禁 Node 注入、禁调试参数、只从 asar 加载）

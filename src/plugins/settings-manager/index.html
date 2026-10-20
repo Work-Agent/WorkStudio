@@ -1,0 +1,669 @@
+<!doctype html>
+<!--
+  偏好设置页（settings-manager 插件 config 页）—— agent-design.md §十 / views-design.md §十五。
+  数据面：window.extension.invoke('app:settings.*')；两层：App 默认 / 本工作区。
+  值语义：null = 删除该键（回落继承 / pi 默认）；未列出的字段原样保真。
+-->
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>偏好设置</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f4f5;
+        --panel: #ffffff;
+        --fg: #27272a;
+        --muted: #71717a;
+        --border: #e4e4e7;
+        --accent: #4f6bed;
+        --accent-hover: #3d56e0;
+        --input-bg: #ffffff;
+        --danger: #dc2626;
+      }
+      html[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #1a1c1d;
+        --panel: #202124;
+        --fg: #e4e4e7;
+        --muted: #8b8d8e;
+        --border: #2a2d2e;
+        --accent: #6c86f0;
+        --accent-hover: #5a76e8;
+        --input-bg: #1c1e1f;
+        --danger: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica,
+          Arial, sans-serif;
+        font-size: 13px;
+        overflow: auto;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px 24px 80px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+        margin-top: 16px;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .scope {
+        font-weight: 400;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .path {
+        margin-top: 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      .grid {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 14px;
+      }
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+      .field label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 5px;
+        color: var(--fg);
+      }
+      .cur {
+        color: var(--muted);
+        font-size: 11px;
+        margin-left: 6px;
+      }
+      input[type='text'],
+      input[type='number'],
+      select,
+      textarea {
+        width: 100%;
+        background: var(--input-bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      textarea {
+        min-height: 68px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .field.check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 18px;
+      }
+      .field.check label {
+        margin: 0;
+      }
+      .row-end {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .hint {
+        margin-right: auto;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      button {
+        background: var(--panel);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--accent-hover);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .foot {
+        margin: 16px 2px 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.7;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%) translateY(8px);
+        background: rgba(24, 24, 27, 0.94);
+        color: #fafafa;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.16s ease,
+          transform 0.16s ease;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      .toast.error {
+        background: #991b1b;
+      }
+      .empty {
+        color: var(--muted);
+        font-size: 12px;
+        padding: 8px 0;
+      }
+      .reg-groups { display: flex; flex-direction: column; gap: 14px; }
+      .reg-group .reg-title {
+        font-size: 11.5px; font-weight: 600; color: var(--muted);
+        text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px;
+      }
+      .reg-row {
+        display: flex; align-items: baseline; gap: 10px;
+        padding: 5px 8px; border-radius: 6px; font-size: 12px;
+      }
+      .reg-row:nth-child(odd) { background: var(--hover); }
+      .reg-key { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .reg-owner {
+        flex-shrink: 0; color: var(--muted); font-size: 11px;
+        border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+      }
+      .reg-diag { margin-top: 12px; font-size: 11.5px; color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>偏好设置</h1>
+        <p>
+          两层配置：<b>App 默认</b> 对所有工作区生效，<b>本工作区</b>
+          只对当前工作区生效。 生效值 = 两层深度合并（工作区覆盖
+          App）；清空某字段即删除该键，回落到下一层或 pi
+          默认。未列出的字段原样保真。
+        </p>
+      </header>
+
+      <section class="card">
+        <h3>App 默认 <span class="scope">settings.json</span></h3>
+        <div class="path" id="path-global"></div>
+        <div class="grid" id="grid-global"></div>
+        <div class="row-end">
+          <span class="hint" id="hint-global"></span>
+          <button onclick="load()">重新加载</button>
+          <button class="primary" onclick="save('global')">
+            保存 App 默认
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>
+          本工作区 <span class="scope">ws/&lt;wsId&gt;/settings.json</span>
+        </h3>
+        <div class="path" id="path-project"></div>
+        <div class="grid" id="grid-project"></div>
+        <div class="row-end">
+          <span class="hint" id="hint-project"></span>
+          <button class="primary" onclick="save('project')">
+            保存本工作区
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>
+          本工作区 · 注册项 <span class="scope">URA 注册表</span>
+        </h3>
+        <p class="hint" style="margin: -4px 0 12px">
+          应用级注册表在启动时装配；这里只展示本工作区当前可用的实现。
+        </p>
+        <div class="reg-groups" id="registry"></div>
+        <div class="reg-diag" id="registry-diag"></div>
+        <div class="row-end">
+          <span class="hint"></span>
+          <button onclick="loadRegistry()">刷新注册项</button>
+        </div>
+      </section>
+
+      <p class="foot">
+        写入即落盘（主进程原子写 + JSON 未知字段保真）；pi
+        在会话重建时读取新值。
+      </p>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+      // ── 字段目录（点分路径 ↔ 控件；null = 删除键回落默认） ──
+      const THINKING = ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+      const MODES = ['', 'all', 'one-at-a-time'];
+      const FIELDS = {
+        global: [
+          {
+            path: 'defaultThinkingLevel',
+            label: '默认思考档位',
+            type: 'select',
+            options: THINKING,
+          },
+          {
+            path: 'theme',
+            label: '主题（pi 主题名）',
+            type: 'text',
+            placeholder: '留空 = 默认',
+          },
+          {
+            path: 'steeringMode',
+            label: '转向模式',
+            type: 'select',
+            options: MODES,
+          },
+          {
+            path: 'followUpMode',
+            label: '追问模式',
+            type: 'select',
+            options: MODES,
+          },
+          {
+            path: 'compaction.enabled',
+            label: '自动压缩上下文',
+            type: 'check',
+          },
+          { path: 'retry.enabled', label: '失败自动重试', type: 'check' },
+          {
+            path: 'compaction.reserveTokens',
+            label: '压缩保留 tokens',
+            type: 'number',
+          },
+          { path: 'retry.maxRetries', label: '重试次数', type: 'number' },
+          {
+            path: 'compaction.keepRecentTokens',
+            label: '压缩近端保留 tokens',
+            type: 'number',
+          },
+          {
+            path: 'retry.baseDelayMs',
+            label: '重试基础延迟 ms',
+            type: 'number',
+          },
+          { path: 'hideThinkingBlock', label: '折叠思考块', type: 'check' },
+          { path: 'quietStartup', label: '静默启动', type: 'check' },
+          { path: 'enableSkillCommands', label: '技能斜杠命令', type: 'check' },
+          { path: 'images.autoResize', label: '图片自动缩放', type: 'check' },
+          { path: 'images.blockImages', label: '阻止图片输入', type: 'check' },
+          {
+            path: 'externalEditor',
+            label: '外部编辑器（$EDITOR）',
+            type: 'text',
+            wide: true,
+          },
+        ],
+        project: [
+          {
+            path: 'enabledModels',
+            label: '模型白名单（provider/modelId，每行一个；空 = 全部）',
+            type: 'lines',
+            wide: true,
+          },
+          {
+            path: 'extensions',
+            label: 'pi 扩展路径（每行一个）',
+            type: 'lines',
+          },
+          { path: 'skills', label: '技能目录（每行一个）', type: 'lines' },
+          { path: 'prompts', label: '提示模板路径（每行一个）', type: 'lines' },
+          { path: 'themes', label: '主题路径（每行一个）', type: 'lines' },
+        ],
+      };
+
+      let view = null;
+
+      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[c],
+        );
+
+      function getByPath(obj, path) {
+        let cur = obj;
+        for (const k of path.split('.')) {
+          if (cur == null || typeof cur !== 'object') return undefined;
+          cur = cur[k];
+        }
+        return cur;
+      }
+      function hasByPath(obj, path) {
+        let cur = obj;
+        for (const k of path.split('.')) {
+          if (cur == null || typeof cur !== 'object' || !(k in cur))
+            return false;
+          cur = cur[k];
+        }
+        return true;
+      }
+      const fmt = (v) => (Array.isArray(v) ? v.join(' / ') : String(v));
+
+      function renderScope(scope, own, effective) {
+        const grid = $('grid-' + scope);
+        grid.innerHTML = '';
+        for (const f of FIELDS[scope]) {
+          const val = getByPath(own, f.path);
+          const eff = getByPath(effective, f.path);
+          const inherited = !hasByPath(own, f.path);
+          const cur = inherited
+            ? eff !== undefined
+              ? '（生效: ' + fmt(eff) + '）'
+              : '（未设置）'
+            : '';
+          const div = document.createElement('div');
+          div.className =
+            'field' +
+            (f.wide ? ' wide' : '') +
+            (f.type === 'check' ? ' check' : '');
+          let control = '';
+          if (f.type === 'check') {
+            control =
+              '<input type="checkbox" data-path="' +
+              f.path +
+              '" data-type="check"' +
+              (val === true ? ' checked' : '') +
+              '>';
+            div.innerHTML =
+              control +
+              '<label>' +
+              f.label +
+              '<span class="cur">' +
+              cur +
+              '</span></label>';
+          } else if (f.type === 'select') {
+            control =
+              '<select data-path="' +
+              f.path +
+              '" data-type="select">' +
+              f.options
+                .map(
+                  (o) =>
+                    '<option value="' +
+                    o +
+                    '"' +
+                    (String(val ?? '') === o ? ' selected' : '') +
+                    '>' +
+                    (o === '' ? '（默认）' : o) +
+                    '</option>',
+                )
+                .join('') +
+              '</select>';
+            div.innerHTML =
+              '<label>' +
+              f.label +
+              '<span class="cur">' +
+              cur +
+              '</span></label>' +
+              control;
+          } else if (f.type === 'number') {
+            control =
+              '<input type="number" data-path="' +
+              f.path +
+              '" data-type="number" value="' +
+              (val ?? '') +
+              '" placeholder="默认">';
+            div.innerHTML =
+              '<label>' +
+              f.label +
+              '<span class="cur">' +
+              cur +
+              '</span></label>' +
+              control;
+          } else if (f.type === 'lines') {
+            control =
+              '<textarea data-path="' +
+              f.path +
+              '" data-type="lines" spellcheck="false">' +
+              esc(Array.isArray(val) ? val.join('\n') : '') +
+              '</textarea>';
+            div.innerHTML =
+              '<label>' +
+              f.label +
+              '<span class="cur">' +
+              cur +
+              '</span></label>' +
+              control;
+          } else {
+            control =
+              '<input type="text" data-path="' +
+              f.path +
+              '" data-type="text" value="' +
+              esc(val ?? '') +
+              '"' +
+              (f.placeholder
+                ? ' placeholder="' + esc(f.placeholder) + '"'
+                : '') +
+              '>';
+            div.innerHTML =
+              '<label>' +
+              f.label +
+              '<span class="cur">' +
+              cur +
+              '</span></label>' +
+              control;
+          }
+          grid.appendChild(div);
+        }
+      }
+
+      function render() {
+        $('path-global').textContent = view.paths.global;
+        $('path-project').textContent = view.paths.project;
+        renderScope('global', view.global, view.effective);
+        renderScope('project', view.project, view.effective);
+      }
+
+      /** 控件值 → 设置值（null = 删除该键）。 */
+      function readControl(el) {
+        const type = el.dataset.type;
+        if (type === 'check') return el.checked ? true : null;
+        if (type === 'number') return el.value === '' ? null : Number(el.value);
+        if (type === 'lines') {
+          const lines = el.value
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean);
+          return lines.length ? lines : null;
+        }
+        return el.value === '' ? null : el.value;
+      }
+
+      async function save(scope) {
+        const box = $('grid-' + scope);
+        const changes = [];
+        box.querySelectorAll('[data-path]').forEach((el) => {
+          const path = el.dataset.path;
+          const next = readControl(el);
+          const prevRaw = getByPath(view[scope], path);
+          const prev = prevRaw === undefined ? null : prevRaw;
+          const same =
+            JSON.stringify(prev) === JSON.stringify(next) ||
+            (prev === null && next === null);
+          if (!same) changes.push({ path, value: next });
+        });
+        if (!changes.length) {
+          toast('没有改动');
+          return;
+        }
+        const cmd =
+          scope === 'global'
+            ? 'app:settings.setGlobal'
+            : 'app:settings.setProject';
+        try {
+          for (const change of changes) {
+            view = await invoke(cmd, change);
+          }
+          render();
+          toast(
+            '已保存 ' +
+              changes.length +
+              ' 项到 ' +
+              (scope === 'global' ? 'App 默认' : '本工作区'),
+          );
+        } catch (e) {
+          toast('保存失败：' + (e && e.message ? e.message : e), true);
+        }
+      }
+
+      async function load() {
+        try {
+          view = await invoke('app:settings.view');
+          render();
+        } catch (e) {
+          toast('读取失败：' + (e && e.message ? e.message : e), true);
+        }
+      }
+
+      // ── URA 注册表（哪几个注册面已经装配） ──
+      function regRows(rows, keyOf) {
+        if (!rows.length) return '<div class="empty">未注册</div>';
+        return rows
+          .map(
+            (row) =>
+              '<div class="reg-row"><span class="reg-key">' +
+              esc(keyOf(row)) +
+              '</span><span class="reg-owner">' +
+              esc(row.owner) +
+              '</span></div>',
+          )
+          .join('');
+      }
+
+      function renderRegistry(data) {
+        const groups = [
+          ['来源 transport', data.transports || [], (r) => r.scheme],
+          ['格式 codec', data.codecs || [], (r) => r.docType + ' · ' + (r.hints || []).join('/')],
+          ['数据 store', data.stores || [], (r) => r.docType],
+          ['出口 consumer', data.consumers || [], (r) => r.key + (r.surface ? ' → ' + r.surface : '')],
+          ['集合 collection', data.collections || [], (r) => r.id + ' · ' + r.label],
+          [
+            '动作 view action',
+            data.actions || [],
+            (r) => r.id + ' · ' + r.label + ' → ' + r.target + (r.toggle ? '（开关）' : ''),
+          ],
+        ];
+        $('registry').innerHTML = groups
+          .map(
+            ([title, rows, keyOf]) =>
+              '<div class="reg-group"><div class="reg-title">' +
+              esc(title) +
+              '</div>' +
+              regRows(rows, keyOf) +
+              '</div>',
+          )
+          .join('');
+        const diagnostics = data.diagnostics || [];
+        const issues = diagnostics.filter((d) => d.level !== 'info');
+        $('registry-diag').textContent = issues.length
+          ? '诊断：' + issues.map((d) => d.code + ' ' + d.message).join('；')
+          : '';
+      }
+
+      async function loadRegistry() {
+        try {
+          renderRegistry(await invoke('app:ura.registry'));
+        } catch (e) {
+          toast('注册项读取失败：' + (e && e.message ? e.message : e), true);
+        }
+      }
+
+      let toastTimer = 0;
+      function toast(message, error) {
+        const el = $('toast');
+        el.textContent = message;
+        el.className = 'toast show' + (error ? ' error' : '');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => (el.className = 'toast'), 2200);
+      }
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme =
+          theme === 'dark' ? 'dark' : 'light';
+      }
+
+      // 主题：系统偏好起步，主进程广播收敛（零白闪）
+      void loadRegistry();
+      applyTheme(
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light',
+      );
+      window.extension.bus.on((msg) => {
+        if (msg && msg.type === 'theme') applyTheme(msg.theme);
+      });
+      window.extension.bus.loaded();
+      load();
+    </script>
+  </body>
+</html>

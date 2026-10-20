@@ -1,0 +1,12 @@
+{
+  "name": "@workstudio/plugin-storage",
+  "version": "1.0.0",
+  "description": "落盘位置总览（配置 / 凭证 / 会话 / 界面状态 / 资源 / 插件 / 日志）与会话目录配置",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "storage",
+    "label": "存储与数据",
+    "icon": "hard-drive",
+    "settings": "index.html"
+  }
+}

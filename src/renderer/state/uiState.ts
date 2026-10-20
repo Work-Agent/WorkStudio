@@ -10,6 +10,9 @@ import { create } from 'zustand';
 import type { UiState } from '../../shared/types';
 import { agentAPI } from '../api/bridge';
 
+/** 主进程桥（新架构）；存在时 UI 状态以主进程为唯一真相源（禁用 mock 写路径）。 */
+const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
+
 const DEFAULTS: UiState = {
   __version__: 1,
   theme: 'dark',
@@ -73,6 +76,12 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   init: async () => {
     if (get().hydrated) return;
+    if (mainBridge) {
+      const result = await mainBridge.sync();
+      set({ ...merge(result.shell.ui), hydrated: true });
+      mainBridge.onState((snapshot) => set(merge(snapshot.ui)));
+      return;
+    }
     const remote = await agentAPI.uiState.get();
     set({ ...merge(remote), hydrated: true });
     agentAPI.uiState.onChanged((state) => set(merge(state)));
@@ -80,6 +89,10 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   patch: (patch) => {
     set(patch as Partial<UiStoreState>);
+    if (mainBridge) {
+      void mainBridge.cmd('ui.set', { patch });
+      return;
+    }
     const next = { ...snapshot(get()), ...patch };
     void agentAPI.uiState.set({
       ...patch,
@@ -96,6 +109,10 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   /** 会话标签打开语义：加入 openPaths（若未在）+ 激活。 */
   openSessionTab: (path) => {
+    if (mainBridge) {
+      void mainBridge.cmd('session.openTab', { path });
+      return;
+    }
     const { openPaths } = get();
     const next = openPaths.includes(path)
       ? [...openPaths]
@@ -106,6 +123,10 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   /** 关闭标签 ≠ 删除：openPaths 移除；关的是活跃则切相邻，无剩余回新任务态。 */
   closeSessionTab: (path) => {
+    if (mainBridge) {
+      void mainBridge.cmd('session.closeTabs', { paths: [path] });
+      return;
+    }
     const { openPaths, activePath } = get();
     const next = openPaths.filter((p) => p !== path);
     let nextActive = activePath;

@@ -1,28 +1,47 @@
 /**
  * 配置域 store（zustand）—— Agent 运行配置的渲染层投影。
  *
- * 真相源在主进程（默认 provider/model 解析；目录 = models.json）：status 快照经
- * IPC 拉取，configure 增量提交即时生效（S4 模型/思考切换器与模型配置页同源）。
+ * 真相源在主进程（默认 provider/model 解析；目录 = pi 组合目录）：status 快照经
+ * `ws:sync` / `agent.status` 与 `agent_status_changed` 事件收敛；configure 增量提交
+ * 即时生效（模型/思考切换器与模型设置页同源）。
  *
  * 铁律：渲染层不伪造默认值——初始形态 = 「未配置」，真实状态由 init() 首拉注入。
+ * 无 workbench 桥时（独立页面开发）回退 mock 数据面。
  */
 import { create } from 'zustand';
 import type {
   AgentConfigureInput,
+  AgentSnapshot,
   AgentStatus,
   ModelOption,
   SkillInfo,
+  WorkspaceInfo,
 } from '../../shared/types';
 import { agentAPI } from '../api/bridge';
 import { useDocumentsStore } from './documents';
+
+const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
+
+/** AgentSnapshot → AgentStatus（渲染层配置投影子集）。 */
+export function toAgentStatus(s: AgentSnapshot): AgentStatus {
+  return {
+    configured: s.configured,
+    ...(s.provider ? { provider: s.provider } : {}),
+    ...(s.modelId ? { modelId: s.modelId } : {}),
+    ...(s.thinkingLevel ? { thinkingLevel: s.thinkingLevel } : {}),
+    ...(s.workspacePath ? { workspacePath: s.workspacePath } : {}),
+  };
+}
 
 interface AgentConfigState {
   status: AgentStatus;
   models: ModelOption[];
   skills: SkillInfo[];
+  workspaces: WorkspaceInfo[];
   init: () => Promise<void>;
   refresh: () => Promise<void>;
   refreshSkills: () => Promise<void>;
+  refreshWorkspaces: () => Promise<void>;
   switchWorkspace: (path: string) => Promise<void>;
   applyStatus: (next: AgentStatus) => void;
   configure: (input: AgentConfigureInput) => Promise<void>;
@@ -33,20 +52,50 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
   status: { configured: false },
   models: [],
   skills: [],
+  workspaces: [],
 
   refresh: async () => {
+    if (mainBridge) {
+      const r = await mainBridge.cmd<AgentSnapshot>('agent.status');
+      if (r.ok) set({ status: toAgentStatus(r.data) });
+      return;
+    }
     set({ status: await agentAPI.status() });
   },
 
   refreshSkills: async () => {
     try {
+      if (mainBridge) {
+        const r = await mainBridge.cmd<SkillInfo[]>('skills.list');
+        set({ skills: r.ok ? r.data : [] });
+        return;
+      }
       set({ skills: await agentAPI.skills.list() });
     } catch (e) {
       console.error('Failed to load skills:', e);
     }
   },
 
+  refreshWorkspaces: async () => {
+    if (!mainBridge) return;
+    const r = await mainBridge.cmd<WorkspaceInfo[]>('agent.workspaces');
+    if (r.ok) set({ workspaces: r.data });
+  },
+
   init: async () => {
+    if (mainBridge) {
+      const [models, status] = await Promise.all([
+        mainBridge.cmd<ModelOption[]>('agent.models'),
+        mainBridge.cmd<AgentSnapshot>('agent.status'),
+      ]);
+      set({
+        models: models.ok ? models.data : [],
+        status: status.ok ? toAgentStatus(status.data) : { configured: false },
+      });
+      void get().refreshSkills();
+      void get().refreshWorkspaces();
+      return;
+    }
     const [modelOptions] = await Promise.all([
       agentAPI.models(),
       get().refresh(),
@@ -61,9 +110,18 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
 
   /** 工作区切换（独立通道，不经模型配置）：重绑资源域/会话域/技能。 */
   switchWorkspace: async (path) => {
-    set({ status: await agentAPI.setWorkspace(path) });
+    if (mainBridge) {
+      const r = await mainBridge.cmd<AgentSnapshot>('agent.setWorkspace', {
+        path,
+      });
+      if (!r.ok) throw new Error(r.error.message);
+      set({ status: toAgentStatus(r.data) });
+    } else {
+      set({ status: await agentAPI.setWorkspace(path) });
+    }
     await useDocumentsStore.getState().refresh();
     await get().refreshSkills();
+    await get().refreshWorkspaces();
   },
 
   /** 运行配置事件收敛（agent_status_changed）：主进程真相 → 配置域投影。 */
@@ -77,7 +135,20 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
     const provider = input.provider ?? s.provider;
     const modelId = input.modelId ?? s.modelId;
     if (!provider || !modelId) {
-      throw new Error('model not configured: pick a model in 模型设置 first');
+      throw new Error(
+        '尚未配置模型：请在「设置 → 模型配置」中登录供应商并选择模型',
+      );
+    }
+    if (mainBridge) {
+      const r = await mainBridge.cmd<AgentSnapshot>('agent.configure', {
+        provider,
+        modelId,
+        thinkingLevel: input.thinkingLevel ?? s.thinkingLevel,
+        ...input,
+      });
+      if (!r.ok) throw new Error(r.error.message);
+      set({ status: toAgentStatus(r.data) });
+      return;
     }
     const next = await agentAPI.configure({
       provider,

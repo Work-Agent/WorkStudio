@@ -1,51 +1,138 @@
+import { cpSync, existsSync, rmSync } from 'fs';
+import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
+import type { Plugin } from 'vite';
+import * as CHANNELS from './src/shared/channels';
+
+/**
+ * 内置插件（src/plugins：manifest + 静态页面）不参与打包，直接拷贝到 out/plugins。
+ * PluginRegistry 生产环境扫 out/plugins（dev 扫 src/plugins），两处必须同形。
+ */
+function copyBuiltinPlugins(): Plugin {
+  return {
+    name: 'ws-copy-builtin-plugins',
+    writeBundle() {
+      const from = resolve(__dirname, 'src/plugins');
+      const to = resolve(__dirname, 'out/plugins');
+      if (!existsSync(from)) return;
+      rmSync(to, { recursive: true, force: true });
+      cpSync(from, to, { recursive: true });
+      this.info(`copied builtin plugins → ${to}`);
+    },
+  };
+}
+
+/**
+ * sandbox 化的 preload 只有一个受控的 require（不支持相对路径 chunk），
+ * 因此 preload 构建必须单文件、零共享 chunk。通道常量是 preload 唯一的
+ * 运行时共享 import —— 这里把它内联为字面量，保持 shared/channels.ts 单一事实源。
+ */
+function inlinePreloadChannels(): Plugin {
+  const map = CHANNELS as unknown as Record<string, string>;
+  return {
+    name: 'ws-inline-preload-channels',
+    enforce: 'pre',
+    transform(code: string, id: string) {
+      if (!id.includes('/src/preload/') || !code.includes('/shared/channels'))
+        return null;
+      return code.replace(
+        /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*shared\/channels['"];?/g,
+        (_match, names: string) =>
+          names
+            .split(',')
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .map(
+              (name) => `const ${name} = ${JSON.stringify(map[name] ?? '')};`,
+            )
+            .join('\n'),
+      );
+    },
+  };
+}
+
+/**
+ * 主进程 bundle 需要 pi（ESM 依赖链）：
+ * Rolldown 为 chunk 内的 CJS 依赖注入 `const __filename = import.meta.filename`
+ * 垫片，而 pi 自己的 dist/config.js 又声明 `var __filename = fileURLToPath(...)`，
+ * 同模块作用域下重复声明 → ESM 语法错误。这里在打包前把 pi 源码里的
+ * __filename / __dirname 统一改名（其用法局限于文件内部）。
+ */
+function renamePiNodeGlobals(): Plugin {
+  return {
+    name: 'ws-rename-pi-node-globals',
+    enforce: 'pre',
+    transform(code: string, id: string) {
+      if (!id.includes('node_modules/@earendil-works/')) return null;
+      if (!code.includes('__filename') && !code.includes('__dirname'))
+        return null;
+      return code
+        .replace(/\b__filename\b/g, '__piFilename')
+        .replace(/\b__dirname\b/g, '__piDirname');
+    },
+  };
+}
 
 /**
  * electron-vite 构建配置（三段：main / preload / renderer）。
  *
- * - main、preload 输出 CJS（.cjs），与 package.json `main` = out/main/main.cjs 对应
- *   （package.json 无 `type: module`，Electron 按 CJS 加载）
- * - electron 与 node 内置模块由 electron-vite 预设外部化；dependencies 由
- *   `build.externalizeDeps` 自动外部化（该选项默认 true，无需插件）
- * - renderer 以项目根为 root（index.html 在根），产物 out/renderer；
- *   生产构建 base 自动为 './'，故 index.html 用相对路径加载
+ * - 主进程：ESM（package.json type: module），产物 out/main/index.js
+ *   —— pi SDK 是 ESM-only，静态 import 必须 ESM 载体。
+ * - preload：多入口 CJS（.cjs）且单文件（共享常量内联）——sandbox: true 的
+ *   WebContentsView 只接受 CJS 且无相对 require 能力。
+ * - renderer：多页面（工作台 / 助手 / 浮层；指针捕获层用内联 data: 页，无独立入口）。
  */
 export default defineConfig({
   main: {
+    plugins: [renamePiNodeGlobals(), copyBuiltinPlugins()],
     build: {
       outDir: 'out/main',
+      // 依赖全部打进主进程 bundle（pi + 其依赖）：打包时不再依赖 node_modules
+      // 布局（pnpm hoisted 的嵌套依赖会被 electron-builder 漏拷）。
+      externalizeDeps: false,
       lib: {
-        entry: 'src/main.ts',
-        formats: ['cjs'],
+        entry: 'src/main/index.ts',
+        formats: ['es'],
       },
-      // ssr 构建下 Vite 忽略 lib.fileName，只能从 output 指定入口文件名
       rolldownOptions: {
-        output: { entryFileNames: 'main.cjs' },
+        output: { entryFileNames: 'index.js' },
       },
     },
   },
   preload: {
+    plugins: [inlinePreloadChannels()],
     build: {
       outDir: 'out/preload',
-      lib: {
-        entry: 'src/preload.ts',
-        formats: ['cjs'],
-      },
       rolldownOptions: {
-        output: { entryFileNames: 'preload.cjs' },
+        input: {
+          workbench: resolve(__dirname, 'src/preload/workbench.ts'),
+          assistant: resolve(__dirname, 'src/preload/assistant.ts'),
+          extension: resolve(__dirname, 'src/preload/extension.ts'),
+          browser: resolve(__dirname, 'src/preload/browser.ts'),
+          overlay: resolve(__dirname, 'src/preload/overlay.ts'),
+          capture: resolve(__dirname, 'src/preload/capture.ts'),
+        },
+        output: {
+          entryFileNames: '[name].cjs',
+          format: 'cjs',
+        },
       },
     },
   },
   renderer: {
     root: '.',
+    plugins: [react(), tailwindcss()],
     build: {
       outDir: 'out/renderer',
       rolldownOptions: {
-        input: 'index.html',
+        input: {
+          index: resolve(__dirname, 'index.html'),
+          assistant: resolve(__dirname, 'assistant.html'),
+          overlay: resolve(__dirname, 'overlay.html'),
+        },
       },
     },
-    plugins: [react(), tailwindcss()],
   },
 });

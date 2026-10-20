@@ -160,3 +160,6 @@ dist/
 # pi (local agent tooling)
 .pi/
 
+
+# macOS
+.DS_Store

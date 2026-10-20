@@ -1,0 +1,12 @@
+{
+  "name": "@workstudio/plugin-settings-manager",
+  "version": "1.0.0",
+  "description": "两层设置管理：App 默认（<agentDir>/settings.json）/ 本工作区（ws/<wsId>/settings.json）——设置即落盘，生效值实时预览",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-manager",
+    "label": "偏好设置",
+    "icon": "sliders",
+    "settings": "index.html"
+  }
+}

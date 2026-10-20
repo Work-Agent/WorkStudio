@@ -15,32 +15,41 @@ import {
   bindThemeBroadcast,
   useTabServiceStore,
 } from './state/tabService';
+import { initShellProjection } from './state/shell';
 import { initUiState } from './state/uiState';
 import './index.css';
 
 async function bootstrap(): Promise<void> {
   try {
-    // 1. 用户操作状态 hydrate（主进程 ui-state.json 真相源）
+    // 1. 用户操作状态 hydrate（主进程 ui-state.json 真相源）+ shell 布局/视图投影
     await initUiState();
-    console.log('[bootstrap] uiState hydrated');
+    await initShellProjection();
+    console.log('[bootstrap] shell projection ready');
 
-    // 2. 领域 store 初始化（IPC 拉取 + 事件订阅）
+    // 2. 领域 store 初始化
+    //    新架构（window.workbench 存在）：全线走主进程命令，mock / tabService 不初始化；
+    //    旧路径（独立页面开发）保留 mock 初始化。
+    const hasMainBridge = Boolean(window.workbench);
     bindPiEvents();
-    bindPiUIRequests();
+    if (!hasMainBridge) {
+      bindPiUIRequests();
+    }
     await Promise.all([
       useConversationStore.getState().init(),
-      useTabServiceStore.getState().init(),
       useDocumentsStore.getState().init(),
       useAgentConfigStore.getState().init(),
+      ...(hasMainBridge ? [] : [useTabServiceStore.getState().init()]),
     ]);
     console.log('[bootstrap] stores initialized');
 
     // 3. 全局编排（内容投递 / 主题广播 / 外部变更重投）
     //    原生三键（WCO）留白 → CSS 变量：先于 TitleBar 挂载（TitleBar 布局依赖它）
     bindTitlebarInsets();
-    bindContentDelivery();
-    bindThemeBroadcast();
-    bindExternalContentSync();
+    if (!hasMainBridge) {
+      bindContentDelivery();
+      bindThemeBroadcast();
+      bindExternalContentSync();
+    }
 
     createRoot(document.getElementById('root')!).render(
       <StrictMode>

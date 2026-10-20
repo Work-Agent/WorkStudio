@@ -1,5 +1,5 @@
 /**
- * S2 左栏 Sidebar（工作台）—— ui-design.md §四。
+ * S2 左栏 Sidebar（工作台）—— views-design.md §12.3。
  *
  * 形态路由：主列表（资源分组 + 打开项）/ 二级列表 / 插件列表 / 设置列表。
  * 核心规则：
@@ -12,18 +12,15 @@ import { useMemo, useState, type ComponentType } from 'react';
 import { FileText, FolderOpen, Globe, Hourglass } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import { useDocumentsStore } from '../../state/documents';
-import {
-  activeDocIdOf,
-  openDocsOf,
-  tempTabsOf,
-  useTabsStore,
-} from '../../state/tabs';
+import { useOpenTabsProjection } from '../../state/openTabs';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { DocumentList } from './DocumentList';
+import { FindList } from './FindList';
 import { GroupRow } from './GroupRow';
 import { OpenItem } from './OpenItem';
 import { PluginList } from './PluginList';
 import { SettingsList } from './SettingsList';
+import { SidebarNav } from './SidebarNav';
 import { TEMP_PAGES_DOMAIN, TEMP_PAGES_TITLE } from './tempPages';
 
 type GroupTarget = 'docs' | 'web';
@@ -48,8 +45,7 @@ export function Sidebar() {
   const documents = useDocumentsStore((s) => s.documents);
   const groupsData = useDocumentsStore((s) => s.groups);
 
-  const tabs = useTabsStore((s) => s.tabs);
-  const activeId = useTabsStore((s) => s.activeId);
+  const { openDocs, tempTabs, activeDocId } = useOpenTabsProjection();
 
   // ── 分组（URA 资源按 source 分组；web 按域二级分组） ──
   const localDocs = useMemo(
@@ -66,12 +62,7 @@ export function Sidebar() {
   );
 
   /** 「临时网页」= 打开的 raw 标签页且域名不在名单内（不落盘，只活在标签里）。 */
-  const tempTabs = useMemo(() => tempTabsOf(tabs), [tabs]);
-
-  /** 打开的文档集合（按 id 去重）。 */
-  const openDocs = useMemo(() => openDocsOf(tabs), [tabs]);
-
-  const activeDocId = activeDocIdOf(tabs, activeId);
+  /** 打开的文档集合（按 id 去重）——由 useOpenTabsProjection 提供。 */
 
   const groups = useMemo<SidebarGroup[]>(() => {
     const list: SidebarGroup[] = [
@@ -157,6 +148,8 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-full" data-testid="sidebar">
       <div className="flex-1 flex flex-col bg-zinc-50 dark:bg-[#1A1C1D] min-w-0">
+        {/* 顶部视图切换（资源 / 插件 / 设置） */}
+        <SidebarNav />
         {/* 列表主体（收起态由各行组件隐藏文字，间距/尺寸不变） */}
         <div className="flex-1 overflow-y-auto px-1 py-1 space-y-1">
           {view === 'main' &&
@@ -192,9 +185,13 @@ export function Sidebar() {
             })}
 
           {/* 二级列表（docs/data/web）与插件/设置形态；会话列表在设置域「会话管理」页 */}
+          {view === 'find' && <FindList />}
           {view === 'plugins' && <PluginList />}
           {view === 'settings' && <SettingsList />}
-          {view !== 'main' && view !== 'plugins' && view !== 'settings' && (
+          {view !== 'main' &&
+            view !== 'plugins' &&
+            view !== 'settings' &&
+            view !== 'find' && (
             <DocumentList />
           )}
         </div>
