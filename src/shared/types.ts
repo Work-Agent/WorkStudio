@@ -349,10 +349,10 @@ export interface ExtensionInstance {
 }
 
 /** 插件运行时信息（供 UI 展示）。 */
-export type PluginType = 'web' | 'app';
+export type PluginType = 'app';
 
 export interface PluginInfo {
-  /** 扩展类型：web（页面即资源，仅注入/动作/集合）| app（自带 webapp + codec/projection）。 */
+  /** 插件类型：自带 webapp + 资源适配器。 */
   type: PluginType;
   id: string;
   name: string;
@@ -695,7 +695,7 @@ export type ViewState =
   | 'error'
   | 'destroyed';
 
-export type ViewType = 'extension' | 'browser';
+export type ViewType = 'settings' | 'extension' | 'browser';
 
 /** 视图投影（渲染层唯一数据面）。 */
 /** 激活视图的渲染器（地址栏图标与动作作用域）。 */

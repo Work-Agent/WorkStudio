@@ -71,7 +71,7 @@ export class PluginHost {
     return this.packages.get(id)
   }
 
-  /** 插件/内置页面统一解析（views.open 与页面白名单共用）。 */
+  /** 插件页面解析（views.open 与页面白名单共用）。 */
   getPage(id: string): PluginPageEntry | null {
     const pkg = this.packages.get(id)
     if (pkg?.page) {
@@ -111,9 +111,6 @@ export class PluginHost {
     return false
   }
 
-  settingsPageFor(id: string): string | null {
-    return this.packages.get(id)?.settings ?? null
-  }
 
   /** 插件清单投影（设置列表 / 插件列表）。 */
   pluginInfoList(): PluginInfo[] {

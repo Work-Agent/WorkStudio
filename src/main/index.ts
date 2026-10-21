@@ -56,16 +56,17 @@ import { SkillsManager } from './harness/skills';
 import { createUraRuntime, type UraRuntime } from './ura';
 import { WriteSessionRegistry } from './ura/sessions';
 import { PageSessions } from './ura/page-sessions';
-import { SiteSnapshots } from './harness/browser-snapshots';
+import { SiteSnapshots } from './capabilities/browser/snapshots';
+import { containsSettingsPage } from './capabilities/settings/registry';
 import { UiStateService } from './state/ui-state';
 import { broadcastToWindows } from './state/broadcast';
 import { registerRouter } from './command/router';
-import { InteractionController } from './views/interaction';
-import { NativeFacilities } from './views/native-facilities';
-import { BrowserAutomation } from './views/browser-views';
-import { ViewHost } from './views/view-host';
+import { InteractionController } from './capabilities/webview/interaction';
+import { NativeFacilities } from './capabilities/webview/native-facilities';
+import { BrowserAutomation } from './capabilities/browser/views';
+import { ViewHost } from './capabilities/webview/host';
 import { computeLayout } from '../shared/layout-engine';
-import { preloadPath } from './views/presets';
+import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
 import { mainDir, rendererFile } from './paths';
 
@@ -117,7 +118,7 @@ if (
   );
 }
 
-/** 插件页协议：app://plugin/<pluginId>/<src>（标准 + secure，生产不从 file:// 直开）。 */
+/** 页面协议：app://page/<绝对路径>（插件页与设置页共用；标准 + secure，生产不从 file:// 直开）。 */
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
@@ -141,7 +142,7 @@ function handleAppRequest(request: Request): Response | Promise<Response> {
     if (url.hostname !== 'page')
       return new Response('Not found', { status: 404 });
     const file = decodeURIComponent(url.pathname.replace(/^\//, ''));
-    if (!uraRuntime?.host.containsPage(file))
+    if (!uraRuntime?.host.containsPage(file) && !containsSettingsPage(file))
       return new Response('Forbidden', { status: 403 });
     if (!existsSync(file)) return new Response('Not found', { status: 404 });
     return net.fetch(pathToFileURL(file).toString());

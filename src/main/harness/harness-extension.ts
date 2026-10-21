@@ -9,7 +9,7 @@ import type { InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { Ura } from '../ura/facade'
 import type { PluginHost } from '../plugins/host'
 import type { BrowserAutomationContract } from './browser-contract'
-import { SiteSnapshots } from './browser-snapshots'
+import { SiteSnapshots } from '../capabilities/browser/snapshots'
 import { createBrowserTools } from './browser-tools'
 import { createUraTools } from './ura-tools'
 

@@ -1,5 +1,5 @@
-import { cpSync, existsSync, rmSync } from 'fs';
-import { resolve } from 'path';
+import { cpSync, existsSync, readdirSync, rmSync } from 'fs';
+import { join, resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
@@ -19,6 +19,17 @@ function copyBuiltinPlugins(): Plugin {
       if (existsSync(from)) {
         rmSync(to, { recursive: true, force: true });
         cpSync(from, to, { recursive: true });
+      }
+      const settingsFrom = resolve(__dirname, 'src/main/capabilities/settings');
+      const settingsTo = resolve(__dirname, 'out/settings');
+      if (existsSync(settingsFrom)) {
+        rmSync(settingsTo, { recursive: true, force: true });
+        for (const entry of readdirSync(settingsFrom, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          cpSync(join(settingsFrom, entry.name), join(settingsTo, entry.name), {
+            recursive: true,
+          });
+        }
       }
       this.info(`copied builtin plugins → ${to}`);
     },

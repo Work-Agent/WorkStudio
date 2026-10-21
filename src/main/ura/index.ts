@@ -3,7 +3,7 @@
 // 来源先注册，插件后装载，门面最后构造：注册表是应用级单例，
 // 运行期只查表，不再装载。
 
-import { registerBrowserFeatures } from '../browser-features'
+import { registerBrowserFeatures } from '../capabilities/browser/features'
 import { PluginHost } from '../plugins/host'
 import { BUILTIN_PLUGINS } from '../plugins/builtin'
 import { Collections } from './collections'

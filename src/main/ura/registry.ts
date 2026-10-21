@@ -70,7 +70,6 @@ export class UraRegistry {
   // ─── 注册 ──────────────────────────────────────────────────────
 
   registerTransport(transport: Transport): void {
-    if (this.denyWeb('transport')) return
     const scheme = transport.scheme
     if (!SCHEME_PATTERN.test(scheme)) {
       this.reject('transport.invalid-scheme', `来源协议非法：${scheme}`)
@@ -93,7 +92,6 @@ export class UraRegistry {
   }
 
   registerCodec(codec: Codec): void {
-    if (this.denyWeb('codec')) return
     if (!DOC_TYPE_PATTERN.test(codec.docType)) {
       this.reject('codec.invalid-doc-type', `文档类型非法：${codec.docType}`)
       return
@@ -122,7 +120,6 @@ export class UraRegistry {
   }
 
   registerStore(store: Store): void {
-    if (this.denyWeb('store')) return
     if (typeof store.query !== 'function') {
       this.reject('store.incomplete', `数据实现缺少 query：${store.docType}`)
       return
@@ -159,7 +156,6 @@ export class UraRegistry {
   }
 
   registerConsumer(consumer: Consumer): void {
-    if (this.denyWeb('consumer')) return
     if (consumer.type !== 'agent' && consumer.type !== 'editor') {
       this.reject('consumer.invalid-type', `出口类型非法：${String(consumer.type)}`)
       return
@@ -332,15 +328,6 @@ export class UraRegistry {
   }
 
   // ─── 内部 ──────────────────────────────────────────────────────
-
-  private denyWeb(surface: string): boolean {
-    if (this.ownerType !== 'web') return false
-    this.reject(
-      'plugin.web-forbidden',
-      `web 扩展不能注册 ${surface}：${this.currentOwner()}`,
-    )
-    return true
-  }
 
   private entry<T>(impl: T): Entry<T> {
     return { impl, owner: this.currentOwner(), order: this.order++ }

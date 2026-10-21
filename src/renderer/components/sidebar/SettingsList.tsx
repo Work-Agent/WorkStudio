@@ -1,11 +1,10 @@
 /**
- * SettingsList —— 设置列表形态（TitleBar 设置入口的独立 sidebar，与插件列表分离）。
+ * SettingsList —— 设置列表形态。
  *
- * 设置面全部由插件贡献（config 页 = 插件的设置/内容页）：
- * 清单来自 `plugins.list`（manifest 扫描结果），行点击 = `views.open({type:'plugin'})`
- * ——与资源面板内容一样由 WebContentsView 渲染，渲染层不承载设置 UI。
+ * 设置是主进程能力：清单来自 `settings.list`，页面由 WebContentsView 装载
+ * （`views.open({type:'settings'})`），渲染层只负责列表与图标映射。
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookOpen,
   Cpu,
@@ -16,96 +15,58 @@ import {
   MessagesSquare,
   Puzzle,
   SlidersHorizontal,
+  Settings,
+  type LucideIcon,
 } from 'lucide-react';
-import { usePluginsStore, openPluginView } from '../../state/plugins';
 import { useUiStore } from '../../state/uiState';
 import { SubListView } from './SubListView';
 
-/** 设置域成员（插件 id → manifest；顺序即展示顺序）。 */
-const SETTINGS_PLUGINS = [
-  {
-    id: 'settings-preferences',
-    title: '偏好设置',
-    desc: 'App 默认 / 本工作区两层配置',
-    icon: SlidersHorizontal,
-  },
-  {
-    id: 'settings-browser',
-    title: '浏览器',
-    desc: '归档白名单 · 域名分组',
-    icon: Globe,
-  },
-  {
-    id: 'settings-models',
-    title: '模型配置',
-    desc: '供应商登录 · 模型目录 · API Key',
-    icon: Cpu,
-  },
-  {
-    id: 'settings-extensions',
-    title: '扩展管理',
-    desc: '社区包安装 · 本机插件',
-    icon: Puzzle,
-  },
-  {
-    id: 'settings-skills',
-    title: '技能',
-    desc: '已加载清单 · 装载诊断',
-    icon: BookOpen,
-  },
-  {
-    id: 'settings-sessions',
-    title: '会话管理',
-    desc: '会话列表 · 切换 · 删除与停止',
-    icon: MessagesSquare,
-  },
-  {
-    id: 'settings-workspaces',
-    title: '工作区',
-    desc: '注册表 · 切换 / 打开目录',
-    icon: FolderOpen,
-  },
-  {
-    id: 'settings-storage',
-    title: '存储与数据',
-    desc: '落盘位置 · 会话目录 · 版本信息',
-    icon: HardDrive,
-  },
-  {
-    id: 'settings-resources',
-    title: '资源索引',
-    desc: '资源地图 · 重新索引',
-    icon: FolderTree,
-  },
-] as const;
+interface SettingsPageInfo {
+  id: string;
+  label: string;
+  desc: string;
+  icon: string;
+}
+
+const ICONS: Record<string, LucideIcon> = {
+  sliders: SlidersHorizontal,
+  globe: Globe,
+  cpu: Cpu,
+  puzzle: Puzzle,
+  book: BookOpen,
+  messages: MessagesSquare,
+  folder: FolderOpen,
+  'hard-drive': HardDrive,
+  'folder-tree': FolderTree,
+};
 
 export function SettingsList() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
-  const plugins = usePluginsStore((s) => s.plugins);
-  const load = usePluginsStore((s) => s.load);
+  const [pages, setPages] = useState<SettingsPageInfo[]>([]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void (async () => {
+      const response =
+        await window.workbench?.cmd<SettingsPageInfo[]>('settings.list');
+      if (response?.ok) setPages(response.data);
+    })();
+  }, []);
 
   return (
-    <SubListView title="设置" count={SETTINGS_PLUGINS.length}>
+    <SubListView title="设置" count={pages.length}>
       <div className="space-y-1">
-        {SETTINGS_PLUGINS.map((entry) => {
-          const plugin = plugins.find((p) => p.id === entry.id);
-          const Icon = entry.icon;
+        {pages.map((page) => {
+          const Icon = ICONS[page.icon] ?? Settings;
           return (
             <div
-              key={entry.id}
+              key={page.id}
               onClick={() => {
-                if (plugin) openPluginView(plugin);
+                void window.workbench?.cmd('views.open', {
+                  input: { type: 'settings', pageId: page.id },
+                });
               }}
-              className={`group flex items-center px-2 py-1.5 rounded-lg transition-colors min-h-[42px] ${
-                plugin
-                  ? 'cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]'
-                  : 'opacity-50 cursor-default'
-              }`}
-              title={entry.title}
+              className="group flex items-center px-2 py-1.5 rounded-lg transition-colors min-h-[42px] cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]"
+              title={page.label}
             >
               <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-zinc-500 text-zinc-50 dark:bg-zinc-600 dark:text-zinc-100">
                 <Icon className="w-4 h-4" />
@@ -114,11 +75,11 @@ export function SettingsList() {
                 <div className="ml-2 flex-1 overflow-hidden min-w-0">
                   <div className="flex items-center gap-1.5">
                     <h4 className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 truncate leading-none">
-                      {entry.title}
+                      {page.label}
                     </h4>
                   </div>
                   <div className="mt-[5px] text-[12px] truncate text-zinc-400 dark:text-zinc-500 leading-none">
-                    {entry.desc}
+                    {page.desc}
                   </div>
                 </div>
               )}
@@ -127,7 +88,7 @@ export function SettingsList() {
         })}
         {!collapsed && (
           <p className="text-[10px] text-zinc-400 dark:text-zinc-600 italic px-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/40 mt-2">
-            设置页与视图内容一律由插件页（WebContentsView）承载
+            设置页是主进程能力，内容由 WebContentsView 承载
           </p>
         )}
       </div>

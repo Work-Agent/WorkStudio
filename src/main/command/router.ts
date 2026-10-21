@@ -44,8 +44,9 @@ import type { PageSessions } from '../ura/page-sessions';
 import type { SkillsManager } from '../harness/skills';
 import type { PluginHost } from '../plugins/host';
 import type { UiStateService } from '../state/ui-state';
-import type { InteractionController } from '../views/interaction';
-import type { ViewHost } from '../views/view-host';
+import type { InteractionController } from '../capabilities/webview/interaction';
+import type { ViewHost } from '../capabilities/webview/host';
+import { settingsPages } from '../capabilities/settings/registry';
 import {
   listWorkspaces,
   getCurrentWorkspace,
@@ -601,6 +602,8 @@ async function invoke(
         return ok(null);
 
       // ═══ 视图集合 ═══
+      case 'settings.list':
+        return ok(settingsPages().map(({ page: _page, ...entry }) => entry));
       case 'views.list':
         return ok(d.viewHost.list());
       case 'views.open':
@@ -622,7 +625,7 @@ async function invoke(
       case 'views.openBrowser': {
         const url = String(p.url ?? '');
         const allowlist = await d.registry.getSetting<string[]>(
-          'settings-browser',
+          'browser',
           'allowlist',
           [],
         );
@@ -636,7 +639,7 @@ async function invoke(
       }
       case 'browser.snapshot': {
         const result = (await d.browserCapture?.()) ?? null;
-        if (result?.ref) d.onSettingsChanged?.('settings-browser');
+        if (result?.ref) d.onSettingsChanged?.('browser');
         return ok(result);
       }
       case 'views.activate':

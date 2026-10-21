@@ -368,7 +368,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
         ? current.defs
         : await agentAPI.extensions.definitions();
     set({ defs });
-    // config 扩展定位：设置页与插件页同 id（内置页面走主进程视图，不经此路径）
+    // config 扩展定位：设置页走主进程设置能力，不经此路径
     const def =
       defs.find((x) => x.id === `${plugin.id}-config`) ||
       defs.find((x) => x.id === plugin.id);

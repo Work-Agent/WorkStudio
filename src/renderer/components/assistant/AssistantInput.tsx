@@ -24,8 +24,6 @@ import { commandStore } from '../../state/commands';
 import { useConversationStore, type QueueMode } from '../../state/conversation';
 import { useInputStore } from '../../state/input';
 import { usePiUIStore } from '../../state/piUI';
-import { usePluginsStore } from '../../state/plugins';
-import { useTabServiceStore } from '../../state/tabService';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { ModelSwitcher } from './ModelSwitcher';
 import { SkillSelector } from './SkillSelector';
@@ -166,11 +164,9 @@ export function AssistantInput() {
 
   /** 未配置模型的引导入口。 */
   const openModelConfig = (): void => {
-    void (async () => {
-      const plugins = await usePluginsStore.getState().load();
-      const mc = plugins.find((p) => p.id === 'settings-models');
-      if (mc) await useTabServiceStore.getState().openPluginConfig(mc);
-    })();
+    void window.workbench?.cmd('views.open', {
+      input: { type: 'settings', pageId: 'models' },
+    });
   };
 
   const tokenTooltip = `输入 ${tokens.input.toLocaleString()} · 输出 ${tokens.output.toLocaleString()} tokens`;

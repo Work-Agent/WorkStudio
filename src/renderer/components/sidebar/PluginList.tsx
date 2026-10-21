@@ -10,19 +10,6 @@ import { openPluginView, usePluginsStore } from '../../state/plugins';
 import { useUiStore } from '../../state/uiState';
 import { SubListView } from './SubListView';
 
-/** 设置域成员（SettingsList 展示；插件列表去重）。 */
-const SETTINGS_DOMAIN = new Set([
-  'settings-preferences',
-  'settings-browser',
-  'settings-models',
-  'settings-extensions',
-  'settings-skills',
-  'settings-sessions',
-  'settings-workspaces',
-  'settings-storage',
-  'settings-resources',
-]);
-
 export function PluginList() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const plugins = usePluginsStore((s) => s.plugins);
@@ -32,13 +19,11 @@ export function PluginList() {
     void load();
   }, [load]);
 
-  const visible = plugins.filter((p) => !SETTINGS_DOMAIN.has(p.id));
-
   return (
-    <SubListView title="插件" count={visible.length}>
+    <SubListView title="插件" count={plugins.length}>
       <div className="space-y-1">
-        {visible.length > 0
-          ? visible.map((p) => (
+        {plugins.length > 0
+          ? plugins.map((p) => (
               <div
                 key={p.id}
                 onClick={() => openPluginView(p)}

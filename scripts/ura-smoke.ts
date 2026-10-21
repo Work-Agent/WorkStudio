@@ -71,10 +71,14 @@ async function main(): Promise<void> {
 
   const pages = new PageSessions(ura)
   const mdRef = `file://${markdownFile}`
-  const page = await pages.open(mdRef)
+  const openedPage = await pages.open(mdRef)
+  if (openedPage.type !== 'page') throw new Error('expected page target')
+  const page = openedPage.info
   console.log('page open:', page.docType, page.surface, page.page.split('/').slice(-1)[0])
   console.log('page save:', await pages.save(page.id, '# Changed\n'))
-  const second = await pages.open(mdRef)
+  const secondOpened = await pages.open(mdRef)
+  if (secondOpened.type !== 'page') throw new Error('expected page target')
+  const second = secondOpened.info
   console.log('page save2:', await pages.save(second.id, '# Second\n'))
   const stale = await pages.save(page.id, '# Stale\n')
   console.log('page stale:', stale.ok === false, stale.ok === false ? Object.keys(stale.conflict) : [])
