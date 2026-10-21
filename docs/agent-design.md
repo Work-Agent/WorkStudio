@@ -76,7 +76,6 @@ pi 只有两条扩展轴，WorkStudio 不再另造插件系统：
   },
   "workstudio": {
     "id": "docx",
-    "type": "app",
     "label": "DOCX",
     "page": "pages/index.html",
     "settings": "pages/settings.html"
@@ -94,7 +93,7 @@ registerConsumer({ docType: "ooxml-doc@1", type: "editor", surface: "docx-editor
 ```
 
 - 图标：`workstudio.icon` 可写语义名（壳层映射）或 favicon 文件（`svg / png / ico / jpeg / webp / gif`），文件经 `app://asset/<id>/…` 提供。
-- 插件只有 app 型：自带 webapp，可注册资源轴；pi 扩展与技能不随插件清单管理，走各自的目录/设置。
+- 插件即扩展：自带 webapp，可注册资源轴；pi 扩展与技能不随插件清单管理，走各自的目录/设置。
 - 注册接口一共六个：`registerTransport` · `registerCodec` · `registerStore` · `registerConsumer` · `registerCollection` · `registerViewAction`。
 - `page` 不再由 consumer 声明：它是渲染器页；`settings` 是插件自己的第二个页面（可选）。
 - 设置页不是插件：偏好设置 / 模型配置 / 浏览器白名单等属于主进程的设置能力（见 §8.1），经 `settings.list` 与 `views.open({ type: "settings" })` 消费。
@@ -369,7 +368,7 @@ harness 是内置扩展（资源轴装载），在注册轴上注册能力。
 
 ### 8.1 插件与设置能力
 
-**插件**（随应用发布，`src/plugins/<id>/package.json`）：全部为 app 型，自带 webapp + 资源适配器。
+**插件**（随应用发布，`src/plugins/<id>/package.json`）：自带 webapp + 资源适配器。
 
 | 插件 | 内容 |
 | --- | --- |

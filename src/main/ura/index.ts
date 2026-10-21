@@ -29,7 +29,7 @@ export async function createUraRuntime(options: {
   dataRoot: string
   workspace: () => string
 }): Promise<UraRuntime> {
-  await uraRegistry.runAs('system', 'system', async () => {
+  await uraRegistry.runAs('system', async () => {
     uraRegistry.registerTransport(new FileTransport())
     uraRegistry.registerTransport(new HttpTransport('http'))
     uraRegistry.registerTransport(new HttpTransport('https'))
@@ -42,10 +42,10 @@ export async function createUraRuntime(options: {
     registry: uraRegistry,
   })
   await host.start()
-  await uraRegistry.runAs('system', 'system', async () => {
+  await uraRegistry.runAs('system', async () => {
     uraRegistry.registerCollection(docsCollection())
   })
-  await uraRegistry.runAs('browser', 'system', async () => {
+  await uraRegistry.runAs('browser', async () => {
     registerBrowserFeatures()
   })
 

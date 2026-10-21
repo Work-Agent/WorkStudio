@@ -7,7 +7,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { uraRegistry, type UraRegistry } from '../ura/registry'
-import type { PluginInfo, PluginType } from '../../shared/types'
+import type { PluginInfo } from '../../shared/types'
 import { scanPluginPackages, type PluginPackage } from './packages'
 
 export interface BuiltinLoader {
@@ -20,7 +20,6 @@ export interface PluginPageEntry {
   label: string
   icon?: string
   version: string
-  type: PluginType
   page: string
   settings?: string
   iconUrl?: string
@@ -48,8 +47,7 @@ export class PluginHost {
 
     for (const builtin of this.options.builtins) {
       try {
-        const pkg = this.packages.get(builtin.id)
-        await registry.runAs(builtin.id, pkg?.type ?? 'app', builtin.load)
+        await registry.runAs(builtin.id, builtin.load)
       } catch (error) {
         this.diagnostics.push(`内置插件装载失败：${builtin.id} · ${messageOf(error)}`)
       }
@@ -60,7 +58,7 @@ export class PluginHost {
       if (builtinIds.has(pkg.id) || !pkg.uraEntry) continue
       try {
         const url = pathToFileURL(pkg.uraEntry).href
-        await registry.runAs(pkg.id, pkg.type, () => import(url))
+        await registry.runAs(pkg.id, () => import(url))
       } catch (error) {
         this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`)
       }
@@ -80,7 +78,6 @@ export class PluginHost {
         label: pkg.label,
         ...(pkg.icon ? { icon: pkg.icon } : {}),
         version: pkg.version,
-        type: pkg.type,
         page: pkg.page,
         ...(pkg.settings ? { settings: pkg.settings } : {}),
         ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
@@ -116,7 +113,6 @@ export class PluginHost {
   pluginInfoList(): PluginInfo[] {
     const plugins = this.list().map((pkg) => ({
       id: pkg.id,
-      type: pkg.type,
       name: pkg.label,
       version: pkg.version,
       ...(pkg.description ? { description: pkg.description } : {}),

@@ -349,11 +349,7 @@ export interface ExtensionInstance {
 }
 
 /** 插件运行时信息（供 UI 展示）。 */
-export type PluginType = 'app';
-
 export interface PluginInfo {
-  /** 插件类型：自带 webapp + 资源适配器。 */
-  type: PluginType;
   id: string;
   name: string;
   version: string;

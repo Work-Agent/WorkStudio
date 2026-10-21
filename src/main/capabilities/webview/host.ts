@@ -859,7 +859,6 @@ export class ViewHost {
         },
         plugin: {
           id: pkg.id,
-          type: pkg.type,
           name: pkg.label,
           version: pkg.version,
           builtin: true,

@@ -6,12 +6,8 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
-export type PluginType = 'app'
-
 export interface WorkStudioManifest {
   id?: string
-  /** 插件自带 webapp + 资源适配器。 */
-  type?: PluginType
   label?: string
   /** 图标语义名（壳层映射）。 */
   icon?: string
@@ -33,7 +29,6 @@ export interface PackageJson {
 
 export interface PluginPackage {
   id: string
-  type: PluginType
   name: string
   /** 展示名。 */
   label: string
@@ -84,9 +79,6 @@ async function readPackage(root: string, dirName: string): Promise<PluginPackage
   if (!workstudio) return null
 
   const id = workstudio.id ?? pkg.name ?? dirName
-  // web 型已并入主进程设置能力：残留清单不再作为插件装载。
-  if ((workstudio as { type?: string }).type === 'web') return null
-  const type: PluginType = 'app'
   const page = await resolveFile(root, workstudio.page)
   const settingsPage = await resolveFile(root, workstudio.settings)
   const iconRaw = workstudio.icon
@@ -97,7 +89,6 @@ async function readPackage(root: string, dirName: string): Promise<PluginPackage
   const iconUrl = iconFile ? await dataUrl(iconFile) : undefined
   return {
     id,
-    type,
     name: pkg.name ?? id,
     label: workstudio.label ?? pkg.name ?? id,
     ...(iconFile ? { iconUrl } : {}),

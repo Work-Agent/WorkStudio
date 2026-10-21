@@ -323,7 +323,7 @@ views 只消费 agent 的契约：
 - 一个 WorkStudio 插件可携带 0..N 个 Plugin 和 Pi Extension。
 - **插件就是 npm 包**：`exports["./ura"]` 指向注册入口（加载时调用 `registerXXX`）；`workstudio` 字段声明 `page`（渲染器页）与 `settings`（插件自己的设置页，可选）、`icon`（语义名或 favicon 文件）；pi 扩展与技能单独管理。设置面板（偏好设置等）不在此列，属主进程设置能力。页面资源默认只允许各自目录，`webAccessible` 仅用于覆盖。不再有单独的 manifest.json。
 - **一个插件最多两个页面**：`workstudio.page`（渲染器页）+ `workstudio.settings`（设置页，可选）；editor consumer 直接用 page，不单独注册页面。
-- **插件**：统一为 app 型（自带 webapp + transport/codec/projection），是 `src/plugins` 下的 `package.json` 包；设置页与浏览器能力（视图 / 来源 / 投影 / 工具 / 注入）是主进程能力，不是插件。
+- **插件**：自带 webapp + transport/codec/projection，是 `src/plugins` 下的 `package.json` 包；设置页与浏览器能力（视图 / 来源 / 投影 / 工具 / 注入）是主进程能力，不是插件。
 - **一次装配**：插件与扩展在启动时注册进 agent，运行期不再装载。
 - **信任在安装期**：扩展跑主进程、拥有进程权限（安装即授权、来源明示）；页面跑沙箱（无 Node、只调白名单命令）。
 - **工具面不外包**：工具只由 harness 注册；插件不能注册工具、不能创建视图。

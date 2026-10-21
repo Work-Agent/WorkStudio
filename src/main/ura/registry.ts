@@ -3,7 +3,6 @@
 // 四张表：来源（按协议）· 格式（按文档类型）· 数据（按文档类型）· 出口（按类型 × 侧）。
 // 注册是同步的、纯登记的；冲突按后注册者胜出并进诊断，不做静默合并。
 
-import type { PluginType } from '../../shared/types'
 import type {
   Codec,
   CollectionProvider,
@@ -40,26 +39,18 @@ export class UraRegistry {
   private readonly actions = new Map<string, Entry<ViewAction>>()
   private readonly logs: Diagnostic[] = []
   private owner: string | null = null
-  private ownerType: PluginType | 'system' = 'system'
   private order = 0
 
   // ─── 归属上下文 ────────────────────────────────────────────────
   // 插件入口在模块求值时注册；宿主在 import 期间置入归属，注册项据此记名。
 
-  async runAs<T>(
-    owner: string,
-    type: PluginType | 'system',
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const previousOwner = this.owner
-    const previousType = this.ownerType
+  async runAs<T>(owner: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.owner
     this.owner = owner
-    this.ownerType = type
     try {
       return await fn()
     } finally {
-      this.owner = previousOwner
-      this.ownerType = previousType
+      this.owner = previous
     }
   }
 

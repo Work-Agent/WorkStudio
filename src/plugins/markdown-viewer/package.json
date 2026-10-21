@@ -5,7 +5,6 @@
   "author": "work-studio",
   "workstudio": {
     "id": "markdown-viewer",
-    "type": "app",
     "label": "Markdown 阅读器",
     "icon": "file-text",
     "page": "index.html",
