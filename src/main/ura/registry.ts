@@ -3,6 +3,7 @@
 // 四张表：来源（按协议）· 格式（按文档类型）· 数据（按文档类型）· 出口（按类型 × 侧）。
 // 注册是同步的、纯登记的；冲突按后注册者胜出并进诊断，不做静默合并。
 
+import type { PluginType } from '../../shared/types'
 import type {
   Codec,
   CollectionProvider,
@@ -34,23 +35,31 @@ export class UraRegistry {
   private readonly transports = new Map<string, Entry<Transport>>()
   private readonly codecs = new Map<DocType, Entry<Codec>>()
   private readonly stores = new Map<DocType, Entry<Store>>()
-  private readonly consumers = new Map<string, Entry<Consumer>>()
+  private readonly consumers = new Map<string, Entry<Consumer>[]>()
   private readonly collections = new Map<string, Entry<CollectionProvider>>()
   private readonly actions = new Map<string, Entry<ViewAction>>()
   private readonly logs: Diagnostic[] = []
   private owner: string | null = null
+  private ownerType: PluginType | 'system' = 'system'
   private order = 0
 
   // ─── 归属上下文 ────────────────────────────────────────────────
   // 插件入口在模块求值时注册；宿主在 import 期间置入归属，注册项据此记名。
 
-  async runAs<T>(owner: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.owner
+  async runAs<T>(
+    owner: string,
+    type: PluginType | 'system',
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const previousOwner = this.owner
+    const previousType = this.ownerType
     this.owner = owner
+    this.ownerType = type
     try {
       return await fn()
     } finally {
-      this.owner = previous
+      this.owner = previousOwner
+      this.ownerType = previousType
     }
   }
 
@@ -61,6 +70,7 @@ export class UraRegistry {
   // ─── 注册 ──────────────────────────────────────────────────────
 
   registerTransport(transport: Transport): void {
+    if (this.denyWeb('transport')) return
     const scheme = transport.scheme
     if (!SCHEME_PATTERN.test(scheme)) {
       this.reject('transport.invalid-scheme', `来源协议非法：${scheme}`)
@@ -83,6 +93,7 @@ export class UraRegistry {
   }
 
   registerCodec(codec: Codec): void {
+    if (this.denyWeb('codec')) return
     if (!DOC_TYPE_PATTERN.test(codec.docType)) {
       this.reject('codec.invalid-doc-type', `文档类型非法：${codec.docType}`)
       return
@@ -91,8 +102,8 @@ export class UraRegistry {
       this.reject('codec.no-hints', `格式缺少提示：${codec.docType}`)
       return
     }
-    if (codec.patchKind !== 'text' && codec.patchKind !== 'bytes') {
-      this.reject('codec.invalid-patch-kind', `补丁形态非法：${codec.docType}`)
+    if (codec.patchType !== 'text' && codec.patchType !== 'bytes') {
+      this.reject('codec.invalid-patch-type', `补丁形态非法：${codec.docType}`)
       return
     }
     if (
@@ -111,6 +122,7 @@ export class UraRegistry {
   }
 
   registerStore(store: Store): void {
+    if (this.denyWeb('store')) return
     if (typeof store.query !== 'function') {
       this.reject('store.incomplete', `数据实现缺少 query：${store.docType}`)
       return
@@ -147,20 +159,20 @@ export class UraRegistry {
   }
 
   registerConsumer(consumer: Consumer): void {
-    if (consumer.kind !== 'agent' && consumer.kind !== 'editor') {
-      this.reject('consumer.invalid-kind', `出口类型非法：${String(consumer.kind)}`)
+    if (this.denyWeb('consumer')) return
+    if (consumer.type !== 'agent' && consumer.type !== 'editor') {
+      this.reject('consumer.invalid-type', `出口类型非法：${String(consumer.type)}`)
       return
     }
-    if (consumer.kind === 'editor' && !consumer.surface) {
+    if (consumer.type === 'editor' && !consumer.surface) {
       this.reject('consumer.no-surface', `editor 出口缺少 surface：${consumer.docType}`)
       return
     }
-    const key = consumerKey(consumer.docType, consumer.kind)
-    if (this.consumers.has(key)) {
-      this.warn('consumer.override', `出口被覆盖：${consumer.docType} · ${consumer.kind}`)
-    }
-    this.consumers.set(key, this.entry(consumer))
-    this.info('consumer.registered', `出口注册：${consumer.docType} · ${consumer.kind}`)
+    const key = consumerKey(consumer.docType, consumer.type)
+    const list = this.consumers.get(key) ?? []
+    list.push(this.entry(consumer))
+    this.consumers.set(key, list)
+    this.info('consumer.registered', `出口注册：${consumer.docType} · ${consumer.type}`)
   }
 
   // ─── 查询 ──────────────────────────────────────────────────────
@@ -190,6 +202,15 @@ export class UraRegistry {
     return undefined
   }
 
+  /** 扩展名 → 格式（地图标注用；未知回退 text 兜底格式）。 */
+  codecForExtension(ext: string): Codec | undefined {
+    const normalized = ext.toLowerCase().replace(/^\./, '')
+    for (const entry of this.codecs.values()) {
+      if (entry.impl.extensions?.includes(normalized)) return entry.impl
+    }
+    return this.codecForHints(['text'])
+  }
+
   codecFor(docType: DocType): Codec | undefined {
     return this.codecs.get(docType)?.impl
   }
@@ -217,12 +238,39 @@ export class UraRegistry {
     return this.stores.get(docType)?.impl
   }
 
-  consumerFor(docType: DocType, kind: Consumer['kind']): Consumer | undefined {
-    return this.consumers.get(consumerKey(docType, kind))?.impl
+  consumerFor(
+    docType: DocType,
+    type: Consumer['type'],
+    capabilities: string[] = [],
+  ): Consumer | undefined {
+    return this.pickConsumer(docType, type, capabilities)?.impl
   }
 
-  ownerOfConsumer(docType: DocType, kind: Consumer['kind']): string | undefined {
-    return this.consumers.get(consumerKey(docType, kind))?.owner
+  ownerOfConsumer(
+    docType: DocType,
+    type: Consumer['type'],
+    capabilities: string[] = [],
+  ): string | undefined {
+    return this.pickConsumer(docType, type, capabilities)?.owner
+  }
+
+  private pickConsumer(
+    docType: DocType,
+    type: Consumer['type'],
+    capabilities: string[],
+  ): Entry<Consumer> | undefined {
+    const candidates = this.consumers.get(consumerKey(docType, type)) ?? []
+    return candidates
+      .filter((entry) =>
+        (entry.impl.requires ?? []).every((req) =>
+          capabilities.includes(req),
+        ),
+      )
+      .sort(
+        (a, b) =>
+          (b.impl.requires?.length ?? 0) - (a.impl.requires?.length ?? 0) ||
+          b.order - a.order,
+      )[0]
   }
 
   /** 数据对象的 schema 清单（模型侧可见）。 */
@@ -258,13 +306,16 @@ export class UraRegistry {
         docType,
         owner: e.owner,
       })),
-      consumers: [...this.consumers.entries()].map(([key, e]) => ({
-        key,
-        docType: e.impl.docType,
-        kind: e.impl.kind,
-        surface: e.impl.surface,
-        owner: e.owner,
-      })),
+      consumers: [...this.consumers.entries()].flatMap(([key, entries]) =>
+        entries.map((e) => ({
+          key,
+          docType: e.impl.docType,
+          type: e.impl.type,
+          surface: e.impl.surface,
+          requires: e.impl.requires ?? [],
+          owner: e.owner,
+        })),
+      ),
       collections: [...this.collections.entries()].map(([id, e]) => ({
         id,
         label: e.impl.label,
@@ -281,6 +332,15 @@ export class UraRegistry {
   }
 
   // ─── 内部 ──────────────────────────────────────────────────────
+
+  private denyWeb(surface: string): boolean {
+    if (this.ownerType !== 'web') return false
+    this.reject(
+      'plugin.web-forbidden',
+      `web 扩展不能注册 ${surface}：${this.currentOwner()}`,
+    )
+    return true
+  }
 
   private entry<T>(impl: T): Entry<T> {
     return { impl, owner: this.currentOwner(), order: this.order++ }
@@ -299,8 +359,8 @@ export class UraRegistry {
   }
 }
 
-function consumerKey(docType: DocType, kind: Consumer['kind']): string {
-  return `${docType}|${kind}`
+function consumerKey(docType: DocType, type: Consumer['type']): string {
+  return `${docType}|${type}`
 }
 
 /** 应用级单例：插件入口与宿主共享同一张表。 */

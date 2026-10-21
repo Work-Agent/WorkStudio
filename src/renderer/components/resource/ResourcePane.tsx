@@ -7,7 +7,7 @@
  */
 import { FileText } from 'lucide-react';
 import { rectStyle, runViewCommand, useShellStore } from '../../state/shell';
-import { kindIcon } from './kindIcon';
+import { typeIcon } from './typeIcon';
 import { TabsBar } from './TabsBar';
 
 export function ResourcePane() {
@@ -27,7 +27,7 @@ export function ResourcePane() {
             items={views.map((v) => ({
               id: v.id,
               label: v.title,
-              icon: kindIcon(v.kind),
+              icon: typeIcon(v.type),
               dirty: v.dirty,
               pinned: v.pinned,
               error: v.state === 'error',

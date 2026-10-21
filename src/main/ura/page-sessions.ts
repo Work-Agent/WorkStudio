@@ -9,6 +9,10 @@ import type { CommitResult, DocType } from '../../shared/ura'
 import { VersionConflictError } from './errors'
 import type { Ura } from './facade'
 
+export type PageOpenTarget =
+  | { type: 'browser'; url: string }
+  | { type: 'page'; info: PageSessionInfo }
+
 export interface PageSessionInfo {
   id: string
   ref: string
@@ -32,9 +36,12 @@ export class PageSessions {
 
   constructor(private readonly ura: Ura) {}
 
-  async open(ref: string): Promise<PageSessionInfo> {
+  async open(ref: string): Promise<PageOpenTarget> {
     const opened = await this.ura.read(ref, { as: 'editor' })
-    if (opened.projection.kind !== 'page') {
+    if (opened.projection.type === 'browser') {
+      return { type: 'browser', url: opened.projection.url }
+    }
+    if (opened.projection.type !== 'page') {
       throw new Error(`资源没有页面出口：${ref}`)
     }
     const base = await this.textOf(ref)
@@ -50,7 +57,7 @@ export class PageSessions {
       degraded: opened.degraded,
     }
     this.entries.set(info.id, { info, base, closed: false })
-    return info
+    return { type: 'page', info }
   }
 
   get(id: string): PageSessionInfo {
@@ -83,7 +90,7 @@ export class PageSessions {
   async reload(id: string): Promise<PageSessionInfo> {
     const entry = this.require(id)
     const opened = await this.ura.read(entry.info.ref, { as: 'editor' })
-    if (opened.projection.kind !== 'page') {
+    if (opened.projection.type !== 'page') {
       throw new Error(`资源没有页面出口：${entry.info.ref}`)
     }
     entry.info = {
@@ -109,7 +116,7 @@ export class PageSessions {
 
   private async textOf(ref: string): Promise<string> {
     const opened = await this.ura.read(ref, { as: 'agent' })
-    return opened.projection.kind === 'text' ? opened.projection.content : ''
+    return opened.projection.type === 'text' ? opened.projection.content : ''
   }
 
   private require(id: string): Entry {

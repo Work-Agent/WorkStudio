@@ -22,3 +22,11 @@
 - 三份设计文档**不出现文件路径、目录树、类名、函数名、类型定义原文与构建脚本**——实现定位由代码自身承载；契约级名字（命令名、清单字段、通道语义、插件标识）允许出现。
 - 表格与图示优先于长段落：结构用图，实体与状态用表，规则用列表。
 - 引用其他设计用相对链接（如 `views-design.md`）。
+
+## 命名规范
+
+- **判别字段统一用 `type`，不用 `kind`**：代码标识符、类型字段、文档术语一致。
+  - `sourceType`（`local` / `remote`）、`viewType`、`consumer.type`（`agent` / `editor`）、`projection.type`（`render` / `edit` / `query`）。
+  - 作为可判别联合（discriminated union）的标签时，字段名写 `type`，取值用短名词。
+- 新增字段、类型、命令参数一律按此规范命名，避免新旧混用。
+- 对象已有 `type` 判别字段时（如 UI 对话框的 `type: 'dialog'`），子类型字段用 `<domain>Type`（如 `dialogType`），不引入第二个 `type`。

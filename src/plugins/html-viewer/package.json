@@ -5,6 +5,7 @@
   "author": "work-studio",
   "workstudio": {
     "id": "html-viewer",
+    "type": "app",
     "label": "HTML 阅读器",
     "icon": "code",
     "page": "index.html",

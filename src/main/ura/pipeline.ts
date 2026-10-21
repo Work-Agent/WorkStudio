@@ -20,6 +20,7 @@ import { UraRegistry, uraRegistry } from './registry'
 
 export interface Opened {
   ref: string
+  capabilities: string[]
   raw: RawContent
   codec: Codec | null
   decoded: DecodedDoc | null
@@ -70,6 +71,7 @@ export class ResourcePipeline {
 
     const opened: Opened = {
       ref,
+      capabilities: transport.capabilities ?? [],
       raw,
       codec: decoded ? (codec ?? null) : null,
       decoded,
@@ -92,7 +94,7 @@ export class ResourcePipeline {
         expectedVersion: opts.expectedVersion,
       })
       this.invalidate(ref)
-      this.emit({ ref, kind: 'content', version: result.version, at: Date.now() })
+      this.emit({ ref, type: 'content', version: result.version, at: Date.now() })
       return { version: result.version }
     })
   }

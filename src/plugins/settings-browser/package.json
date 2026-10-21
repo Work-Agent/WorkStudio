@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-browser",
+  "version": "1.0.0",
+  "description": "浏览器归档白名单",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-browser",
+    "type": "web",
+    "label": "浏览器",
+    "icon": "globe",
+    "page": "index.html"
+  }
+}

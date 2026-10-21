@@ -7,10 +7,6 @@ import type { BuiltinLoader } from './host'
 
 export const BUILTIN_PLUGINS: BuiltinLoader[] = [
   {
-    id: 'browser',
-    load: () => import('../../plugins/browser/ura'),
-  },
-  {
     id: 'markdown-viewer',
     load: () => import('../../plugins/markdown-viewer/ura'),
   },

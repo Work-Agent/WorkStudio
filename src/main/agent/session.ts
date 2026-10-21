@@ -43,15 +43,6 @@ export interface AgentSessionInput {
   deps: AgentSessionDeps
 }
 
-interface SessionContext {
-  /** 工作区 AGENTS.md（经 URA 读取）。 */
-  agentsText: string | null
-  agentsPath: string
-  /** 资源地图（经 URA 发现）。 */
-  map: string
-  mapPath: string
-}
-
 export class AgentSession {
   private constructor(
     readonly cwd: string,
@@ -60,11 +51,9 @@ export class AgentSession {
     readonly services: AgentSessionServices,
     readonly extensionsResult: ExtensionsResult,
     readonly diagnostics: AgentSessionRuntimeDiagnostic[],
-    readonly context: SessionContext,
   ) {}
 
   static async assemble(input: AgentSessionInput): Promise<AgentSession> {
-    const context = await collectContext(input.cwd, input.deps.ura)
     const harness = createHarnessExtension({
       ura: input.deps.ura,
       plugins: input.deps.registry,
@@ -81,8 +70,6 @@ export class AgentSession {
           openUrl: input.deps.openExternal,
         }),
         systemPrompt: buildSystemPrompt(),
-        additionalSkillPaths: input.deps.registry.getSkillPaths(),
-        additionalExtensionPaths: input.deps.registry.getPiExtensionPaths(),
         skillsOverride: (base) => {
           input.deps.skills.registerLoaded(
             base.skills,
@@ -93,14 +80,9 @@ export class AgentSession {
         },
         appendSystemPromptOverride: (base) =>
           input.deps.skills.filterAppendSystemPrompt(base),
-        agentsFilesOverride: () => ({
-          agentsFiles: [
-            ...(context.agentsText
-              ? [{ path: context.agentsPath, content: context.agentsText }]
-              : []),
-            { path: context.mapPath, content: context.map },
-          ],
-        }),
+        // AGENTS.md 由 harness 在每轮上下文里以命名 section 注入（URA 投影，
+        // 版本变化时替换）；这里不再让 pi 旁路读文件。
+        agentsFilesOverride: () => ({ agentsFiles: [] }),
       },
     })
 
@@ -125,42 +107,7 @@ export class AgentSession {
       services,
       created.extensionsResult,
       diagnostics,
-      context,
     )
-  }
-}
-
-// ─── 上下文（全部经 URA） ─────────────────────────────────────────────
-
-async function collectContext(cwd: string, ura: Ura): Promise<SessionContext> {
-  const root = `file://${cwd.replace(/\/$/, '')}`
-  const agentsRef = `${root}/AGENTS.md`
-  const agentsText = await ura
-    .read(agentsRef, { as: 'agent' })
-    .then((opened) =>
-      opened.projection.kind === 'text' ? opened.projection.content : null,
-    )
-    .catch(() => null)
-
-  const entries = await ura.find('*', { scope: root, limit: 200 }).catch(() => [])
-  const lines = [
-    '# WorkStudio Resource Map',
-    '',
-    '本文件由 WorkStudio 自动生成；地址是资源 id，可直接用于 read / edit / write / ls / find / grep。',
-    '',
-    '| 资源 | 类型 |',
-    '|------|------|',
-  ]
-  for (const entry of entries) {
-    lines.push(`| ${entry.ref} | ${entry.kind === 'dir' ? '目录' : '文件'} |`)
-  }
-  if (entries.length === 0) lines.push('| （空工作区） | — |')
-
-  return {
-    agentsText,
-    agentsPath: `${cwd}/AGENTS.md`,
-    map: lines.join('\n'),
-    mapPath: `${cwd}/WORKSTUDIO_RESOURCE_MAP.md`,
   }
 }
 

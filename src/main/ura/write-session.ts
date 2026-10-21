@@ -38,7 +38,7 @@ export class WriteSession {
   /** 在草稿上应用一次变更（偏移以草稿为准）。 */
   stage(change: Change): void {
     this.assertOpen()
-    if (change.kind === 'replace-all') {
+    if (change.type === 'replace-all') {
       this.draft = textOfContent(change.content)
       return
     }
@@ -115,7 +115,7 @@ export function minimalPatch(base: string, next: string): Patch {
     suffix++
   }
   return {
-    kind: 'replace-range',
+    type: 'replace-range',
     start: prefix,
     end: baseBytes.length - suffix,
     bytes: nextBytes.slice(prefix, nextBytes.length - suffix),

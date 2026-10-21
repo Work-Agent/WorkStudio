@@ -349,13 +349,19 @@ export interface ExtensionInstance {
 }
 
 /** 插件运行时信息（供 UI 展示）。 */
+export type PluginType = 'web' | 'app';
+
 export interface PluginInfo {
+  /** 扩展类型：web（页面即资源，仅注入/动作/集合）| app（自带 webapp + codec/projection）。 */
+  type: PluginType;
   id: string;
   name: string;
   version: string;
   description?: string;
   author?: string;
   builtin: boolean;
+  /** 自定义图标（favicon 格式，app://asset/...）。 */
+  iconUrl?: string;
   extensionCount: number;
   skillCount: number;
   /** 工具贡献点数。 */
@@ -363,8 +369,6 @@ export interface PluginInfo {
   hasHome: boolean;
   /** 是否声明了配置页。 */
   hasConfig: boolean;
-  /** 配置页扩展 id（manifest.config.id 真相源；点插件行精确定位 config 视图）。 */
-  configId?: string;
 }
 
 /** Skill 信息（供 UI 选择器 / 技能设置页展示）。 */
@@ -691,7 +695,7 @@ export type ViewState =
   | 'error'
   | 'destroyed';
 
-export type ViewKind = 'extension' | 'browser';
+export type ViewType = 'extension' | 'browser';
 
 /** 视图投影（渲染层唯一数据面）。 */
 /** 激活视图的渲染器（地址栏图标与动作作用域）。 */
@@ -701,6 +705,8 @@ export interface RendererInfo {
   label?: string;
   /** 图标语义名（壳层映射）。 */
   icon?: string;
+  /** 自定义图标（favicon 格式，app://asset/...）。 */
+  iconUrl?: string;
   /** 渲染器归属插件。 */
   owner?: string;
   /** 资源文档类型（资源页）。 */
@@ -710,7 +716,7 @@ export interface RendererInfo {
 export interface ViewEntry {
   id: string;
   tabKey: string;
-  kind: ViewKind;
+  type: ViewType;
   extensionId: string;
   title: string;
   url: string;
@@ -756,7 +762,7 @@ export interface LayoutSnapshot {
 
 /** 交互预览（主进程 → 渲染层；渲染层只渲染不计算）。 */
 export interface InteractionPreview {
-  kind: InteractionKind;
+  type: InteractionType;
   /** pane-resize 的哪一侧。 */
   side?: 'left' | 'right';
   paneWidths?: { left: number; right: number };
@@ -767,7 +773,7 @@ export interface InteractionPreview {
   tabKey?: string;
 }
 
-export type InteractionKind =
+export type InteractionType =
   | 'pane-resize'
   | 'view-move'
   | 'view-resize'
@@ -777,7 +783,7 @@ export type InteractionKind =
 export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 export interface InteractionBeginInput {
-  kind: InteractionKind;
+  type: InteractionType;
   /** pane-resize: 'left' | 'right'；view-*: 'assistant'；tab-reorder: tabKey。 */
   target: string;
   /** view-resize 的缩放方向（八向；缺省 'se'）。 */
@@ -805,12 +811,12 @@ export interface WorkSyncResult {
 
 // ─── 扩展 UI（ws:ui） ──────────────────────────────────────
 
-export type UiDialogKind = 'select' | 'confirm' | 'input' | 'editor';
+export type UiDialogType = 'select' | 'confirm' | 'input' | 'editor';
 
 export interface UiDialogRequest {
   type: 'dialog';
   id: string;
-  kind: UiDialogKind;
+  dialogType: UiDialogType;
   title: string;
   message?: string;
   options?: string[];

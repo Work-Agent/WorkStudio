@@ -32,7 +32,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     parameters: readParams,
     execute: async (_id, { ref, offset, limit }) => {
       const opened = await ura.read(ref, { as: 'agent' })
-      if (opened.projection.kind !== 'text') {
+      if (opened.projection.type !== 'text') {
         return text(`(no text projection: ${ref})`, { ref, error: true })
       }
       const window = sliceLines(opened.projection.content, offset, limit)
@@ -165,7 +165,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     execute: async (_id, { ref }) => {
       const entries = await ura.ls(ref)
       const body = entries
-        .map((entry) => `${entry.kind === 'dir' ? 'd' : '-'} ${entry.name}`)
+        .map((entry) => `${entry.type === 'dir' ? 'd' : '-'} ${entry.name}`)
         .join('\n')
       return text(body || '(empty)', { count: entries.length })
     },

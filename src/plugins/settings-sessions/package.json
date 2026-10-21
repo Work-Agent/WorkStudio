@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-sessions",
+  "version": "1.0.0",
+  "description": "会话管理",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-sessions",
+    "type": "web",
+    "label": "会话管理",
+    "page": "index.html",
+    "icon": "messages"
+  }
+}

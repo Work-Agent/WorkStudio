@@ -90,26 +90,26 @@ export interface RouterDeps {
   } | null>;
 }
 
-type SenderKind = 'workbench' | 'assistant' | 'overlay' | 'view' | 'unknown';
+type SenderType = 'workbench' | 'assistant' | 'overlay' | 'view' | 'unknown';
 
 export function registerRouter(deps: RouterDeps): void {
   ipcMain.handle(
     CH_CMD,
     async (event: IpcMainInvokeEvent, command: string, params?: unknown) => {
-      const kind = classifySender(event, deps);
-      if (kind === 'unknown' || kind === 'view') {
+      const type = classifySender(event, deps);
+      if (type === 'unknown' || type === 'view') {
         return err(
           'forbidden',
           `Command "${command}" is not allowed from this sender`,
         );
       }
-      if (kind === 'assistant' && !isAssistantCommand(command)) {
+      if (type === 'assistant' && !isAssistantCommand(command)) {
         return err(
           'forbidden',
           `Command "${command}" is not allowed for the assistant view`,
         );
       }
-      if (kind === 'overlay' && command !== 'ui.respond') {
+      if (type === 'overlay' && command !== 'ui.respond') {
         return err(
           'forbidden',
           `Command "${command}" is not allowed for the overlay view`,
@@ -133,8 +133,8 @@ export function registerRouter(deps: RouterDeps): void {
   ipcMain.handle(
     CH_EXT,
     async (event: IpcMainInvokeEvent, command: string, params?: unknown) => {
-      const kind = classifySender(event, deps);
-      if (kind !== 'view')
+      const type = classifySender(event, deps);
+      if (type !== 'view')
         return err('forbidden', 'ws:ext is only available inside plugin views');
       return invokeExt(
         deps,
@@ -148,8 +148,8 @@ export function registerRouter(deps: RouterDeps): void {
   ipcMain.handle(
     CH_INTERACTION,
     (event: IpcMainInvokeEvent, action: string, payload?: unknown) => {
-      const kind = classifySender(event, deps);
-      if (kind !== 'workbench' && kind !== 'assistant') return { ok: false };
+      const type = classifySender(event, deps);
+      if (type !== 'workbench' && type !== 'assistant') return { ok: false };
       if (action === 'begin') {
         deps.interaction.begin(payload as never);
         return { ok: true };
@@ -174,7 +174,7 @@ export function registerRouter(deps: RouterDeps): void {
 function classifySender(
   event: IpcMainInvokeEvent,
   deps: RouterDeps,
-): SenderKind {
+): SenderType {
   const win = deps.getWindow();
   if (win && !win.isDestroyed() && event.sender === win.webContents)
     return 'workbench';
@@ -622,13 +622,13 @@ async function invoke(
       case 'views.openBrowser': {
         const url = String(p.url ?? '');
         const allowlist = await d.registry.getSetting<string[]>(
-          'browser',
+          'settings-browser',
           'allowlist',
           [],
         );
         return ok(
           d.viewHost.open({
-            kind: 'browser',
+            type: 'browser',
             url,
             temporary: !onAllowlist(url, allowlist),
           }),
@@ -636,7 +636,7 @@ async function invoke(
       }
       case 'browser.snapshot': {
         const result = (await d.browserCapture?.()) ?? null;
-        if (result?.ref) d.onSettingsChanged?.('browser');
+        if (result?.ref) d.onSettingsChanged?.('settings-browser');
         return ok(result);
       }
       case 'views.activate':

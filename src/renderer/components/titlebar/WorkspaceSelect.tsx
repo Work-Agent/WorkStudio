@@ -66,7 +66,7 @@ export function WorkspaceSelect() {
         if (path) void electronAPI.openPath(path);
       } else if (e.actionId === 'manage') {
         runViewCommand('views.open', {
-          input: { kind: 'plugin', pluginId: 'workspaces' },
+          input: { type: 'plugin', pluginId: 'settings-workspaces' },
         });
       } else if (e.actionId.startsWith('ws:')) {
         void useAgentConfigStore

@@ -177,15 +177,15 @@ function mutateLastAssistant(
 
 function appendDelta(
   key: string,
-  kind: 'text' | 'thinking',
+  type: 'text' | 'thinking',
   delta: string,
 ): void {
   mutateLastAssistant(key, (blocks) => {
     const next = [...blocks];
     const lastBlock = next[next.length - 1];
-    if (lastBlock?.type === kind)
-      next[next.length - 1] = { type: kind, text: lastBlock.text + delta };
-    else next.push({ type: kind, text: delta });
+    if (lastBlock?.type === type)
+      next[next.length - 1] = { type: type, text: lastBlock.text + delta };
+    else next.push({ type: type, text: delta });
     return next;
   });
 }
@@ -450,8 +450,8 @@ interface ConversationState {
 
   // 命令
   queueSend: (behavior: QueueMode, text: string) => Promise<void>;
-  removeQueueItem: (kind: QueueMode, text: string) => Promise<void>;
-  sendNowQueueItem: (kind: QueueMode, text: string) => Promise<void>;
+  removeQueueItem: (type: QueueMode, text: string) => Promise<void>;
+  sendNowQueueItem: (type: QueueMode, text: string) => Promise<void>;
   switchQueueMode: (
     from: QueueMode,
     to: QueueMode,
@@ -531,22 +531,22 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   },
 
   /** 从 pi 队列移除单条（clear_queue 后回填其余）。 */
-  removeQueueItem: async (kind, text) => {
-    const arrKey = kind === 'steer' ? 'steering' : 'followUp';
+  removeQueueItem: async (type, text) => {
+    const arrKey = type === 'steer' ? 'steering' : 'followUp';
     const rest = get().piQueue[arrKey].filter((t) => t !== text);
     set((s) => ({ piQueue: { ...s.piQueue, [arrKey]: rest } }));
     await run('session.clearQueue', 'clear_queue');
-    const command = kind === 'followUp' ? 'session.followUp' : 'session.steer';
-    const legacy = kind === 'followUp' ? 'follow_up' : 'steer';
+    const command = type === 'followUp' ? 'session.followUp' : 'session.steer';
+    const legacy = type === 'followUp' ? 'follow_up' : 'steer';
     for (const t of rest) await run(command, legacy, { text: t });
   },
 
   /** Send Now：出队并立即以指定模式发送。 */
-  sendNowQueueItem: async (kind, text) => {
-    await get().removeQueueItem(kind, text);
+  sendNowQueueItem: async (type, text) => {
+    await get().removeQueueItem(type, text);
     const res = await run(
-      kind === 'followUp' ? 'session.followUp' : 'session.steer',
-      kind === 'followUp' ? 'follow_up' : 'steer',
+      type === 'followUp' ? 'session.followUp' : 'session.steer',
+      type === 'followUp' ? 'follow_up' : 'steer',
       { text },
     );
     if (!res.ok) writeErrorToLast(get().currentKey(), res.error);

@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-preferences",
+  "version": "1.0.0",
+  "description": "偏好设置",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-preferences",
+    "type": "web",
+    "label": "偏好设置",
+    "page": "index.html",
+    "icon": "sliders"
+  }
+}

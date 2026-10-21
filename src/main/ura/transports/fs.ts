@@ -52,18 +52,19 @@ const MIME: Record<string, string> = {
 
 export class FileTransport implements Transport {
   readonly scheme = 'file'
+  readonly capabilities = ['read', 'write', 'list', 'watch']
 
   async stat(ref: string): Promise<ResourceStat> {
     const path = filePath(ref)
     const info = await fsStat(path).catch(() => null)
     if (!info) throw new UraError('resource.not-found', `资源不存在：${ref}`)
     if (info.isDirectory()) {
-      return { version: `d-${Math.floor(info.mtimeMs)}`, kind: 'dir', size: 0 }
+      return { version: `d-${Math.floor(info.mtimeMs)}`, type: 'dir', size: 0 }
     }
     const bytes = await readFile(path)
     return {
       version: versionOf(bytes),
-      kind: 'file',
+      type: 'file',
       size: bytes.length,
       mtimeMs: info.mtimeMs,
     }
@@ -78,7 +79,7 @@ export class FileTransport implements Transport {
       return {
         bytes: new Uint8Array(),
         version: `d-${Math.floor(info.mtimeMs)}`,
-        kind: 'dir',
+        type: 'dir',
         size: 0,
         formatHints: ['directory'],
       }
@@ -89,7 +90,7 @@ export class FileTransport implements Transport {
     return {
       bytes,
       version: versionOf(bytes),
-      kind: 'file',
+      type: 'file',
       size: bytes.length,
       mtimeMs: info.mtimeMs,
       formatHints: HINTS[ext] ?? ['text'],
@@ -111,7 +112,7 @@ export class FileTransport implements Transport {
     }
 
     let next: Uint8Array
-    if (patch.kind === 'replace-all') {
+    if (patch.type === 'replace-all') {
       next = patch.bytes
     } else {
       if (!current) throw new UraError('resource.not-found', `资源不存在：${ref}`)
@@ -149,7 +150,7 @@ export class FileTransport implements Transport {
         return {
           name: entry.name,
           ref: formatRef({ ...parseRef(ref), path: child }),
-          kind: entry.isDirectory() ? 'dir' : entry.isFile() ? 'file' : 'other',
+          type: entry.isDirectory() ? 'dir' : entry.isFile() ? 'file' : 'other',
         }
       })
   }
@@ -161,8 +162,8 @@ export class FileTransport implements Transport {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         void this.stat(ref)
-          .then((info) => emit({ ref, kind: 'content', version: info.version, at: Date.now() }))
-          .catch(() => emit({ ref, kind: 'structure', at: Date.now() }))
+          .then((info) => emit({ ref, type: 'content', version: info.version, at: Date.now() }))
+          .catch(() => emit({ ref, type: 'structure', at: Date.now() }))
       }, 150)
     }
 

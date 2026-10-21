@@ -21,7 +21,7 @@ export class BrowserAutomation implements BrowserAutomationContract {
     if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
       throw new Error(`Unsupported URL scheme (http/https only): ${url}`);
     }
-    const { id } = this.viewHost.open({ kind: 'browser', url });
+    const { id } = this.viewHost.open({ type: 'browser', url });
     await this.viewHost.waitForLoad(id);
     const wc = this.viewHost.getWebContents(id);
     return { viewId: id, url: wc?.getURL() ?? url };

@@ -343,7 +343,7 @@
         try {
           const tree = await invoke('app:ura.tree');
           state.documents = tree
-            .filter((item) => item.kind === 'file')
+            .filter((item) => item.type === 'file')
             .map((item) => ({
               id: item.ref,
               title: item.name,

@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-resources",
+  "version": "1.0.0",
+  "description": "资源索引",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-resources",
+    "type": "web",
+    "label": "资源索引",
+    "page": "index.html",
+    "icon": "search"
+  }
+}

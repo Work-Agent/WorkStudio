@@ -35,7 +35,7 @@ function fromViews(views: ViewEntry[]): OpenTabsProjection {
   const tempTabs: TempTabProjection[] = [];
   for (const v of views) {
     if (v.document) seen.set(v.document.id, v.document);
-    if (v.kind === 'browser' && v.temporary) {
+    if (v.type === 'browser' && v.temporary) {
       tempTabs.push({ instanceId: v.id, title: v.title, url: v.url });
     }
   }

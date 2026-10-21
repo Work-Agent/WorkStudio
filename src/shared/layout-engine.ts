@@ -190,7 +190,7 @@ export function previewPaneResize(
     const raw = ui.sidebarCollapsed ? LEFT_COLLAPSED_PX : ui.paneWidths.left;
     const next = clamp(raw + dx, 0, windowWidth * LEFT_MAX_RATIO);
     return {
-      kind: 'pane-resize',
+      type: 'pane-resize',
       side: 'left',
       paneWidths: { left: Math.round(next), right: ui.paneWidths.right },
       sidebarCollapsed: next < COLLAPSE_THRESHOLD_PX,
@@ -202,7 +202,7 @@ export function previewPaneResize(
     windowWidth * RIGHT_MAX_RATIO,
   );
   return {
-    kind: 'pane-resize',
+    type: 'pane-resize',
     side: 'right',
     paneWidths: { left: ui.paneWidths.left, right: Math.round(next) },
     sidebarCollapsed: ui.sidebarCollapsed,
@@ -215,7 +215,7 @@ export function commitPaneResize(
   ui: UiState,
   windowWidth: number,
 ): Partial<UiState> {
-  if (preview.kind !== 'pane-resize') return {};
+  if (preview.type !== 'pane-resize') return {};
   const widths = preview.paneWidths ?? ui.paneWidths;
   if (preview.side === 'right') {
     return {

@@ -26,7 +26,7 @@ function byteOffset(text: string, index: number): number {
 const codec: Codec = {
   hints: ['text'],
   docType: DOC_TYPE,
-  patchKind: 'text',
+  patchType: 'text',
 
   decode(raw) {
     const text = decoder.decode(raw.bytes)
@@ -42,12 +42,12 @@ const codec: Codec = {
   },
 
   encode(decoded, change: Change): Patch {
-    if (change.kind === 'replace-all') {
+    if (change.type === 'replace-all') {
       const bytes =
         typeof change.content === 'string'
           ? encoder.encode(change.content)
           : change.content
-      return { kind: 'replace-all', bytes }
+      return { type: 'replace-all', bytes }
     }
     const text = textOf(decoded)
     const start = byteOffset(text, change.anchor.start)
@@ -57,7 +57,7 @@ const codec: Codec = {
         ? encoder.encode(change.content)
         : change.content
     return {
-      kind: 'replace-range',
+      type: 'replace-range',
       start,
       end,
       bytes,
@@ -68,19 +68,19 @@ const codec: Codec = {
 
 const agentConsumer: Consumer = {
   docType: DOC_TYPE,
-  kind: 'agent',
+  type: 'agent',
   project(decoded) {
-    return { kind: 'text', content: textOf(decoded) }
+    return { type: 'text', content: textOf(decoded) }
   },
 }
 
 const editorConsumer: Consumer = {
   docType: DOC_TYPE,
-  kind: 'editor',
+  type: 'editor',
   surface: 'text-editor',
   project(decoded) {
     return {
-      kind: 'page',
+      type: 'page',
       surface: 'text-editor',
       page: '',
       data: { text: textOf(decoded), language: 'plaintext' },

@@ -11,7 +11,7 @@ import { create } from 'zustand';
 import { piAPI } from '../api/bridge';
 
 export interface PiDialog {
-  kind: 'select' | 'confirm' | 'input' | 'editor';
+  dialogType: 'select' | 'confirm' | 'input' | 'editor';
   id: string;
   title: string;
   options?: string[];
@@ -89,9 +89,9 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
 
   /** 消费 main 侧 UI 请求（bindPiUIRequests 订阅回调）。 */
   handleRequest: (req) => {
-    const kind = String(req['kind'] ?? '');
+    const dialogType = String(req['dialogType'] ?? '');
     const id = String(req['id'] ?? '');
-    switch (kind) {
+    switch (dialogType) {
       case 'select':
       case 'confirm':
       case 'input':
@@ -102,7 +102,7 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
           get().respond({ id: prev.id, ok: false, reason: 'cancelled' });
         set({
           pendingDialog: {
-            kind,
+            dialogType,
             id,
             title: String(req['title'] ?? ''),
             options: req['options'] as string[] | undefined,

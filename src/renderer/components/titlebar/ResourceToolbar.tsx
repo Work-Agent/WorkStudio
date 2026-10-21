@@ -17,7 +17,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { kindIcon } from '../resource/kindIcon';
+import { typeIcon } from '../resource/typeIcon';
 import { runViewCommand, useShellStore } from '../../state/shell';
 import { FALLBACK_ACTION, TITLEBAR_ACTIONS } from './actions';
 import { rendererIcon } from './icons';
@@ -77,7 +77,7 @@ export function ResourceToolbar() {
   }
 
   // 网页：后退 / 前进（浏览器导航语义）
-  if (active.kind === 'browser') {
+  if (active.type === 'browser') {
     actions.push({
       id: 'go-back',
       title: '后退',
@@ -99,7 +99,7 @@ export function ResourceToolbar() {
     run: () => runViewCommand('views.reload', { id: active.id }),
   });
 
-  const KindIcon = rendererIcon(active.renderer?.icon) ?? kindIcon(active.kind);
+  const KindIcon = rendererIcon(active.renderer?.icon) ?? typeIcon(active.type);
 
   return (
     <div
@@ -107,7 +107,18 @@ export function ResourceToolbar() {
       className="no-drag flex items-center gap-1.5 w-full max-w-[680px] h-8 pl-3 pr-1.5 rounded-full bg-white dark:bg-[#202124] border border-zinc-300/80 dark:border-zinc-700/60 shadow-sm shadow-black/[0.04] dark:shadow-none transition-colors"
       title={url}
     >
-      <KindIcon className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+      {active.renderer?.iconUrl ? (
+        <img
+          src={active.renderer.iconUrl}
+          alt=""
+          className="w-3.5 h-3.5 shrink-0 rounded-sm object-contain"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : (
+        <KindIcon className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+      )}
       <span className="flex-1 min-w-0 text-[12px] font-mono text-zinc-700 dark:text-zinc-300 truncate select-text">
         {url}
       </span>

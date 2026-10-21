@@ -6,8 +6,12 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 
+export type PluginType = 'web' | 'app'
+
 export interface WorkStudioManifest {
   id?: string
+  /** web = 页面即资源（仅注入/动作/集合）；app = 自带 webapp + 资源适配器。 */
+  type?: PluginType
   label?: string
   /** 图标语义名（壳层映射）。 */
   icon?: string
@@ -15,10 +19,6 @@ export interface WorkStudioManifest {
   page?: string
   /** 设置页（可选）。 */
   settings?: string
-  /** 随包携带的技能目录（相对插件根）。 */
-  skills?: string[]
-  /** 随包携带的 pi 扩展文件 / 目录（相对插件根）。 */
-  piExtensions?: string[]
   webAccessible?: string[]
 }
 
@@ -33,6 +33,7 @@ export interface PackageJson {
 
 export interface PluginPackage {
   id: string
+  type: PluginType
   name: string
   /** 展示名。 */
   label: string
@@ -46,12 +47,10 @@ export interface PluginPackage {
   page?: string
   /** 设置页（绝对路径）。 */
   settings?: string
+  /** 自定义图标（favicon 格式，data: URL）。 */
+  iconUrl?: string
   /** 注册入口（绝对路径）。 */
   uraEntry?: string
-  /** pi 扩展入口（绝对路径）。 */
-  piEntry?: string
-  skills: string[]
-  piExtensions: string[]
 }
 
 export async function scanPluginPackages(roots: string[]): Promise<PluginPackage[]> {
@@ -85,13 +84,25 @@ async function readPackage(root: string, dirName: string): Promise<PluginPackage
   if (!workstudio) return null
 
   const id = workstudio.id ?? pkg.name ?? dirName
+  const type: PluginType =
+    workstudio.type ?? (pkg.exports ? 'app' : 'web')
   const page = await resolveFile(root, workstudio.page)
-  const settingsPage = await resolveFile(root, workstudio.settings)
+  // 设置页仅 app 型插件拥有；web 型页面即资源，不需要设置页。
+  const settingsPage =
+    type === 'app' ? await resolveFile(root, workstudio.settings) : undefined
+  const iconRaw = workstudio.icon
+  const iconFile =
+    iconRaw && /\.(svg|png|ico|jpe?g|webp|gif)$/i.test(iconRaw)
+      ? await resolveFile(root, iconRaw)
+      : undefined
+  const iconUrl = iconFile ? await dataUrl(iconFile) : undefined
   return {
     id,
+    type,
     name: pkg.name ?? id,
     label: workstudio.label ?? pkg.name ?? id,
-    ...(workstudio.icon ? { icon: workstudio.icon } : {}),
+    ...(iconFile ? { iconUrl } : {}),
+    ...(!iconFile && workstudio.icon ? { icon: workstudio.icon } : {}),
     version: pkg.version ?? '0.0.0',
     description: pkg.description,
     author: typeof pkg.author === 'string' ? pkg.author : pkg.author?.name,
@@ -99,10 +110,24 @@ async function readPackage(root: string, dirName: string): Promise<PluginPackage
     page,
     settings: settingsPage,
     uraEntry: await resolveFile(root, exportPath(pkg.exports, './ura')),
-    piEntry: await resolveFile(root, exportPath(pkg.exports, './pi')),
-    skills: workstudio.skills ?? [],
-    piExtensions: workstudio.piExtensions ?? [],
   }
+}
+
+const ICON_MIME: Record<string, string> = {
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  ico: 'image/x-icon',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+}
+
+async function dataUrl(file: string): Promise<string> {
+  const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
+  const mime = ICON_MIME[ext] ?? 'application/octet-stream'
+  const bytes = await readFile(file)
+  return `data:${mime};base64,${bytes.toString('base64')}`
 }
 
 function exportPath(exportsField: PackageJson['exports'], key: string): string | undefined {

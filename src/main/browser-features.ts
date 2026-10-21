@@ -1,10 +1,10 @@
-// ─── 浏览器插件：集合注册 ────────────────────────────────────────────
+// ─── 浏览器内建能力：站点集合 + 可访问性标记 ────────────────────────
 //
 // 一个白名单域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
-// 白名单存在插件设置（settings.json，key = allowlist）。
+// 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
 
-import { registerCollection, registerViewAction } from '../../main/ura/sdk'
-import type { CollectionGroup, CollectionProvider } from '../../shared/ura'
+import { registerCollection, registerConsumer, registerViewAction } from './ura/sdk'
+import type { CollectionGroup, CollectionProvider } from '../shared/ura'
 
 const SITES_DIR = 'sites'
 
@@ -30,16 +30,13 @@ const webCollection: CollectionProvider = {
         title: domain,
         icon: `https://${domain}/favicon.ico`,
         items: entries
-          .filter((entry) => entry.kind === 'file')
+          .filter((entry) => entry.type === 'file')
           .map((entry) => ({ ref: entry.ref, title: titleOf(entry.ref) })),
       })
     }
     return groups
   },
 }
-
-registerCollection(webCollection)
-
 
 // ─── 地址栏动作：可访问性元素标记 ────────────────────────────────────
 
@@ -144,7 +141,20 @@ const MARKS_SCRIPT = `(() => {
   return items.length;
 })()`
 
-registerViewAction({
+export function registerBrowserFeatures(): void {
+  registerCollection(webCollection)
+  registerConsumer({
+    docType: 'html-doc@1',
+    type: 'editor',
+    requires: ['live'],
+    surface: 'browser',
+    project: (_decoded, _raw, ref) => ({
+      type: 'browser',
+      surface: 'browser',
+      url: ref,
+    }),
+  })
+  registerViewAction({
   id: 'a11y-marks',
   label: '可访问性标记',
   icon: 'mouse-pointer-click',
@@ -161,3 +171,4 @@ registerViewAction({
     ctx.setState(ctx.on ? 'on' : 'off')
   },
 })
+}

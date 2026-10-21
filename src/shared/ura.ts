@@ -42,11 +42,11 @@ export function schemeOf(id: string): string {
 
 // ─── 来源（transport） ───────────────────────────────────────────────
 
-export type ResourceKind = 'file' | 'dir' | 'other'
+export type ResourceType = 'file' | 'dir' | 'other'
 
 export interface ResourceStat {
   version: string
-  kind: ResourceKind
+  type: ResourceType
   size: number
   mtimeMs?: number
 }
@@ -61,7 +61,7 @@ export interface RawContent extends ResourceStat {
 export interface ListEntry {
   name: string
   ref: string
-  kind: ResourceKind
+  type: ResourceType
   size?: number
   version?: string
 }
@@ -75,17 +75,19 @@ export interface TransportWriteResult {
   version: string
 }
 
-export type ChangeKind = 'content' | 'structure' | 'state'
+export type ChangeType = 'content' | 'structure' | 'state'
 
 export interface ChangeEvent {
   ref: string
-  kind: ChangeKind
+  type: ChangeType
   version?: string
   at: number
 }
 
 export interface Transport {
   readonly scheme: string
+  /** 来源能力：read / write / list / watch / live。 */
+  readonly capabilities?: string[]
   stat(ref: string): Promise<ResourceStat>
   read(ref: string): Promise<RawContent>
   write(
@@ -100,9 +102,9 @@ export interface Transport {
 // ─── 传输层补丁 ──────────────────────────────────────────────────────
 
 export type Patch =
-  | { kind: 'replace-all'; bytes: Uint8Array }
+  | { type: 'replace-all'; bytes: Uint8Array }
   | {
-      kind: 'replace-range'
+      type: 'replace-range'
       start: number
       end: number
       bytes: Uint8Array
@@ -113,8 +115,8 @@ export type Patch =
 export type Anchor = { start: number; end: number; expected?: string }
 
 export type Change =
-  | { kind: 'replace-all'; content: string | Uint8Array }
-  | { kind: 'replace-range'; anchor: Anchor; content: string | Uint8Array }
+  | { type: 'replace-all'; content: string | Uint8Array }
+  | { type: 'replace-range'; anchor: Anchor; content: string | Uint8Array }
 
 // ─── 格式（codec） ───────────────────────────────────────────────────
 
@@ -135,8 +137,10 @@ export interface Span {
 export interface Codec {
   /** 格式提示（按具体度声明，不含兜底 text）。 */
   readonly hints: string[]
+  /** 扩展名（不含点；用于资源地图的格式标注）。 */
+  readonly extensions?: string[]
   readonly docType: DocType
-  readonly patchKind: PatchKind
+  readonly patchType: PatchKind
   decode(raw: RawContent, ref: string): Promise<DecodedDoc> | DecodedDoc
   /** 用投影映射把锚点反查成结构化文档中的跨度。 */
   locate(decoded: DecodedDoc, anchor: Anchor): Span
@@ -162,13 +166,13 @@ export interface Store {
 // ─── 出口（consumer） ────────────────────────────────────────────────
 
 export interface AgentProjection {
-  kind: 'text'
+  type: 'text'
   content: string
   truncated?: boolean
 }
 
-export interface EditorProjection {
-  kind: 'page'
+export interface PageProjection {
+  type: 'page'
   surface: string
   /** 渲染器归属插件（页面与动作的作用域）。 */
   owner?: string
@@ -178,11 +182,22 @@ export interface EditorProjection {
   actions?: string[]
 }
 
+/** 实时视图投影：由视图宿主加载 URL（浏览器运行时）。 */
+export interface BrowserProjection {
+  type: 'browser'
+  surface: string
+  url: string
+}
+
+export type EditorProjection = PageProjection | BrowserProjection
+
 export type Projection = AgentProjection | EditorProjection
 
 export interface Consumer {
   readonly docType: DocType
-  readonly kind: 'agent' | 'editor'
+  readonly type: 'agent' | 'editor'
+  /** 需要 transport 具备的能力（如 live）；缺省 = 通用。 */
+  readonly requires?: string[]
   /** editor 出口的页面标识（页面由插件清单解析）。 */
   readonly surface?: string
   project(
@@ -196,7 +211,7 @@ export interface Consumer {
 
 export interface ViewActionContext {
   viewId: string
-  kind: 'browser' | 'extension'
+  type: 'browser' | 'extension'
   /** 本次切换后的状态（toggle 动作）。 */
   on: boolean
   /** 回报动作状态（壳层据此高亮 / 换图标）。 */
@@ -327,7 +342,7 @@ export type CommitResult =
 export interface TreeItem {
   ref: string
   name: string
-  kind: ResourceKind
+  type: ResourceType
   ext: string
   size?: number
 }

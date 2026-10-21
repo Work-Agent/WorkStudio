@@ -17,6 +17,8 @@ async function main(): Promise<void> {
 
   const { ura, registry, host } = await createUraRuntime({
     pluginRoots: [join(process.cwd(), 'src', 'plugins')],
+    dataRoot: join(tmpdir(), 'ura-smoke-data'),
+    workspace: () => dir,
   })
 
   console.log('registry:', JSON.stringify(registry.snapshot(), null, 2))
@@ -39,14 +41,14 @@ async function main(): Promise<void> {
   console.log('grep:', await ura.grep('two', { scope: `file://${dir}` }))
 
   const session = await ura.openWrite(ref)
-  session.stage({ kind: 'replace-all', content: 'line one\nline TWO\n' })
+  session.stage({ type: 'replace-all', content: 'line one\nline TWO\n' })
   console.log('commit:', await session.commit())
   console.log('after:', (await ura.read(ref)).projection)
 
   const a = await ura.openWrite(ref)
   const b = await ura.openWrite(ref)
-  a.stage({ kind: 'replace-all', content: 'A' })
-  b.stage({ kind: 'replace-all', content: 'B' })
+  a.stage({ type: 'replace-all', content: 'A' })
+  b.stage({ type: 'replace-all', content: 'B' })
   console.log('commit a:', await a.commit())
   console.log('commit b:', await b.commit())
 
@@ -63,7 +65,7 @@ async function main(): Promise<void> {
   console.log('tool edit:', JSON.stringify(await run('edit', { ref: `file://${join(dir, 'new.txt')}`, start: 0, end: 5, expected: 'hello', content: 'world' })))
 
   const session2 = await ura.openWrite(ref)
-  session2.stage({ kind: 'replace-range', anchor: { start: 0, end: 1 }, content: 'Z' })
+  session2.stage({ type: 'replace-range', anchor: { start: 0, end: 1 }, content: 'Z' })
   console.log('range commit:', await session2.commit())
   console.log('final:', (await ura.read(ref)).projection)
 

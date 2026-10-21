@@ -12,14 +12,15 @@ import { SubListView } from './SubListView';
 
 /** 设置域成员（SettingsList 展示；插件列表去重）。 */
 const SETTINGS_DOMAIN = new Set([
-  'settings-manager',
-  'model-config',
-  'extension-manager',
-  'skills',
-  'session-manager',
-  'workspaces',
-  'storage',
-  'resources',
+  'settings-preferences',
+  'settings-browser',
+  'settings-models',
+  'settings-extensions',
+  'settings-skills',
+  'settings-sessions',
+  'settings-workspaces',
+  'settings-storage',
+  'settings-resources',
 ]);
 
 export function PluginList() {
@@ -44,8 +45,19 @@ export function PluginList() {
                 className="group flex items-center px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors min-h-[42px]"
                 title={p.name}
               >
-                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-cyan-500 text-cyan-50 dark:bg-cyan-600 dark:text-cyan-100">
-                  <Package className="w-4 h-4" />
+                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-cyan-500 text-cyan-50 dark:bg-cyan-600 dark:text-cyan-100 overflow-hidden">
+                  {p.iconUrl ? (
+                    <img
+                      src={p.iconUrl}
+                      alt=""
+                      className="w-5 h-5 object-contain"
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <Package className="w-4 h-4" />
+                  )}
                 </div>
                 {!collapsed && (
                   <div className="ml-2 flex-1 overflow-hidden min-w-0">

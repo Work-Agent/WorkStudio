@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-workspaces",
+  "version": "1.0.0",
+  "description": "工作区",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-workspaces",
+    "type": "web",
+    "label": "工作区",
+    "page": "index.html",
+    "icon": "folder"
+  }
+}

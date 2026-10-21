@@ -43,7 +43,7 @@ function resizeCursor(direction: ResizeDirection): string {
 }
 
 interface Session {
-  kind: InteractionBeginInput['kind'];
+  type: InteractionBeginInput['type'];
   target: string;
   /** view-resize 的缩放方向（八向；缺省 'se'）。 */
   direction: ResizeDirection;
@@ -87,7 +87,7 @@ export class InteractionController {
     const win = this.deps.getWindow();
     if (!win || win.isDestroyed()) return;
     this.session = {
-      kind: input.kind,
+      type: input.type,
       target: input.target,
       direction: input.direction ?? 'se',
       startCursor: this.cursorInWindow(win),
@@ -98,7 +98,7 @@ export class InteractionController {
     };
     this.moveSeen = false;
     this.attachCapture(win);
-    log.info('begin', input.kind, input.target);
+    log.info('begin', input.type, input.target);
   }
 
   /** 发起方（拥有拖拽序列的页面）上报移动：位置仍由主进程以 screen 光标为准。 */
@@ -141,7 +141,7 @@ export class InteractionController {
     this.detachCapture();
     if (!cancel && session.preview) {
       const win = this.deps.getWindow();
-      if (session.kind === 'pane-resize') {
+      if (session.type === 'pane-resize') {
         const patch = commitPaneResize(
           session.preview,
           session.startUi,
@@ -149,8 +149,8 @@ export class InteractionController {
         );
         this.deps.uiState.set(patch);
       } else if (
-        session.kind === 'view-move' ||
-        session.kind === 'view-resize'
+        session.type === 'view-move' ||
+        session.type === 'view-resize'
       ) {
         if (session.preview.floating)
           this.deps.setFloating(session.preview.floating);
@@ -177,11 +177,11 @@ export class InteractionController {
       /* ignore */
     }
     const cursor =
-      this.session?.kind === 'pane-resize'
+      this.session?.type === 'pane-resize'
         ? 'col-resize'
-        : this.session?.kind === 'view-resize'
+        : this.session?.type === 'view-resize'
           ? resizeCursor(this.session.direction)
-          : this.session?.kind === 'tab-reorder'
+          : this.session?.type === 'tab-reorder'
             ? 'grabbing'
             : 'move';
     view.webContents.send(CH_CAPTURE, { type: 'cursor', cursor });
@@ -217,7 +217,7 @@ export class InteractionController {
     this.deps.viewHost.setCaptureActive(false);
   }
 
-  /** 指针更新：节流到 ~60fps，按 kind 计算预览并应用。 */
+  /** 指针更新：节流到 ~60fps，按 type 计算预览并应用。 */
   private update(): void {
     const session = this.session;
     if (!session) return;
@@ -230,7 +230,7 @@ export class InteractionController {
     const layout = this.deps.getLayout();
     const ui = this.deps.uiState.get();
 
-    switch (session.kind) {
+    switch (session.type) {
       case 'pane-resize': {
         session.preview = previewPaneResize(
           session.target === 'right' ? 'right' : 'left',
@@ -252,7 +252,7 @@ export class InteractionController {
           },
           layout.resourcePane,
         );
-        session.preview = { kind: 'view-move', floating: next };
+        session.preview = { type: 'view-move', floating: next };
         break;
       }
       case 'view-resize': {
@@ -275,14 +275,14 @@ export class InteractionController {
             (d.includes('n') ? dy : 0),
         };
         session.preview = {
-          kind: 'view-resize',
+          type: 'view-resize',
           floating: clampFloating(box, layout.resourcePane),
         };
         break;
       }
       case 'tab-reorder': {
         session.preview = {
-          kind: 'tab-reorder',
+          type: 'tab-reorder',
           cursorX: cursor.x,
           tabKey: session.target,
         };

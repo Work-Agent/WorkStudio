@@ -81,7 +81,7 @@ export class Ura {
   ): Promise<{ version: string }> {
     return this.pipeline.write(
       ref,
-      { kind: 'replace-all', bytes: toBytes(content) },
+      { type: 'replace-all', bytes: toBytes(content) },
       opts,
     )
   }
@@ -96,7 +96,7 @@ export class Ura {
     if (opened.codec && opened.decoded) {
       const span = opened.codec.locate(opened.decoded, anchor)
       const patch = opened.codec.encode(opened.decoded, {
-        kind: 'replace-range',
+        type: 'replace-range',
         anchor: { ...anchor, ...span },
         content,
       })
@@ -107,7 +107,7 @@ export class Ura {
     return this.pipeline.write(
       ref,
       {
-        kind: 'replace-range',
+        type: 'replace-range',
         start: anchor.start,
         end: anchor.end,
         bytes: toBytes(content),
@@ -135,7 +135,7 @@ export class Ura {
     const limit = options.limit ?? 200
     const results: ListEntry[] = []
     for await (const entry of this.walk(root)) {
-      if (entry.kind !== 'file') continue
+      if (entry.type !== 'file') continue
       const name = entry.ref.slice(entry.ref.lastIndexOf('/') + 1)
       if (!matcher.test(name) && !matcher.test(entry.ref)) continue
       results.push(entry)
@@ -152,7 +152,7 @@ export class Ura {
     let scanned = 0
     let bytes = 0
     for await (const entry of this.walk(root)) {
-      if (entry.kind !== 'file') continue
+      if (entry.type !== 'file') continue
       if (scanned++ >= MAX_SCAN_FILES || bytes >= MAX_SCAN_BYTES) break
       let opened: Opened
       try {
@@ -188,8 +188,8 @@ export class Ura {
       items.push({
         ref: entry.ref,
         name: entry.name,
-        kind: entry.kind,
-        ext: entry.kind === 'file' ? extensionOf(entry.name) : '',
+        type: entry.type,
+        ext: entry.type === 'file' ? extensionOf(entry.name) : '',
         ...(entry.size !== undefined ? { size: entry.size } : {}),
       })
       if (items.length >= limit) break
@@ -211,31 +211,48 @@ export class Ura {
   ): Promise<AgentProjection> {
     const docType = opened.decoded?.docType
     if (docType) {
-      const consumer = this.registry.consumerFor(docType, 'agent')
+      const consumer = this.registry.consumerFor(
+        docType,
+        'agent',
+        opened.capabilities,
+      )
       if (consumer) {
         const projection = await consumer.project(opened.decoded!, opened.raw, opened.ref)
-        if (projection.kind === 'text') return sliceWindow(projection, window)
+        if (projection.type === 'text') return sliceWindow(projection, window)
       }
     }
     const content = textOf(opened)
-    return sliceWindow({ kind: 'text', content }, window)
+    return sliceWindow({ type: 'text', content }, window)
   }
 
   private async editorProjection(opened: Opened): Promise<EditorProjection> {
     const docType = opened.decoded?.docType
     if (docType) {
-      const consumer = this.registry.consumerFor(docType, 'editor')
+      const consumer = this.registry.consumerFor(
+        docType,
+        'editor',
+        opened.capabilities,
+      )
       if (consumer?.surface) {
-        const projection = await consumer.project(opened.decoded!, opened.raw, opened.ref)
-        if (projection.kind === 'page') {
-          const owner = this.registry.ownerOfConsumer(docType, 'editor')
+        const projection = await consumer.project(
+          opened.decoded!,
+          opened.raw,
+          opened.ref,
+        )
+        if (projection.type === 'browser') return projection
+        if (projection.type === 'page') {
+          const owner = this.registry.ownerOfConsumer(
+            docType,
+            'editor',
+            opened.capabilities,
+          )
           const page = this.resolvePage(projection.surface, owner)
           return { ...projection, page: page ?? '', ...(owner ? { owner } : {}) }
         }
       }
     }
     return {
-      kind: 'page',
+      type: 'page',
       surface: 'raw',
       page: '',
       data: { formatHints: opened.raw.formatHints, degraded: true },
@@ -258,7 +275,7 @@ export class Ura {
       }
       for (const entry of entries) {
         yield entry
-        if (entry.kind === 'dir') queue.push(entry.ref)
+        if (entry.type === 'dir') queue.push(entry.ref)
       }
     }
   }

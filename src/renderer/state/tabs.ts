@@ -18,14 +18,14 @@ export type ViewState =
   | 'error'
   | 'destroyed';
 
-export type TabKind = 'document' | 'plugin' | 'browser';
+export type TabType = 'document' | 'plugin' | 'browser';
 
 export interface TabEntry {
   /** 稳定键（跨重启持久化用；规则见 views-design.md §2.1）。 */
   tabKey: string;
   /** 运行时句柄（视图宿主的 instanceId）。 */
   instanceId: string;
-  kind: TabKind;
+  type: TabType;
   /** 渲染器 / 内置视图 id（def 匹配、声明式动作）。 */
   extensionId: string;
   title: string;
@@ -38,9 +38,9 @@ export interface TabEntry {
   pinned: boolean;
   /** raw 网页且不在归档名单（临时网页，随标签存亡）。 */
   temporary?: boolean;
-  /** kind=document 的上下文。 */
+  /** type=document 的上下文。 */
   document?: DocumentMeta;
-  /** kind=plugin 的上下文。 */
+  /** type=plugin 的上下文。 */
   plugin?: PluginInfo;
   /** raw 网页视图标记。 */
   raw?: boolean;
@@ -307,7 +307,7 @@ export const useTabsStore = create<TabsStore>()((set, get) => {
 export function openDocsOf(tabs: TabEntry[]): DocumentMeta[] {
   const seen = new Map<string, DocumentMeta>();
   for (const tab of tabs) {
-    if (tab.kind === 'document' && tab.document)
+    if (tab.type === 'document' && tab.document)
       seen.set(tab.document.id, tab.document);
   }
   return [...seen.values()];
@@ -324,7 +324,7 @@ export function activeDocIdOf(
 
 /** 临时网页标签（侧边栏「临时网页」分组 / 二级列表）。 */
 export function tempTabsOf(tabs: TabEntry[]): TabEntry[] {
-  return tabs.filter((t) => t.kind === 'browser' && t.temporary);
+  return tabs.filter((t) => t.type === 'browser' && t.temporary);
 }
 
 /** 激活 tab。 */

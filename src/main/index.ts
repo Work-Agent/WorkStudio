@@ -461,6 +461,7 @@ app.whenReady().then(async () => {
         workspacePath = next;
         const nextWsId = registerWorkspace(next);
         watchWorkspaceRoot();
+        uraRuntime?.map.restart();
         uiState.attachWorkspace(nextWsId);
       },
       ui: {
@@ -583,7 +584,7 @@ app.whenReady().then(async () => {
     onSettingsChanged: (pluginId) => {
       broadcastToWindows(CH_URA, {
         ref: `plugin://${pluginId}`,
-        kind: 'state',
+        type: 'state',
         at: Date.now(),
       });
     },

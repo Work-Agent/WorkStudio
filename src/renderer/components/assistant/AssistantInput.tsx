@@ -168,7 +168,7 @@ export function AssistantInput() {
   const openModelConfig = (): void => {
     void (async () => {
       const plugins = await usePluginsStore.getState().load();
-      const mc = plugins.find((p) => p.id === 'model-config');
+      const mc = plugins.find((p) => p.id === 'settings-models');
       if (mc) await useTabServiceStore.getState().openPluginConfig(mc);
     })();
   };

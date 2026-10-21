@@ -42,13 +42,13 @@ export function DialogHost() {
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {
-      if (dialog.kind === 'select') {
+      if (dialog.dialogType === 'select') {
         e.preventDefault();
         submit(dialog.options?.[selectIdx]);
-      } else if (dialog.kind === 'input') {
+      } else if (dialog.dialogType === 'input') {
         e.preventDefault();
         submit(inputVal);
-      } else if (dialog.kind === 'confirm') {
+      } else if (dialog.dialogType === 'confirm') {
         e.preventDefault();
         submit(true);
       }
@@ -57,13 +57,13 @@ export function DialogHost() {
     if (
       e.key === 'Enter' &&
       (e.metaKey || e.ctrlKey) &&
-      dialog.kind === 'editor'
+      dialog.dialogType === 'editor'
     ) {
       e.preventDefault();
       submit(editorVal);
     }
     if (
-      dialog.kind === 'select' &&
+      dialog.dialogType === 'select' &&
       (e.key === 'ArrowDown' || e.key === 'ArrowUp')
     ) {
       e.preventDefault();
@@ -90,15 +90,15 @@ export function DialogHost() {
         <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
           <span className="text-[13px] font-medium">{dialog.title}</span>
           <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
-            {dialog.kind === 'select'
+            {dialog.dialogType === 'select'
               ? '↑↓ 选择 · Enter 确认'
-              : dialog.kind === 'editor'
+              : dialog.dialogType === 'editor'
                 ? '⌘/Ctrl+Enter 提交'
                 : 'Enter 确认 · Esc 取消'}
           </span>
         </div>
 
-        {dialog.kind === 'select' && (
+        {dialog.dialogType === 'select' && (
           <div className="max-h-72 overflow-y-auto py-1.5">
             {(dialog.options ?? []).map((opt, i) => (
               <button
@@ -117,7 +117,7 @@ export function DialogHost() {
           </div>
         )}
 
-        {dialog.kind === 'confirm' && (
+        {dialog.dialogType === 'confirm' && (
           <div className="px-4 py-4">
             <p className="text-[12.5px] text-zinc-600 dark:text-zinc-300 leading-relaxed">
               {dialog.message}
@@ -143,7 +143,7 @@ export function DialogHost() {
           </div>
         )}
 
-        {dialog.kind === 'input' && (
+        {dialog.dialogType === 'input' && (
           <div className="px-4 py-4">
             <input
               value={inputVal}
@@ -163,7 +163,7 @@ export function DialogHost() {
           </div>
         )}
 
-        {dialog.kind === 'editor' && (
+        {dialog.dialogType === 'editor' && (
           <div className="px-4 py-4">
             <textarea
               value={editorVal}

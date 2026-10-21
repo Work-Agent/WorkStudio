@@ -8,7 +8,7 @@ import type { BrowserSnapshot } from './browser-contract'
 import type { PluginHost } from '../plugins/host'
 import type { Ura } from '../ura/facade'
 
-const PLUGIN_ID = 'browser'
+const PLUGIN_ID = 'settings-browser'
 const ALLOWLIST_KEY = 'allowlist'
 
 export class SiteSnapshots {

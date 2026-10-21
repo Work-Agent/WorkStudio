@@ -753,7 +753,7 @@ export class AgentHost {
 
   /** 浮层对话框快捷入口（供应商登录交互用）。 */
   private async askDialog(
-    kind: 'select' | 'input',
+    dialogType: 'select' | 'input',
     fields: {
       title: string;
       message?: string;
@@ -766,7 +766,7 @@ export class AgentHost {
       onRequest: (req) => this.deps.ui.onDialogRequest(req),
       onResolved: (id, reason) => this.deps.ui.onDialogResolved(id, reason),
     });
-    return this.dialogHost.ask(kind, fields);
+    return this.dialogHost.ask(dialogType, fields);
   }
 
   // ─── 工作区 / 换代 ──────────────────────────────────────

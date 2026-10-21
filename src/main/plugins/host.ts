@@ -7,12 +7,23 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { uraRegistry, type UraRegistry } from '../ura/registry'
-import type { PluginInfo } from '../../shared/types'
+import type { PluginInfo, PluginType } from '../../shared/types'
 import { scanPluginPackages, type PluginPackage } from './packages'
 
 export interface BuiltinLoader {
   id: string
   load: () => Promise<unknown>
+}
+
+export interface PluginPageEntry {
+  id: string
+  label: string
+  icon?: string
+  version: string
+  type: PluginType
+  page: string
+  settings?: string
+  iconUrl?: string
 }
 
 export interface PluginHostOptions {
@@ -37,7 +48,8 @@ export class PluginHost {
 
     for (const builtin of this.options.builtins) {
       try {
-        await registry.runAs(builtin.id, builtin.load)
+        const pkg = this.packages.get(builtin.id)
+        await registry.runAs(builtin.id, pkg?.type ?? 'app', builtin.load)
       } catch (error) {
         this.diagnostics.push(`内置插件装载失败：${builtin.id} · ${messageOf(error)}`)
       }
@@ -48,7 +60,7 @@ export class PluginHost {
       if (builtinIds.has(pkg.id) || !pkg.uraEntry) continue
       try {
         const url = pathToFileURL(pkg.uraEntry).href
-        await registry.runAs(pkg.id, () => import(url))
+        await registry.runAs(pkg.id, pkg.type, () => import(url))
       } catch (error) {
         this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`)
       }
@@ -57,6 +69,24 @@ export class PluginHost {
 
   get(id: string): PluginPackage | undefined {
     return this.packages.get(id)
+  }
+
+  /** 插件/内置页面统一解析（views.open 与页面白名单共用）。 */
+  getPage(id: string): PluginPageEntry | null {
+    const pkg = this.packages.get(id)
+    if (pkg?.page) {
+      return {
+        id: pkg.id,
+        label: pkg.label,
+        ...(pkg.icon ? { icon: pkg.icon } : {}),
+        version: pkg.version,
+        type: pkg.type,
+        page: pkg.page,
+        ...(pkg.settings ? { settings: pkg.settings } : {}),
+        ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
+      }
+    }
+    return null
   }
 
   list(): PluginPackage[] {
@@ -75,8 +105,7 @@ export class PluginHost {
     for (const pkg of this.packages.values()) {
       for (const page of [pkg.page, pkg.settings]) {
         if (!page) continue
-        const rel = relative(dirname(page), file)
-        if (!rel.startsWith('..') && !isAbsolute(rel)) return true
+        if (within(dirname(page), file)) return true
       }
     }
     return false
@@ -88,33 +117,22 @@ export class PluginHost {
 
   /** 插件清单投影（设置列表 / 插件列表）。 */
   pluginInfoList(): PluginInfo[] {
-    return this.list().map((pkg) => ({
+    const plugins = this.list().map((pkg) => ({
       id: pkg.id,
+      type: pkg.type,
       name: pkg.label,
       version: pkg.version,
       ...(pkg.description ? { description: pkg.description } : {}),
       ...(pkg.author ? { author: pkg.author } : {}),
+      ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
       builtin: true,
       extensionCount: pkg.page ? 1 : 0,
-      skillCount: pkg.skills.length,
+      skillCount: 0,
       toolCount: 0,
       hasHome: false,
       hasConfig: true,
     }))
-  }
-
-  /** 插件声明的技能目录（pi additionalSkillPaths）。 */
-  getSkillPaths(): string[] {
-    return this.list().flatMap((pkg) =>
-      pkg.skills.map((spec) => join(pkg.root, spec)),
-    )
-  }
-
-  /** 插件随包携带的 pi 扩展（additionalExtensionPaths）。 */
-  getPiExtensionPaths(): string[] {
-    return this.list().flatMap((pkg) =>
-      pkg.piExtensions.map((rel) => join(pkg.root, rel)),
-    )
+    return plugins
   }
 
   pluginNameOf(source: string): string {
@@ -175,6 +193,11 @@ export class PluginHost {
   private get registry(): UraRegistry {
     return this.options.registry ?? uraRegistry
   }
+}
+
+function within(dir: string, file: string): boolean {
+  const rel = relative(dir, file)
+  return !rel.startsWith('..') && !isAbsolute(rel)
 }
 
 function messageOf(error: unknown): string {

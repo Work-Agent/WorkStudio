@@ -11,15 +11,15 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Theme } from '@earendil-works/pi-coding-agent';
 import type {
-  UiDialogKind,
+  UiDialogType,
   UiDialogRequest,
   UiDialogResponse,
 } from '../../shared/types';
 
 // ─── 对话框宿主 ───────────────────────────────────────────
 
-/** 各 kind 的契约取消值（永不伪造「第一项 / 空串」当用户输入）。 */
-const CANCEL_VALUE: Record<UiDialogKind, string | boolean | undefined> = {
+/** 各 type 的契约取消值（永不伪造「第一项 / 空串」当用户输入）。 */
+const CANCEL_VALUE: Record<UiDialogType, string | boolean | undefined> = {
   select: undefined,
   input: undefined,
   editor: undefined,
@@ -59,7 +59,7 @@ export class DialogHost {
   ) {}
 
   ask(
-    kind: UiDialogKind,
+    dialogType: UiDialogType,
     fields: {
       title: string;
       message?: string;
@@ -75,7 +75,7 @@ export class DialogHost {
     const request: UiDialogRequest = {
       type: 'dialog',
       id,
-      kind,
+      dialogType,
       title: fields.title,
       ...(fields.message !== undefined ? { message: fields.message } : {}),
       ...(fields.options !== undefined ? { options: fields.options } : {}),
@@ -89,7 +89,7 @@ export class DialogHost {
     // 请求到达前已中止：不 dispatch，直接按取消结算（fail-closed）。
     if (opts?.signal?.aborted) {
       this.listeners.onResolved(id, 'aborted');
-      return Promise.resolve(CANCEL_VALUE[kind]);
+      return Promise.resolve(CANCEL_VALUE[dialogType]);
     }
     return new Promise((resolve) => {
       const entry: PendingEntry = {
@@ -124,7 +124,7 @@ export class DialogHost {
     const request: UiDialogRequest = {
       type: 'dialog',
       id,
-      kind: 'confirm',
+      dialogType: 'confirm',
       title: fields.title,
       ...(fields.message !== undefined ? { message: fields.message } : {}),
     };
@@ -153,7 +153,7 @@ export class DialogHost {
       this.settle(response.id, 'cancelled');
       return;
     }
-    if (entry.request.kind === 'confirm') {
+    if (entry.request.dialogType === 'confirm') {
       this.settle(response.id, 'answered', response.confirmed === true);
     } else {
       this.settle(
@@ -161,7 +161,7 @@ export class DialogHost {
         'answered',
         typeof response.value === 'string'
           ? response.value
-          : CANCEL_VALUE[entry.request.kind],
+          : CANCEL_VALUE[entry.request.dialogType],
       );
     }
   }
@@ -184,7 +184,7 @@ export class DialogHost {
       entry.signal.removeEventListener('abort', entry.onAbort);
     this.pending.delete(requestId);
     entry.resolve(
-      value !== undefined ? value : CANCEL_VALUE[entry.request.kind],
+      value !== undefined ? value : CANCEL_VALUE[entry.request.dialogType],
     );
     this.listeners.onResolved(requestId, reason);
   }

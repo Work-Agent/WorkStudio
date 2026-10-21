@@ -5,8 +5,9 @@
   "author": "work-studio",
   "workstudio": {
     "id": "text-editor",
+    "type": "app",
     "label": "文本编辑器",
-    "icon": "file-text",
+    "icon": "icon.svg",
     "page": "index.html",
     "settings": "settings.html"
   },

@@ -1,0 +1,13 @@
+{
+  "name": "@workstudio/plugin-settings-storage",
+  "version": "1.0.0",
+  "description": "存储与数据",
+  "author": "work-studio",
+  "workstudio": {
+    "id": "settings-storage",
+    "type": "web",
+    "label": "存储与数据",
+    "page": "index.html",
+    "icon": "hard-drive"
+  }
+}

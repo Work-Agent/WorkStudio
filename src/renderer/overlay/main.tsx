@@ -31,7 +31,7 @@ function DialogCard({ dialog, onRespond }: Props) {
       if (e.key === 'Escape') onRespond({ cancelled: true });
       if (
         e.key === 'Enter' &&
-        (dialog.kind === 'input' || dialog.kind === 'editor') &&
+        (dialog.dialogType === 'input' || dialog.dialogType === 'editor') &&
         (e.metaKey || e.ctrlKey)
       ) {
         onRespond({ value: text });
@@ -51,7 +51,7 @@ function DialogCard({ dialog, onRespond }: Props) {
           {dialog.message && (
             <div className="whitespace-pre-wrap">{dialog.message}</div>
           )}
-          {dialog.kind === 'select' && (
+          {dialog.dialogType === 'select' && (
             <div className="flex flex-col gap-1">
               {(dialog.options ?? []).map((option) => (
                 <button
@@ -64,7 +64,7 @@ function DialogCard({ dialog, onRespond }: Props) {
               ))}
             </div>
           )}
-          {dialog.kind === 'input' && (
+          {dialog.dialogType === 'input' && (
             <input
               autoFocus
               type={dialog.secret ? 'password' : 'text'}
@@ -78,7 +78,7 @@ function DialogCard({ dialog, onRespond }: Props) {
               }}
             />
           )}
-          {dialog.kind === 'editor' && (
+          {dialog.dialogType === 'editor' && (
             <textarea
               autoFocus
               className="w-full h-48 resize-none rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#181A1B] px-2 py-1.5 outline-none focus:border-[#4F6BED]"
@@ -94,7 +94,7 @@ function DialogCard({ dialog, onRespond }: Props) {
           >
             取消
           </button>
-          {dialog.kind === 'confirm' && (
+          {dialog.dialogType === 'confirm' && (
             <button
               className="px-3 py-1 rounded-md text-[12px] bg-[#4F6BED] text-white hover:bg-[#3D56E0]"
               onClick={() => onRespond({ confirmed: true })}
@@ -102,7 +102,7 @@ function DialogCard({ dialog, onRespond }: Props) {
               确认
             </button>
           )}
-          {(dialog.kind === 'input' || dialog.kind === 'editor') && (
+          {(dialog.dialogType === 'input' || dialog.dialogType === 'editor') && (
             <button
               className="px-3 py-1 rounded-md text-[12px] bg-[#4F6BED] text-white hover:bg-[#3D56E0]"
               onClick={() => onRespond({ value: text })}

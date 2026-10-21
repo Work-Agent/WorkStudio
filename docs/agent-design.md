@@ -72,11 +72,11 @@ pi 只有两条扩展轴，WorkStudio 不再另造插件系统：
   "description": "DOCX 阅读与编辑",
   "author": "work-studio",
   "exports": {
-    "./ura": "./dist/ura.js",
-    "./pi": "./dist/pi-extension.js"
+    "./ura": "./dist/ura.js"
   },
   "workstudio": {
     "id": "docx",
+    "type": "app",
     "label": "DOCX",
     "page": "pages/index.html",
     "settings": "pages/settings.html"
@@ -90,10 +90,13 @@ pi 只有两条扩展轴，WorkStudio 不再另造插件系统：
 import { registerCodec, registerConsumer } from "@workstudio/sdk";
 
 registerCodec({ formatHints: ["ooxml"], docType: "ooxml-doc@1", patchKind: "bytes", decode, locate, encode });
-registerConsumer({ docType: "ooxml-doc@1", kind: "editor", surface: "docx-editor", project });
+registerConsumer({ docType: "ooxml-doc@1", type: "editor", surface: "docx-editor", project });
 ```
 
+- 图标：`workstudio.icon` 可写语义名（壳层映射）或 favicon 文件（`svg / png / ico / jpeg / webp / gif`），文件经 `app://asset/<id>/…` 提供。
+- web 型没有设置页（`settings` 仅 app 型有效）；pi 扩展与技能不随插件清单管理，走各自的目录/设置。
 - 注册接口一共六个：`registerTransport` · `registerCodec` · `registerStore` · `registerConsumer` · `registerCollection` · `registerViewAction`。
+- 扩展分两型：`type: "app"` 可注册资源轴（transport / codec / store / consumer），页面是自带 webapp；`type: "web"` 只能注册集合 / 视图动作 / 页面，内容由浏览器运行时解码。web 型调用资源轴接口会被拒绝并记诊断。
 - `page` 不再由 consumer 声明：它是渲染器页；没有渲染器页的插件只声明 `settings`。
 - 设置页是独立的第二个页面（`settings`），适用于设置类插件（偏好设置 / 模型配置等）；名称沿用 `workstudio.label`。
 - **页面资源白名单**：两个页面只能装载各自目录（含子目录）下的资源，其余路径一律 403，并挡路径穿越；确有额外资源目录时才写 `webAccessible` 覆盖默认值。
@@ -104,8 +107,7 @@ registerConsumer({ docType: "ooxml-doc@1", kind: "editor", surface: "docx-editor
 ① 扫描：package.json 带 workstudio 字段
 ② import exports["./ura"]：模块求值时插件自己调用 registerXXX
    （只注册自己提供的能力：只有格式就只调 registerCodec，等等）
-③ import exports["./pi"]：交给 pi 的资源装载链
-④ workstudio.page / workstudio.settings：交给视图宿主，按资源白名单装载
+③ workstudio.page / workstudio.settings：交给视图宿主，按资源白名单装载
 ```
 
 旧清单字段的归位：
@@ -237,7 +239,8 @@ URA 是资源内容的**唯一读写入口**：人（界面）、AI（工具）�
 工具与上下文都是 URA 的产物，不是两套旁路：
 
 - **资源管理型工具 = 门面的薄封装**：7 个工具不含 IO、不含格式解释，只做「解参数 → 调门面 → 格式化结果」；操作型工具经各自契约注入，同样不开放注册。
-- **上下文 = URA 的资源**：AGENTS.md 等项目指令与资源地图，全部经统一标识发现（ls / find）→ 读取（read）→ 投影（agent 出口）→ 经 pi 的项目文件注入口送入上下文；内容变化经 watch 失效并重新注入。
+- **AGENTS.md 是 URA 托管的生成资源**：每工作区一份，内容 = 集合分组 + 每个资源的格式（codec）+ 数据对象 schema；写入与外部变更都触发去抖重建，经同一管道写回（自身写入被识别，不形成回环）。
+- **上下文注入按版本补丁**：pi 的项目文件旁路读取被关闭；harness 在每轮上下文以命名 section 注入 AGENTS.md 投影，**只有版本变化才替换**，会话进行中新写入的资源下一轮即可见。
 - **一条硬规则**：进入模型上下文的任何内容都必须有资源身份（标识 + 版本 + 可见性判定）；不允许绕过管道直接读文件塞进提示。
 - **结果**：换来源不改工具与提示，换格式不改工具与提示；数据轨（schema-only）在工具与上下文两侧同时生效。
 
@@ -365,23 +368,26 @@ harness 是内置扩展（资源轴装载），在注册轴上注册能力。
 
 ## 八、生态与信任
 
-### 8.1 内置包
+### 8.1 内置插件
 
-| 包 / 页面       | 内容                                                                    |
-| --------------- | ----------------------------------------------------------------------- |
-| 偏好设置        | 两层设置表单（生效值预览 + 落盘位置 + 置空即删键）                      |
-| 模型配置        | 默认模型与档位 · 供应商目录与登录 / 登出 · 密钥 · 模型目录与覆盖        |
-| Markdown 阅读器 | 安全内联渲染 + 源码编辑（布局切换 / 保存）                              |
-| HTML 阅读器     | 预览（沙箱，脚本默认关）/ 分屏 / 源码三态（布局切换 / 脚本开关 / 保存） |
-| 文本编辑器      | **兜底渲染器**：等宽编辑 + 自动换行（换行开关 / 保存）                  |
-| 扩展管理        | 社区包浏览 / 安装 / 卸载 · 已加载资源 · 本机插件清单                    |
-| 技能            | 技能清单 · 装载诊断 · 重新装载                                          |
-| 会话管理        | 会话列表（搜索 / 切换 / 重命名 / 删除 / 停止执行 / 新任务）             |
-| 工作区          | 注册表清单 · 切换 / 打开目录 / 选择新工作区                             |
-| 存储与数据      | 落盘位置总览 + 会话目录配置 + 版本                                      |
-| 资源索引        | 资源分组浏览 / 过滤 / 重新索引 / 打开文档                               |
+web 与 app 都是插件，随应用发布，清单统一为 `src/plugins/<id>/package.json`：
 
-一个插件最多两个页面：渲染器插件声明 `page`，设置类插件只声明 `settings`。
+| 插件 | 型 | 内容 |
+| --- | --- | --- |
+| Markdown 阅读器 | app | 安全内联渲染 + 源码编辑（布局切换 / 保存） |
+| HTML 阅读器 | app | 预览（沙箱，脚本默认关）/ 分屏 / 源码三态 |
+| 文本编辑器 | app | 兜底渲染器：等宽编辑 + 自动换行 |
+| 偏好设置 | web | 两层设置表单（生效值预览 + 落盘位置 + 置空即删键） |
+| 模型配置 | web | 默认模型与档位 · 供应商目录与登录 / 登出 · 密钥 · 模型目录与覆盖 |
+| 浏览器 | web | 归档白名单（域名分组由浏览器能力的内置集合提供） |
+| 扩展管理 | web | 社区包浏览 / 安装 / 卸载 · 已加载资源 · 本机插件清单 |
+| 技能 | web | 技能清单 · 装载诊断 · 重新装载 |
+| 会话管理 | web | 会话列表（搜索 / 切换 / 重命名 / 删除 / 停止执行 / 新任务） |
+| 工作区 | web | 注册表清单 · 切换 / 打开目录 / 选择新工作区 |
+| 存储与数据 | web | 落盘位置总览 + 会话目录配置 + 版本 |
+| 资源索引 | web | 资源分组浏览 / 过滤 / 重新索引 / 打开文档 |
+
+浏览器能力（https 来源、实时视图、browser 投影、工具、注入）属于框架内置；其设置页是 web 插件。
 
 ### 8.2 社区与安装
 

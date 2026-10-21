@@ -205,13 +205,13 @@ function useMessages(activePath: string | null): {
         return { ...prev, [key]: list };
       });
     };
-    const appendDelta = (kind: 'text' | 'thinking', delta: string): void =>
+    const appendDelta = (type: 'text' | 'thinking', delta: string): void =>
       patchLast((blocks) => {
         const last = blocks[blocks.length - 1];
-        if (last && last.type === kind) {
-          blocks[blocks.length - 1] = { type: kind, text: last.text + delta };
+        if (last && last.type === type) {
+          blocks[blocks.length - 1] = { type: type, text: last.text + delta };
         } else {
-          blocks.push({ type: kind, text: delta });
+          blocks.push({ type: type, text: delta });
         }
         return blocks;
       });
@@ -672,7 +672,7 @@ function Assistant() {
     e.preventDefault();
     setDragging(true);
     void bridge.interaction.begin({
-      kind: 'view-move',
+      type: 'view-move',
       target: 'assistant',
       anchor: { x: e.clientX, y: e.clientY },
     });
@@ -687,7 +687,7 @@ function Assistant() {
     e.stopPropagation();
     setDragging(true);
     void bridge.interaction.begin({
-      kind: 'view-resize',
+      type: 'view-resize',
       target: 'assistant',
       direction,
       anchor: { x: e.clientX, y: e.clientY },

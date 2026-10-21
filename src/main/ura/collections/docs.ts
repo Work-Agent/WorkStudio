@@ -12,8 +12,9 @@ export function docsCollection(): CollectionProvider {
       const items = (await ctx.tree(ctx.workspace, 500))
         .filter(
           (item) =>
-            item.kind === 'file' &&
+            item.type === 'file' &&
             !item.ref.includes('/sites/') &&
+            item.name !== 'AGENTS.md' &&
             !item.name.startsWith('.'),
         )
         .map((item) => ({ ref: item.ref, title: item.name }))

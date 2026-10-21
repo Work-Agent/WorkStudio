@@ -2,7 +2,7 @@
  * SettingsList —— 设置列表形态（TitleBar 设置入口的独立 sidebar，与插件列表分离）。
  *
  * 设置面全部由插件贡献（config 页 = 插件的设置/内容页）：
- * 清单来自 `plugins.list`（manifest 扫描结果），行点击 = `views.open({kind:'plugin'})`
+ * 清单来自 `plugins.list`（manifest 扫描结果），行点击 = `views.open({type:'plugin'})`
  * ——与资源面板内容一样由 WebContentsView 渲染，渲染层不承载设置 UI。
  */
 import { useEffect } from 'react';
@@ -11,6 +11,7 @@ import {
   Cpu,
   FolderOpen,
   FolderTree,
+  Globe,
   HardDrive,
   MessagesSquare,
   Puzzle,
@@ -23,49 +24,55 @@ import { SubListView } from './SubListView';
 /** 设置域成员（插件 id → manifest；顺序即展示顺序）。 */
 const SETTINGS_PLUGINS = [
   {
-    id: 'settings-manager',
+    id: 'settings-preferences',
     title: '偏好设置',
     desc: 'App 默认 / 本工作区两层配置',
     icon: SlidersHorizontal,
   },
   {
-    id: 'model-config',
+    id: 'settings-browser',
+    title: '浏览器',
+    desc: '归档白名单 · 域名分组',
+    icon: Globe,
+  },
+  {
+    id: 'settings-models',
     title: '模型配置',
     desc: '供应商登录 · 模型目录 · API Key',
     icon: Cpu,
   },
   {
-    id: 'extension-manager',
+    id: 'settings-extensions',
     title: '扩展管理',
     desc: '社区包安装 · 本机插件',
     icon: Puzzle,
   },
   {
-    id: 'skills',
+    id: 'settings-skills',
     title: '技能',
     desc: '已加载清单 · 装载诊断',
     icon: BookOpen,
   },
   {
-    id: 'session-manager',
+    id: 'settings-sessions',
     title: '会话管理',
     desc: '会话列表 · 切换 · 删除与停止',
     icon: MessagesSquare,
   },
   {
-    id: 'workspaces',
+    id: 'settings-workspaces',
     title: '工作区',
     desc: '注册表 · 切换 / 打开目录',
     icon: FolderOpen,
   },
   {
-    id: 'storage',
+    id: 'settings-storage',
     title: '存储与数据',
     desc: '落盘位置 · 会话目录 · 版本信息',
     icon: HardDrive,
   },
   {
-    id: 'resources',
+    id: 'settings-resources',
     title: '资源索引',
     desc: '资源地图 · 重新索引',
     icon: FolderTree,

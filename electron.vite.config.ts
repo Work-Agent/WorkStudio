@@ -16,9 +16,10 @@ function copyBuiltinPlugins(): Plugin {
     writeBundle() {
       const from = resolve(__dirname, 'src/plugins');
       const to = resolve(__dirname, 'out/plugins');
-      if (!existsSync(from)) return;
-      rmSync(to, { recursive: true, force: true });
-      cpSync(from, to, { recursive: true });
+      if (existsSync(from)) {
+        rmSync(to, { recursive: true, force: true });
+        cpSync(from, to, { recursive: true });
+      }
       this.info(`copied builtin plugins → ${to}`);
     },
   };

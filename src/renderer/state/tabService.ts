@@ -25,7 +25,7 @@ import { createMachine, type Machine } from './machine';
 import {
   useTabsStore,
   type TabEntry,
-  type TabKind,
+  type TabType,
   type ViewState,
 } from './tabs';
 import { setUiState, useUiStore } from './uiState';
@@ -161,7 +161,7 @@ async function redeliverContent(instanceId: string): Promise<void> {
 function makeTab(params: {
   tabKey: string;
   instanceId: string;
-  kind: TabKind;
+  type: TabType;
   extensionId: string;
   title: string;
   url: string;
@@ -174,7 +174,7 @@ function makeTab(params: {
   return {
     tabKey: params.tabKey,
     instanceId: params.instanceId,
-    kind: params.kind,
+    type: params.type,
     extensionId: params.extensionId,
     title: params.title,
     url: params.url,
@@ -267,7 +267,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
         const doc = inst.documentId
           ? (docs.find((x) => x.id === inst.documentId) ?? null)
           : null;
-        const kind: TabKind = doc ? 'document' : 'plugin';
+        const type: TabType = doc ? 'document' : 'plugin';
         const tabKey = doc
           ? `document:${doc.id}`
           : `plugin:${inst.pluginId}:${inst.extensionId}`;
@@ -275,7 +275,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
           makeTab({
             tabKey,
             instanceId: inst.instanceId,
-            kind,
+            type,
             extensionId: inst.extensionId,
             title: inst.label,
             url: inst.url,
@@ -328,7 +328,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
       makeTab({
         tabKey: `document:${doc.id}`,
         instanceId,
-        kind: 'document',
+        type: 'document',
         extensionId: def.id,
         title: doc.title,
         url: doc.url ?? doc.path ?? doc.title,
@@ -368,9 +368,8 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
         ? current.defs
         : await agentAPI.extensions.definitions();
     set({ defs });
-    // config 扩展定位：三级回退——① manifest.config.id 精确匹配 ② 历史约定 id ③ 插件 id 同名
+    // config 扩展定位：设置页与插件页同 id（内置页面走主进程视图，不经此路径）
     const def =
-      (plugin.configId && defs.find((x) => x.id === plugin.configId)) ||
       defs.find((x) => x.id === `${plugin.id}-config`) ||
       defs.find((x) => x.id === plugin.id);
     if (!def) {
@@ -386,7 +385,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
       makeTab({
         tabKey: `plugin:${plugin.id}:${def.id}`,
         instanceId,
-        kind: 'plugin',
+        type: 'plugin',
         extensionId: def.id,
         title: labelOverride ?? plugin.name,
         url: `app://plugin/${plugin.id}`,
@@ -431,7 +430,7 @@ export const useTabServiceStore = create<TabServiceState>()((set, get) => ({
       makeTab({
         tabKey: `plugin:${plugin.id}:${def.id}`,
         instanceId,
-        kind: 'plugin',
+        type: 'plugin',
         extensionId: def.id,
         title: plugin.name,
         url: `app://plugin/${plugin.id}`,
@@ -582,7 +581,7 @@ function handleBusMessage(msg: BusMessage): void {
         makeTab({
           tabKey: `browser:${inst.url || instanceId}`,
           instanceId,
-          kind: 'browser',
+          type: 'browser',
           extensionId: inst.extensionId,
           title: inst.label,
           url: inst.url,
@@ -612,7 +611,7 @@ function handleBusMessage(msg: BusMessage): void {
               makeTab({
                 tabKey: `browser:${inst.url || inst.instanceId}`,
                 instanceId: inst.instanceId,
-                kind: 'browser',
+                type: 'browser',
                 extensionId: inst.extensionId,
                 title: inst.label,
                 url: inst.url,
@@ -657,7 +656,7 @@ function handleBusMessage(msg: BusMessage): void {
             makeTab({
               tabKey: `browser:${inst.url || inst.instanceId}`,
               instanceId: inst.instanceId,
-              kind: 'browser',
+              type: 'browser',
               extensionId: inst.extensionId,
               title: inst.label,
               url: inst.url,

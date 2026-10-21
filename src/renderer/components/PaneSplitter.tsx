@@ -91,7 +91,7 @@ function beginPaneDrag(
   if (!mainBridge) return;
   setActive(true);
   void mainBridge.interaction.begin({
-    kind: 'pane-resize',
+    type: 'pane-resize',
     target: side,
     anchor: { x: e.clientX, y: e.clientY },
   });

@@ -49,14 +49,14 @@ const log = createLogger('views');
 
 // ─── 类型 ─────────────────────────────────────────────────
 
-export type ViewKind = 'extension' | 'browser';
+export type ViewType = 'extension' | 'browser';
 type ViewRole = 'tab' | 'assistant' | 'overlay' | 'capture';
 
 export interface ViewRecord {
   id: string;
   tabKey: string;
   role: ViewRole;
-  kind: ViewKind | 'assistant' | 'overlay' | 'capture';
+  type: ViewType | 'assistant' | 'overlay' | 'capture';
   extensionId: string;
   title: string;
   url: string;
@@ -84,8 +84,8 @@ export interface ViewRecord {
 }
 
 export type OpenViewInput =
-  | { kind: 'plugin'; pluginId: string; settings?: boolean }
-  | { kind: 'browser'; url: string; temporary?: boolean };
+  | { type: 'plugin'; pluginId: string; settings?: boolean }
+  | { type: 'browser'; url: string; temporary?: boolean };
 
 export interface ViewHostDeps {
   getWindow: () => BrowserWindow | null;
@@ -194,7 +194,7 @@ export class ViewHost {
       id: ASSISTANT_ID,
       tabKey: 'system:assistant',
       role: 'assistant',
-      kind: 'assistant',
+      type: 'assistant',
       extensionId: 'assistant',
       title: 'AI 助手',
       url: 'app://assistant',
@@ -236,7 +236,7 @@ export class ViewHost {
       id: OVERLAY_ID,
       tabKey: 'system:overlay',
       role: 'overlay',
-      kind: 'overlay',
+      type: 'overlay',
       extensionId: 'overlay',
       title: 'Overlay',
       url: 'app://overlay',
@@ -274,7 +274,7 @@ export class ViewHost {
       id: randomUUID(),
       tabKey: built.tabKey,
       role: 'tab',
-      kind: built.kind,
+      type: built.type,
       extensionId: built.extensionId,
       title: built.title,
       url: built.url,
@@ -297,19 +297,50 @@ export class ViewHost {
     return { id: record.id };
   }
 
-  /** 按资源 id 打开页面（URA 页面会话 + 页面入口 + 数据）。 */
+  /** 按资源 id 打开（页面会话 / 实时浏览器，由投影决定）。 */
   async openResource(
     ref: string,
     document?: DocumentMeta,
   ): Promise<{ id: string }> {
-    const info = await this.deps.pageSessions.open(ref);
+    const target = await this.deps.pageSessions.open(ref);
     const tabKey = `resource:${ref}`;
     const existing = this.recordByKey(tabKey);
     if (existing) {
-      this.deps.pageSessions.close(info.id);
+      if (target.type === 'page') this.deps.pageSessions.close(target.info.id);
       this.activate(existing.id);
       return { id: existing.id };
     }
+    if (target.type === 'browser') {
+      const record: ViewRecord = {
+        id: randomUUID(),
+        tabKey,
+        role: 'tab',
+        type: 'browser',
+        extensionId: 'browser',
+        title:
+          document?.title ?? (ref.slice(ref.lastIndexOf('/') + 1) || ref),
+        url: ref,
+        loadUrl: target.url,
+        state: 'dormant',
+        pinned: false,
+        dirty: false,
+        temporary: false,
+        interactiveElements: false,
+        ...(document ? { document } : {}),
+        renderer: { id: 'browser', label: '浏览器', icon: 'globe' },
+        plugin: null,
+        titlebarActions: [],
+        actionStates: {},
+        view: null,
+        needsReload: false,
+      };
+      this.records.set(record.id, record);
+      this.order.push(record.tabKey);
+      this.activate(record.id);
+      return { id: record.id };
+    }
+
+    const info = target.info;
     if (!info.page) {
       this.deps.pageSessions.close(info.id);
       throw new Error(`资源没有页面入口：${ref}`);
@@ -318,7 +349,7 @@ export class ViewHost {
       id: randomUUID(),
       tabKey,
       role: 'tab',
-      kind: 'extension',
+      type: 'extension',
       extensionId: `ura:${info.surface}`,
       title: document?.title ?? (ref.slice(ref.lastIndexOf('/') + 1) || ref),
       url: ref,
@@ -339,6 +370,9 @@ export class ViewHost {
                 : {}),
               ...(this.deps.plugins.get(info.owner)?.label
                 ? { label: this.deps.plugins.get(info.owner)!.label }
+                : {}),
+              ...(this.deps.plugins.get(info.owner)?.iconUrl
+                ? { iconUrl: this.deps.plugins.get(info.owner)!.iconUrl }
                 : {}),
             }
           : {}),
@@ -458,7 +492,7 @@ export class ViewHost {
 
   navigate(id: string, url: string): void {
     const record = this.records.get(id);
-    if (record?.kind !== 'browser' || !record.view) return;
+    if (record?.type !== 'browser' || !record.view) return;
     record.url = url;
     void record.view.webContents
       .loadURL(url)
@@ -477,7 +511,7 @@ export class ViewHost {
 
   setInteractiveElements(id: string, on: boolean): boolean {
     const record = this.records.get(id);
-    if (!record || record.kind !== 'browser') return false;
+    if (!record || record.type !== 'browser') return false;
     record.interactiveElements = on;
     this.broadcastViews();
     return on;
@@ -505,7 +539,7 @@ export class ViewHost {
     void Promise.resolve(
       action.run({
         viewId: id,
-        kind: record.kind === 'browser' ? 'browser' : 'extension',
+        type: record.type === 'browser' ? 'browser' : 'extension',
         on,
         setState,
         execute,
@@ -550,7 +584,7 @@ export class ViewHost {
     active: boolean;
   }> {
     return this.entries()
-      .filter((r) => r.kind === 'browser')
+      .filter((r) => r.type === 'browser')
       .map((r) => ({
         id: r.id,
         url: r.url,
@@ -681,10 +715,10 @@ export class ViewHost {
     const assistantFloating = this.deps.uiState.get().aiFloating;
     for (const record of this.records.values()) {
       if (!record.view) continue;
-      if (record.kind === 'browser' || record.kind === 'assistant') {
+      if (record.type === 'browser' || record.type === 'assistant') {
         try {
           // 浮动态助手保持透明（原生圆角外的下层内容要透出来）。
-          const transparent = record.kind === 'assistant' && assistantFloating;
+          const transparent = record.type === 'assistant' && assistantFloating;
           record.view.setBackgroundColor(
             transparent ? '#00000000' : themeBackground(theme),
           );
@@ -728,7 +762,7 @@ export class ViewHost {
       id: CAPTURE_ID,
       tabKey: 'system:capture',
       role: 'capture',
-      kind: 'capture',
+      type: 'capture',
       extensionId: 'capture',
       title: 'Capture',
       url: 'app://capture',
@@ -773,7 +807,7 @@ export class ViewHost {
 
   private buildOpenInput(input: OpenViewInput): {
     tabKey: string;
-    kind: ViewKind;
+    type: ViewType;
     extensionId: string;
     title: string;
     url: string;
@@ -783,14 +817,14 @@ export class ViewHost {
     titlebarActions: string[];
     temporary?: boolean;
   } {
-    if (input.kind === 'plugin') {
-      const pkg = this.deps.plugins.get(input.pluginId);
+    if (input.type === 'plugin') {
+      const pkg = this.deps.plugins.getPage(input.pluginId);
       if (!pkg) throw new Error(`Plugin not found: ${input.pluginId}`);
       const page = (input.settings ? (pkg.settings ?? pkg.page) : (pkg.page ?? pkg.settings)) ?? null;
       if (!page) throw new Error(`Plugin page not found: ${input.pluginId}`);
       return {
         tabKey: `plugin:${pkg.id}${input.settings ? ':settings' : ''}`,
-        kind: 'extension',
+        type: 'extension',
         extensionId: `plugin:${pkg.id}`,
         title: pkg.label,
         url: `plugin://${pkg.id}${input.settings ? '/settings' : ''}`,
@@ -799,25 +833,27 @@ export class ViewHost {
           id: pkg.id,
           label: pkg.label,
           ...(pkg.icon ? { icon: pkg.icon } : {}),
+          ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
           owner: pkg.id,
         },
         plugin: {
           id: pkg.id,
+          type: pkg.type,
           name: pkg.label,
           version: pkg.version,
           builtin: true,
           extensionCount: 1,
-          skillCount: pkg.skills.length,
+          skillCount: 0,
           toolCount: 0,
           hasHome: false,
-          hasConfig: true,
+          hasConfig: !!pkg.settings,
         },
         titlebarActions: [],
       };
     }
     return {
       tabKey: `browser:${input.url}`,
-      kind: 'browser',
+      type: 'browser',
       extensionId: 'browser',
       title: this.titleForUrl(input.url),
       url: input.url,
@@ -838,9 +874,9 @@ export class ViewHost {
       if (prefix === 'plugin') {
         const pluginId = rest[0] ?? '';
         const settings = rest.slice(1).join(':') === 'settings';
-        built = this.buildOpenInput({ kind: 'plugin', pluginId, settings });
+        built = this.buildOpenInput({ type: 'plugin', pluginId, settings });
       } else if (prefix === 'browser') {
-        built = this.buildOpenInput({ kind: 'browser', url: rest.join(':') });
+        built = this.buildOpenInput({ type: 'browser', url: rest.join(':') });
       } else {
         return null;
       }
@@ -848,7 +884,7 @@ export class ViewHost {
         id: randomUUID(),
         tabKey,
         role: 'tab',
-        kind: built.kind,
+        type: built.type,
         extensionId: built.extensionId,
         title: built.title,
         url: built.url,
@@ -874,7 +910,7 @@ export class ViewHost {
 
   private materialize(record: ViewRecord): void {
     if (record.view) return;
-    if (record.kind === 'extension') {
+    if (record.type === 'extension') {
       const loadUrl = record.loadUrl;
       if (!loadUrl) {
         record.state = 'error';
@@ -897,7 +933,7 @@ export class ViewHost {
         .catch((e) => log.error('extension load failed', e));
       return;
     }
-    if (record.kind === 'browser') {
+    if (record.type === 'browser') {
       const view = this.createView('browser', partitionFor('browser'));
       try {
         view.setBackgroundColor(themeBackground(this.deps.uiState.get().theme));
@@ -1020,7 +1056,7 @@ export class ViewHost {
       }
       if (scheme === 'http:' || scheme === 'https:') {
         try {
-          this.open({ kind: 'browser', url });
+          this.open({ type: 'browser', url });
         } catch (e) {
           log.warn('open tab failed', e);
         }
@@ -1062,7 +1098,7 @@ export class ViewHost {
             this.broadcastViews();
             break;
           case 'navigate':
-            if (record.kind === 'browser')
+            if (record.type === 'browser')
               this.navigate(record.id, message.url);
             break;
           case 'refClick':
@@ -1227,7 +1263,7 @@ export class ViewHost {
     return {
       id: record.id,
       tabKey: record.tabKey,
-      kind: record.kind as ViewEntry['kind'],
+      type: record.type as ViewEntry['type'],
       extensionId: record.extensionId,
       title: record.title,
       url: record.url,
@@ -1263,7 +1299,7 @@ export class ViewHost {
       .viewActions()
       .filter(({ action }) => {
         if (action.target === 'any') return true;
-        if (action.target === 'browser') return record.kind === 'browser';
+        if (action.target === 'browser') return record.type === 'browser';
         if (!renderer) return false;
         return (
           action.target === renderer.id ||
