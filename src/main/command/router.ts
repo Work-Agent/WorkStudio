@@ -46,6 +46,7 @@ import type { PluginHost } from '../plugins/host';
 import type { UiStateService } from '../state/ui-state';
 import type { InteractionController } from '../capabilities/webview/interaction';
 import type { ViewHost } from '../capabilities/webview/host';
+import type { PluginService } from '../plugins/service';
 import { settingsPages } from '../capabilities/settings/registry';
 import {
   listWorkspaces,
@@ -69,6 +70,7 @@ export interface RouterDeps {
   registry: PluginHost;
   modelConfig: ModelConfigStore;
   packages: PiPackageService;
+  pluginSources: PluginService;
   getSettingsService: () => SettingsService;
   interaction: InteractionController;
   getWindow: () => BrowserWindow | null;
@@ -411,6 +413,22 @@ async function invoke(
         return ok(d.packages.listConfigured());
       case 'config.packages.loaded':
         return ok(d.agent.getLoadedResources());
+      case 'plugins.sources':
+        return ok(d.pluginSources.list());
+      case 'plugins.install': {
+        const entry = await d.pluginSources.install(String(p.source ?? ''));
+        return ok({
+          entry,
+          sources: d.pluginSources.list(),
+          restartRequired: true,
+        });
+      }
+      case 'plugins.remove':
+        return ok({
+          removed: await d.pluginSources.remove(String(p.source ?? '')),
+          sources: d.pluginSources.list(),
+          restartRequired: true,
+        });
       case 'config.packages.install':
         await d.packages.install(String(p.name ?? ''));
         return ok(d.packages.listConfigured());
@@ -464,11 +482,7 @@ async function invoke(
       }
       case 'ura.write':
         return ok(
-          await d.ura.write(String(p.ref ?? ''), String(p.content ?? ''), {
-            ...(typeof p.expectedVersion === 'string'
-              ? { expectedVersion: p.expectedVersion }
-              : {}),
-          }),
+          await d.ura.write(String(p.ref ?? ''), String(p.content ?? '')),
         );
       case 'ura.edit':
         return ok(
@@ -530,6 +544,28 @@ async function invoke(
         return ok(result);
       }
 
+      case 'ura.bindings.list':
+        return ok(d.ura.bindings());
+      case 'ura.bindings.set':
+        return ok(
+          await d.ura.setBinding({
+            transport: String(p.transport ?? '*'),
+            mime: String(p.mime ?? '*'),
+            intent: p.intent as never,
+            ...(typeof p.codec === 'string' ? { codec: p.codec as never } : {}),
+            ...(typeof p.projection === 'string'
+              ? { projection: p.projection }
+              : {}),
+          }),
+        );
+      case 'ura.bindings.remove':
+        return ok(
+          await d.ura.removeBinding(
+            String(p.transport ?? '*'),
+            String(p.mime ?? '*'),
+            p.intent as never,
+          ),
+        );
       case 'ura.registry':
         return ok({
           ...uraRegistry.snapshot(),
@@ -820,6 +856,9 @@ async function invokeExt(
     'app:packages.loaded': 'config.packages.loaded',
     'app:packages.install': 'config.packages.install',
     'app:packages.remove': 'config.packages.remove',
+    'app:plugins.sources': 'plugins.sources',
+    'app:plugins.install': 'plugins.install',
+    'app:plugins.remove': 'plugins.remove',
     'app:models.read': 'config.models.read',
     'app:models.providers': 'config.models.providers',
     'app:models.catalog': 'config.models.catalog',
@@ -834,6 +873,9 @@ async function invokeExt(
     'app:settings.setProject': 'config.settings.setProject',
     'app:settings.reload': 'config.settings.reload',
     'app:ura.registry': 'ura.registry',
+    'app:ura.bindings.list': 'ura.bindings.list',
+    'app:ura.bindings.set': 'ura.bindings.set',
+    'app:ura.bindings.remove': 'ura.bindings.remove',
     'app:ura.workspace': 'ura.workspace',
     'app:ura.collections': 'ura.collections',
     'app:ura.tree': 'ura.tree',

@@ -4,6 +4,7 @@
 // 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
 
 import { registerCollection, registerConsumer, registerViewAction } from '../../ura/sdk'
+import { MIME } from '../../../shared/ura'
 import type { CollectionGroup, CollectionProvider } from '../../../shared/ura'
 
 const SITES_DIR = 'sites'
@@ -145,6 +146,8 @@ export function registerBrowserFeatures(): void {
   registerCollection(webCollection)
   registerConsumer({
     docType: 'html-doc@1',
+    mime: [MIME.html],
+    transports: ['http', 'https'],
     type: 'editor',
     requires: ['live'],
     surface: 'browser',

@@ -1,10 +1,9 @@
 // ─── 写会话 ──────────────────────────────────────────────────────────
 //
 // 草稿不落盘、不进投影、不进模型上下文；提交才产生资源写入。
-// 提交 = 基线 → 最小补丁 → 版本校验；冲突返回 base / current / mine。
+// 提交 = 整篇草稿 → 队列写入；后写覆盖先写。
 
-import type { Change, CommitResult, Patch } from '../../shared/ura'
-import { VersionConflictError } from './errors'
+import type { Change, CommitResult } from '../../shared/ura'
 import { ResourcePipeline, type Opened } from './pipeline'
 import type { UraError } from './errors'
 
@@ -71,24 +70,11 @@ export class WriteSession {
     this.closed = true
     if (!this.dirty) return { ok: true, version: this.baseVersion }
 
-    const patch = minimalPatch(this.base, this.draft)
-    try {
-      const { version } = await this.pipeline.write(this.ref, patch, {
-        expectedVersion: this.baseVersion,
-      })
-      return { ok: true, version }
-    } catch (error) {
-      if (!(error instanceof VersionConflictError)) throw error
-      const current = await this.pipeline.open(this.ref)
-      return {
-        ok: false,
-        conflict: {
-          base: this.base,
-          current: textOf(current),
-          mine: this.draft,
-        },
-      }
-    }
+    const { version } = await this.pipeline.write(this.ref, {
+      type: 'replace-all',
+      bytes: encoder.encode(this.draft),
+    })
+    return { ok: true, version }
   }
 
   abort(): void {
@@ -100,36 +86,13 @@ export class WriteSession {
   }
 }
 
-/** 基线 → 草稿的最小补丁：公共前后缀之外的片段。 */
-export function minimalPatch(base: string, next: string): Patch {
-  const baseBytes = encoder.encode(base)
-  const nextBytes = encoder.encode(next)
-  let prefix = 0
-  const max = Math.min(baseBytes.length, nextBytes.length)
-  while (prefix < max && baseBytes[prefix] === nextBytes[prefix]) prefix++
-  let suffix = 0
-  while (
-    suffix < max - prefix &&
-    baseBytes[baseBytes.length - 1 - suffix] === nextBytes[nextBytes.length - 1 - suffix]
-  ) {
-    suffix++
-  }
-  return {
-    type: 'replace-range',
-    start: prefix,
-    end: baseBytes.length - suffix,
-    bytes: nextBytes.slice(prefix, nextBytes.length - suffix),
-  }
-}
-
 function textOf(opened: Opened): string {
   const projection = opened.decoded?.projection
-  if (typeof projection === 'string') return projection
-  return decoder.decode(opened.raw.bytes)
+  return typeof projection === 'string'
+    ? projection
+    : decoder.decode(opened.raw.bytes)
 }
 
 function textOfContent(content: string | Uint8Array): string {
   return typeof content === 'string' ? content : decoder.decode(content)
 }
-
-export type { UraError }

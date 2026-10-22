@@ -28,8 +28,9 @@ interface SettingsPageDef {
 const PAGES: SettingsPageDef[] = [
   { id: 'preferences', label: '偏好设置', desc: 'App 默认 / 本工作区两层配置', icon: 'sliders' },
   { id: 'browser', label: '浏览器', desc: '归档白名单 · 域名分组', icon: 'globe' },
+  { id: 'plugins', label: '插件', desc: 'npm / git / 本地路径 · 内置插件', icon: 'package' },
   { id: 'models', label: '模型配置', desc: '供应商登录 · 模型目录 · API Key', icon: 'cpu' },
-  { id: 'extensions', label: '扩展管理', desc: '社区包安装 · 本机插件', icon: 'puzzle' },
+  { id: 'extensions', label: 'Pi 扩展', desc: '社区包安装 · 已加载扩展', icon: 'puzzle' },
   { id: 'skills', label: '技能', desc: '已加载清单 · 装载诊断', icon: 'book' },
   { id: 'sessions', label: '会话管理', desc: '会话列表 · 切换 · 删除与停止', icon: 'messages' },
   { id: 'workspaces', label: '工作区', desc: '注册表 · 切换 / 打开目录', icon: 'folder' },

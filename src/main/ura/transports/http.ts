@@ -10,9 +10,12 @@ import type {
   RawContent,
   ResourceStat,
   Transport,
+  TransportCapability,
+  TransportId,
   TransportWriteOptions,
   TransportWriteResult,
 } from '../../../shared/ura'
+import { parseContentType } from '../../../shared/ura'
 import { UraError } from '../errors'
 
 const PARTITION = 'persist:workstudio:browser'
@@ -39,9 +42,12 @@ const EXT_HINTS: Record<string, string[]> = {
 }
 
 export class HttpTransport implements Transport {
-  readonly capabilities = ['read', 'live']
+  readonly id: TransportId
+  readonly capabilities: readonly TransportCapability[] = ['read', 'live']
 
-  constructor(readonly scheme: 'http' | 'https') {}
+  constructor(readonly scheme: 'http' | 'https') {
+    this.id = scheme
+  }
 
   async stat(ref: string): Promise<ResourceStat> {
     const response = await this.net().fetch(ref, { method: 'HEAD' })
@@ -62,16 +68,14 @@ export class HttpTransport implements Transport {
       throw new UraError('http.status', `HTTP ${response.status}: ${ref}`)
     }
     const bytes = new Uint8Array(await response.arrayBuffer())
+    const contentType = response.headers.get('content-type')
     return {
       bytes,
       version: versionOf(response, bytes),
       type: 'file',
       size: bytes.length,
-      formatHints: hintsFor(
-        response.headers.get('content-type'),
-        response.url || ref,
-      ),
-      mime: response.headers.get('content-type') ?? undefined,
+      formatHints: hintsFor(contentType, response.url || ref),
+      mime: parseContentType(contentType).mime,
     }
   }
 

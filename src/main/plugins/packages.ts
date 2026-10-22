@@ -4,7 +4,7 @@
 // 一个插件最多两个页面：page（渲染器）+ 可选 settings（设置页）。
 
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 
 export interface WorkStudioManifest {
   id?: string
@@ -51,16 +51,33 @@ export interface PluginPackage {
 export async function scanPluginPackages(roots: string[]): Promise<PluginPackage[]> {
   const packages: PluginPackage[] = []
   const seen = new Set<string>()
+  const consider = async (packageRoot: string, dirName: string) => {
+    const manifest = await readPackage(packageRoot, dirName)
+    if (!manifest || seen.has(manifest.id)) return
+    seen.add(manifest.id)
+    packages.push(manifest)
+  }
   for (const root of roots) {
+    // 本地来源本身就是插件目录（不必是父级扫描根）。
+    const self = await readFile(join(root, 'package.json'), 'utf-8').catch(
+      () => null,
+    )
+    if (self) await consider(root, basename(root))
     const entries = await readdir(root, { withFileTypes: true }).catch(() => null)
     if (!entries) continue
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const packageRoot = join(root, entry.name)
-      const manifest = await readPackage(packageRoot, entry.name)
-      if (!manifest || seen.has(manifest.id)) continue
-      seen.add(manifest.id)
-      packages.push(manifest)
+      if (!entry.isDirectory() || entry.name === '.bin') continue
+      if (entry.name.startsWith('@')) {
+        // npm 安装目录：@scope/<pkg>
+        const scoped = await readdir(join(root, entry.name), { withFileTypes: true }).catch(() => null)
+        if (!scoped) continue
+        for (const sub of scoped) {
+          if (!sub.isDirectory()) continue
+          await consider(join(root, entry.name, sub.name), sub.name)
+        }
+        continue
+      }
+      await consider(join(root, entry.name), entry.name)
     }
   }
   return packages

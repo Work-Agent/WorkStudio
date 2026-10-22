@@ -1,0 +1,392 @@
+<!doctype html>
+<!--
+  WorkStudio 插件页（设置能力页）。
+  数据面：app:plugins.sources / install / remove / list。
+  来源：npm / git / 本地路径；本地直接加载，安装或卸载后重启生效。
+-->
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorkStudio 插件</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f4f5;
+        --panel: #ffffff;
+        --fg: #27272a;
+        --muted: #71717a;
+        --border: #e4e4e7;
+        --accent: #4f6bed;
+        --accent-hover: #3d56e0;
+        --input-bg: #ffffff;
+        --danger: #dc2626;
+      }
+      html[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #1a1c1d;
+        --panel: #202124;
+        --fg: #e4e4e7;
+        --muted: #8b8d8e;
+        --border: #2a2d2e;
+        --accent: #6c86f0;
+        --accent-hover: #5a76e8;
+        --input-bg: #1c1e1f;
+        --danger: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica,
+          Arial, sans-serif;
+        font-size: 13px;
+        overflow: auto;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px 24px 80px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .install-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .install-row input {
+        flex: 1;
+        border: 1px solid var(--border);
+        background: var(--input-bg);
+        color: var(--fg);
+        border-radius: 7px;
+        padding: 8px 11px;
+        font-size: 12px;
+        outline: none;
+      }
+      .install-row input:focus {
+        border-color: var(--accent);
+      }
+      button {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--fg);
+        border-radius: 7px;
+        padding: 7px 14px;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--accent-hover);
+      }
+      button.danger {
+        color: var(--danger);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .section-title {
+        margin: 22px 0 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 8px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .card .name {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .card .meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        word-break: break-all;
+      }
+      .badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 500;
+      }
+      .desc {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .empty {
+        padding: 14px 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .hint {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%) translateY(12px);
+        background: var(--fg);
+        color: var(--panel);
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.18s ease;
+        max-width: 80vw;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      .toast.error {
+        background: var(--danger);
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>WorkStudio 插件</h1>
+        <p>
+          插件是自带页面与资源适配器的 npm 包。支持 npm、git 与本地路径；
+          本地路径直接加载、不复制。安装 / 卸载后重启应用生效。
+        </p>
+      </header>
+
+      <div class="install-row">
+        <input
+          id="source"
+          type="text"
+          placeholder="npm:@scope/pkg@1.0.0 · git:github.com/u/r@v1 · ~/path/to/plugin"
+          autocomplete="off"
+        />
+        <button id="install" class="primary">安装</button>
+      </div>
+
+      <div class="section-title">来源</div>
+      <div id="sources"></div>
+
+      <div class="section-title">已加载插件（当前启动）</div>
+      <div id="plugins"></div>
+
+      <p class="hint">
+        本地路径不复制、不安装依赖（由插件作者维护）；npm / git 安装到应用自持目录。
+        插件可执行主进程代码，安装前请确认来源。
+      </p>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s ?? '').replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[c],
+        );
+
+      let sources = [];
+      let loaded = [];
+      let busy = false;
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme =
+          theme === 'dark' ? 'dark' : 'light';
+      }
+
+      function toast(message, error) {
+        const el = $('toast');
+        el.textContent = message;
+        el.className = 'toast show' + (error ? ' error' : '');
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => (el.className = 'toast'), 2400);
+      }
+
+      function renderSources() {
+        const el = $('sources');
+        if (sources.length === 0) {
+          el.innerHTML = '<div class="empty">还没有添加插件来源。</div>';
+          return;
+        }
+        el.innerHTML = sources
+          .map((p) => {
+            const title = p.name || p.path || p.source;
+            return (
+              '<div class="card"><div>' +
+              '<div class="name">' +
+              esc(title) +
+              '<span class="badge">' +
+              esc(p.type) +
+              '</span></div>' +
+              '<div class="meta">' +
+              esc(p.source) +
+              '</div></div>' +
+              '<button class="danger" data-remove="' +
+              esc(p.source) +
+              '"' +
+              (busy ? ' disabled' : '') +
+              '>' +
+              (busy ? '处理中…' : '卸载') +
+              '</button></div>'
+            );
+          })
+          .join('');
+      }
+
+      function renderPlugins() {
+        const el = $('plugins');
+        if (loaded.length === 0) {
+          el.innerHTML = '<div class="empty">当前没有已加载的插件。</div>';
+          return;
+        }
+        el.innerHTML = loaded
+          .map(
+            (p) =>
+              '<div class="card"><div style="min-width:0">' +
+              '<div class="name">' +
+              esc(p.name) +
+              '<span class="badge">v' +
+              esc(p.version) +
+              '</span></div>' +
+              (p.description
+                ? '<p class="desc">' + esc(p.description) + '</p>'
+                : '') +
+              '<div class="meta">' +
+              esc(p.id) +
+              ' · ' +
+              (p.extensionCount > 0
+                ? p.extensionCount + ' 个视图'
+                : '无视图') +
+              '</div></div></div>',
+          )
+          .join('');
+      }
+
+      async function load() {
+        try {
+          sources = await invoke('app:plugins.sources');
+        } catch {
+          sources = [];
+        }
+        try {
+          loaded = await invoke('app:plugins.list');
+        } catch {
+          loaded = [];
+        }
+        renderSources();
+        renderPlugins();
+      }
+
+      async function install() {
+        const source = $('source').value.trim();
+        if (!source || busy) return;
+        busy = true;
+        renderSources();
+        try {
+          const res = await invoke('app:plugins.install', { source });
+          sources = res.sources;
+          $('source').value = '';
+          toast('已添加 ' + source + '，重启应用后生效');
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          busy = false;
+          renderSources();
+        }
+      }
+
+      async function remove(source) {
+        if (busy) return;
+        busy = true;
+        renderSources();
+        try {
+          const res = await invoke('app:plugins.remove', { source });
+          if (!res.removed) throw new Error('未找到插件来源：' + source);
+          sources = res.sources;
+          toast('已移除 ' + source + '，重启应用后生效');
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          busy = false;
+          renderSources();
+        }
+      }
+
+      $('install').onclick = () => void install();
+      $('source').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') void install();
+      });
+      $('sources').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-remove]');
+        if (btn) void remove(btn.dataset.remove);
+      });
+
+      applyTheme(
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light',
+      );
+      window.extension.bus.on((msg) => {
+        if (msg && msg.type === 'theme') applyTheme(msg.theme);
+      });
+      window.extension.bus.loaded();
+      void load();
+    </script>
+  </body>
+</html>

@@ -22,11 +22,17 @@ import type {
   RawContent,
   ResourceStat,
   Transport,
+  TransportCapability,
+  TransportId,
   TransportWriteOptions,
   TransportWriteResult,
 } from '../../../shared/ura'
-import { formatRef, parseRef } from '../../../shared/ura'
-import { UraError, VersionConflictError } from '../errors'
+import {
+  formatRef,
+  mimeFromExtension,
+  parseRef,
+} from '../../../shared/ura'
+import { UraError } from '../errors'
 
 const decoder = new TextDecoder()
 
@@ -52,27 +58,16 @@ const HINTS: Record<string, string[]> = {
   tsv: ['table', 'text'],
 }
 
-const MIME: Record<string, string> = {
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  docm: 'application/vnd.ms-word.document.macroEnabled.12',
-  dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
-  xltx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
-  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
-  pdf: 'application/pdf',
-  md: 'text/markdown',
-  markdown: 'text/markdown',
-  html: 'text/html',
-  htm: 'text/html',
-  json: 'application/json',
-}
 
 export class FileTransport implements Transport {
+  readonly id: TransportId = 'file'
   readonly scheme = 'file'
-  readonly capabilities = ['read', 'write', 'list', 'watch']
+  readonly capabilities: readonly TransportCapability[] = [
+    'read',
+    'write',
+    'list',
+    'watch',
+  ]
 
   async stat(ref: string): Promise<ResourceStat> {
     const path = filePath(ref)
@@ -114,22 +109,17 @@ export class FileTransport implements Transport {
       size: bytes.length,
       mtimeMs: info.mtimeMs,
       formatHints: HINTS[ext] ?? ['text'],
-      mime: MIME[ext],
+      mime: mimeFromExtension(ext),
     }
   }
 
   async write(
     ref: string,
     patch: Patch,
-    opts: TransportWriteOptions,
+    _opts: TransportWriteOptions,
   ): Promise<TransportWriteResult> {
     const path = filePath(ref)
     const current = await readFile(path).catch(() => null)
-    const currentVersion = current ? versionOf(current) : undefined
-
-    if (opts.expectedVersion !== undefined && currentVersion !== opts.expectedVersion) {
-      throw new VersionConflictError(currentVersion ?? 'absent')
-    }
 
     let next: Uint8Array
     if (patch.type === 'replace-all') {

@@ -9,18 +9,23 @@ import type {
   Codec,
   DecodedDoc,
   DocType,
+  Mime,
   Patch,
   RawContent,
   Transport,
+  TransportCapability,
+  TransportId,
   WatchHandle,
 } from '../../shared/ura'
-import { parseRef } from '../../shared/ura'
+import { parseContentType, parseRef } from '../../shared/ura'
 import { UraError } from './errors'
 import { UraRegistry, uraRegistry } from './registry'
 
 export interface Opened {
   ref: string
-  capabilities: string[]
+  transportId: TransportId
+  mime?: Mime
+  capabilities: readonly TransportCapability[]
   raw: RawContent
   codec: Codec | null
   decoded: DecodedDoc | null
@@ -49,12 +54,19 @@ export class ResourcePipeline {
 
   async open(ref: string, docTypeHint?: DocType): Promise<Opened> {
     const transport = this.requireTransport(ref)
+    const transportId = transport.id ?? parseRef(ref).scheme
     const raw = await transport.read(ref)
+    const mime = raw.mime ? parseContentType(raw.mime).mime : undefined
     const cacheKey = `${ref}|${docTypeHint ?? ''}`
     const cached = this.cache.get(cacheKey)
     if (cached && cached.raw.version === raw.version) return cached
 
-    const codec = this.registry.codecForHints(raw.formatHints, docTypeHint)
+    const codec = this.registry.codecForMime(
+      transportId,
+      mime,
+      raw.formatHints,
+      docTypeHint,
+    )
     let decoded: DecodedDoc | null = null
     let degraded = false
     if (codec) {
@@ -71,6 +83,8 @@ export class ResourcePipeline {
 
     const opened: Opened = {
       ref,
+      transportId,
+      ...(mime ? { mime } : {}),
       capabilities: transport.capabilities ?? [],
       raw,
       codec: decoded ? (codec ?? null) : null,
@@ -83,16 +97,10 @@ export class ResourcePipeline {
 
   // ─── 写 ────────────────────────────────────────────────────────
 
-  async write(
-    ref: string,
-    patch: Patch,
-    opts: { expectedVersion?: string } = {},
-  ): Promise<WriteResult> {
+  async write(ref: string, patch: Patch): Promise<WriteResult> {
     return this.runExclusive(ref, async () => {
       const transport = this.requireTransport(ref)
-      const result = await transport.write(ref, patch, {
-        expectedVersion: opts.expectedVersion,
-      })
+      const result = await transport.write(ref, patch, {})
       this.invalidate(ref)
       this.emit({ ref, type: 'content', version: result.version, at: Date.now() })
       return { version: result.version }

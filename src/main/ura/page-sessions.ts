@@ -2,11 +2,10 @@
 //
 // 页面会话 = 打开 → 就绪 → 投递 → 脏态 / 提交 → 释放。
 // 主进程独占生命周期：页面只拿 id、入口与数据，不拿版本 token 之外的内部状态。
-// 保存是严格写：基线 = 投递时的版本；冲突返回 base / current / mine。
+// 保存按队列写入，后写覆盖先写。
 
 import { randomUUID } from 'node:crypto'
 import type { CommitResult, DocType } from '../../shared/ura'
-import { VersionConflictError } from './errors'
 import type { Ura } from './facade'
 
 export type PageOpenTarget =
@@ -73,29 +72,11 @@ export class PageSessions {
   ): Promise<CommitResult> {
     const entry = this.require(id)
     const binary = content instanceof Uint8Array
-    try {
-      const { version } = await this.ura.write(entry.info.ref, content, {
-        expectedVersion: entry.info.version,
-      })
-      entry.info = { ...entry.info, version }
-      entry.base = binary ? base64Of(content) : content
-      entry.encoding = binary ? 'base64' : 'text'
-      return { ok: true, version }
-    } catch (error) {
-      if (!(error instanceof VersionConflictError)) throw error
-      const current = binary
-        ? base64Of((await this.ura.readBytes(entry.info.ref)).bytes)
-        : await this.textOf(entry.info.ref)
-      return {
-        ok: false,
-        conflict: {
-          base: entry.base,
-          current,
-          mine: binary ? base64Of(content) : content,
-          encoding: entry.encoding,
-        },
-      }
-    }
+    const { version } = await this.ura.write(entry.info.ref, content)
+    entry.info = { ...entry.info, version }
+    entry.base = binary ? base64Of(content) : content
+    entry.encoding = binary ? 'base64' : 'text'
+    return { ok: true, version }
   }
 
   /** 二进制页面内容（Office 等 OOXML 文档）；冲突稿同样以 base64 返回。 */

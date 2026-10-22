@@ -40,6 +40,7 @@ import {
 import { AgentHost } from './agent/agent-host';
 import { ModelConfigStore } from './agent/config-service';
 import { PiPackageService } from './agent/package-service';
+import { PluginService } from './plugins/service';
 import {
   ensureDefaultWorkspace,
   getAgentDir,
@@ -178,6 +179,7 @@ let uraRuntime: UraRuntime | null = null;
 let workspaceWatcher: { close(): void } | null = null;
 let modelConfig: ModelConfigStore | null = null;
 let packageService: PiPackageService | null = null;
+let pluginService: PluginService | null = null;
 let browserAutomation: BrowserAutomation | null = null;
 let workspacePath = '';
 /** 运行期浮动助手几何（瞬时，不落盘）。 */
@@ -388,13 +390,20 @@ app.whenReady().then(async () => {
   bootLog(`workspace: ${workspacePath} (${wsId})`);
 
   // 2.5 URA（资源管道 + 插件包）
+  pluginService = new PluginService({
+    root: path.join(app.getPath('userData'), 'plugins'),
+    file: path.join(app.getPath('userData'), 'plugins.json'),
+    cwd: () => workspacePath,
+  });
+  await pluginService.start();
   uraRuntime = await createUraRuntime({
     dataRoot: path.join(app.getPath('userData'), 'plugin-data'),
+    bindingFile: path.join(app.getPath('userData'), 'ura-bindings.json'),
     workspace: () => workspacePath,
     pluginRoots: [
+      ...pluginService.roots(),
       path.join(app.getAppPath(), 'src', 'plugins'),
       path.join(mainDir, '..', 'plugins'),
-      path.join(app.getPath('userData'), 'plugins'),
     ],
   });
   bootLog(
@@ -558,6 +567,7 @@ app.whenReady().then(async () => {
     registry: uraRuntime.host,
     modelConfig,
     packages: packageService,
+    pluginSources: pluginService,
     getSettingsService: () => agent!.settingsService,
     interaction,
     getWindow: () => winRef,

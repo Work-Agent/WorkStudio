@@ -4,6 +4,7 @@
 // 渲染是页面出口的事，不在管道里做。
 
 import { registerCodec, registerConsumer } from '../../main/ura/sdk'
+import { MIME } from '../../shared/ura'
 import type { Codec, Consumer, DecodedDoc, Patch } from '../../shared/ura'
 
 const DOC_TYPE = 'markdown-doc@1'
@@ -23,6 +24,7 @@ function byteOffset(text: string, index: number): number {
 }
 
 const codec: Codec = {
+  mime: [MIME.markdown],
   extensions: ['md', 'markdown'],
   hints: ['markdown'],
   docType: DOC_TYPE,
@@ -67,6 +69,7 @@ const codec: Codec = {
 
 const agentConsumer: Consumer = {
   docType: DOC_TYPE,
+  mime: [MIME.markdown],
   type: 'agent',
   project(decoded) {
     return { type: 'text', content: sourceOf(decoded) }
@@ -75,6 +78,7 @@ const agentConsumer: Consumer = {
 
 const editorConsumer: Consumer = {
   docType: DOC_TYPE,
+  mime: [MIME.markdown],
   type: 'editor',
   surface: 'markdown-viewer',
   project(decoded) {

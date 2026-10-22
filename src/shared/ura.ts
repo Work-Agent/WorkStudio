@@ -8,6 +8,150 @@ export type Caller = 'agent' | 'editor' | 'system'
 /** 文档类型：名称 @ 版本。 */
 export type DocType = `${string}@${number}`
 
+
+// ─── 格式身份（MIME / Content-Type） ────────────────────────────────
+
+/** 内置 MIME：标准 Content-Type 的 `type/subtype`。 */
+export const MIME = {
+  text: 'text/plain',
+  markdown: 'text/markdown',
+  html: 'text/html',
+  json: 'application/json',
+  xml: 'application/xml',
+  yaml: 'application/yaml',
+  csv: 'text/csv',
+  tsv: 'text/tab-separated-values',
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  octetStream: 'application/octet-stream',
+} as const
+
+export type BuiltinMime = (typeof MIME)[keyof typeof MIME]
+
+/** 可扩展：内置字面量 + 任意标准 `type/subtype`（含 vendor 类型）。 */
+export type Mime = BuiltinMime | `${string}/${string}`
+
+/** 常见别名 → 规范值。 */
+export const MIME_ALIASES: Record<string, BuiltinMime> = {
+  'text/x-markdown': MIME.markdown,
+  'application/x-markdown': MIME.markdown,
+  'text/xml': MIME.xml,
+  'application/x-yaml': MIME.yaml,
+  'text/yaml': MIME.yaml,
+  'image/jpg': MIME.jpeg,
+  'application/x-pdf': MIME.pdf,
+}
+
+/** 扩展名（不含点，小写）→ MIME。 */
+export const MIME_EXTENSIONS: Record<string, Mime> = {
+  txt: MIME.text,
+  log: MIME.text,
+  ini: MIME.text,
+  conf: MIME.text,
+  md: MIME.markdown,
+  markdown: MIME.markdown,
+  html: MIME.html,
+  htm: MIME.html,
+  json: MIME.json,
+  xml: MIME.xml,
+  yaml: MIME.yaml,
+  yml: MIME.yaml,
+  csv: MIME.csv,
+  tsv: MIME.tsv,
+  pdf: MIME.pdf,
+  docx: MIME.docx,
+  docm: MIME.docx,
+  dotx: MIME.docx,
+  xlsx: MIME.xlsx,
+  xlsm: MIME.xlsx,
+  xltx: MIME.xlsx,
+  pptx: MIME.pptx,
+  pptm: MIME.pptx,
+  potx: MIME.pptx,
+  png: MIME.png,
+  jpg: MIME.jpeg,
+  jpeg: MIME.jpeg,
+  gif: MIME.gif,
+  webp: MIME.webp,
+  svg: MIME.svg,
+}
+
+export interface ParsedContentType {
+  mime: Mime
+  /** charset 等参数；不参与格式匹配。 */
+  params: Record<string, string>
+}
+
+/** 解析 Content-Type；只比较 `type/subtype`，参数单独保留。 */
+export function parseContentType(value?: string | null): ParsedContentType {
+  if (!value) return { mime: MIME.octetStream, params: {} }
+  const [rawType, ...rawParams] = value.split(';')
+  const type = (rawType ?? '').trim().toLowerCase()
+  const mime: Mime = /^[^\s/]+\/[^\s/]+$/.test(type)
+    ? (MIME_ALIASES[type] ?? (type as Mime))
+    : MIME.octetStream
+  const params: Record<string, string> = {}
+  for (const raw of rawParams) {
+    const index = raw.indexOf('=')
+    if (index < 0) continue
+    const key = raw.slice(0, index).trim().toLowerCase()
+    const valueText = raw
+      .slice(index + 1)
+      .trim()
+      .replace(/^"|"$/g, '')
+    if (key) params[key] = valueText
+  }
+  return { mime, params }
+}
+
+export function mimeFromExtension(ext: string): Mime | undefined {
+  return MIME_EXTENSIONS[ext.replace(/^\./, '').toLowerCase()]
+}
+
+// ─── 来源类型（可扩展） ──────────────────────────────────────────────
+
+export const TRANSPORT_IDS = [
+  'file',
+  'http',
+  'https',
+  'webdav',
+  'sftp',
+] as const
+
+export type BuiltinTransportId = (typeof TRANSPORT_IDS)[number]
+
+/** 可扩展：内置 id + 插件自定义来源 id。 */
+export type TransportId = BuiltinTransportId | (string & {})
+
+export type TransportCapability =
+  | 'read'
+  | 'write'
+  | 'list'
+  | 'watch'
+  | 'live'
+
+export interface TransportDescriptor {
+  id: TransportId
+  schemes: readonly string[]
+  capabilities: readonly TransportCapability[]
+}
+
+export const BUILTIN_TRANSPORTS: readonly TransportDescriptor[] = [
+  {
+    id: 'file',
+    schemes: ['file'],
+    capabilities: ['read', 'write', 'list', 'watch'],
+  },
+  { id: 'http', schemes: ['http'], capabilities: ['read', 'live'] },
+  { id: 'https', schemes: ['https'], capabilities: ['read', 'live'] },
+]
 export type PatchKind = 'text' | 'bytes'
 
 // ─── 资源身份 ────────────────────────────────────────────────────────
@@ -55,7 +199,7 @@ export interface ResourceStat {
 export interface RawContent extends ResourceStat {
   bytes: Uint8Array
   formatHints: string[]
-  mime?: string
+  mime?: Mime
 }
 
 export interface ListEntry {
@@ -66,10 +210,7 @@ export interface ListEntry {
   version?: string
 }
 
-export interface TransportWriteOptions {
-  /** 严格模式下的期望版本；不匹配即冲突。 */
-  expectedVersion?: string
-}
+export type TransportWriteOptions = Record<string, never>
 
 export interface TransportWriteResult {
   version: string
@@ -85,9 +226,11 @@ export interface ChangeEvent {
 }
 
 export interface Transport {
+  /** 来源类型（绑定键）；缺省时用 scheme。 */
+  readonly id?: TransportId
   readonly scheme: string
   /** 来源能力：read / write / list / watch / live。 */
-  readonly capabilities?: string[]
+  readonly capabilities?: readonly TransportCapability[]
   stat(ref: string): Promise<ResourceStat>
   read(ref: string): Promise<RawContent>
   write(
@@ -135,7 +278,11 @@ export interface Span {
 }
 
 export interface Codec {
-  /** 格式提示（按具体度声明，不含兜底 text）。 */
+  /** 可解析的规范 MIME（Content-Type 的 type/subtype）。 */
+  readonly mime: readonly Mime[]
+  /** 限定来源类型；缺省 = 通用。 */
+  readonly transports?: readonly TransportId[]
+  /** 格式提示（按具体度声明，不含兜底 text；MIME 缺失时用）。 */
   readonly hints: string[]
   /** 扩展名（不含点；用于资源地图的格式标注）。 */
   readonly extensions?: string[]
@@ -195,6 +342,10 @@ export type Projection = AgentProjection | EditorProjection
 
 export interface Consumer {
   readonly docType: DocType
+  /** 可处理的规范 MIME（必填）。 */
+  readonly mime: readonly Mime[]
+  /** 限定来源类型；缺省 = 通用。 */
+  readonly transports?: readonly TransportId[]
   readonly type: 'agent' | 'editor'
   /** 需要 transport 具备的能力（如 live）；缺省 = 通用。 */
   readonly requires?: string[]
@@ -205,6 +356,22 @@ export interface Consumer {
     raw: RawContent,
     ref: string,
   ): Promise<Projection> | Projection
+}
+
+// ─── 绑定（transport × MIME → 实现） ─────────────────────────────────
+
+export type Intent = 'render' | 'edit' | 'query' | 'agent'
+
+export interface Binding {
+  /** 来源类型 id，'*' = 任意。 */
+  transport: string
+  /** 规范 MIME，'*' = 任意。 */
+  mime: string
+  intent: Intent
+  /** 指定 codec 的 docType。 */
+  codec?: DocType
+  /** 指定投影：'browser' / 'raw' / consumer surface。 */
+  projection?: string
 }
 
 // ─── 视图动作（地址栏工具条贡献） ────────────────────────────────────
@@ -328,17 +495,7 @@ export interface ReadOptions {
   window?: { start?: number; end?: number }
 }
 
-export interface WriteConflict {
-  /** 文本内容，或二进制内容的 base64（见 encoding）。 */
-  base: string
-  current: string
-  mine: string
-  encoding?: 'text' | 'base64'
-}
-
-export type CommitResult =
-  | { ok: true; version: string }
-  | { ok: false; conflict: WriteConflict }
+export type CommitResult = { ok: true; version: string }
 
 /** 资源树条目（渲染层投影用；不含内容）。 */
 export interface TreeItem {

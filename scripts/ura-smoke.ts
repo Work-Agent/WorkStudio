@@ -51,6 +51,7 @@ async function main(): Promise<void> {
   b.stage({ type: 'replace-all', content: 'B' })
   console.log('commit a:', await a.commit())
   console.log('commit b:', await b.commit())
+  console.log('overwrite:', (await ura.read(ref)).projection)
 
   const tools = createUraTools(ura)
   const tool = (name: string) => tools.find((t) => t.name === name)!
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   const second = secondOpened.info
   console.log('page save2:', await pages.save(second.id, '# Second\n'))
   const stale = await pages.save(page.id, '# Stale\n')
-  console.log('page stale:', stale.ok === false, stale.ok === false ? Object.keys(stale.conflict) : [])
+  console.log('page overwrite:', stale.ok)
   const reloaded = await pages.reload(page.id)
   console.log('page reload:', reloaded.version !== page.version)
   pages.close(page.id)

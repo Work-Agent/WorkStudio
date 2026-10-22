@@ -53,19 +53,14 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
   const writeParams = Type.Object({
     ref: refParam,
     content: Type.String({ description: 'Full content to write.' }),
-    expectedVersion: Type.Optional(
-      Type.String({ description: 'Fail if the resource version differs.' }),
-    ),
   })
   const writeTool = defineTool<typeof writeParams, unknown>({
     name: 'write',
     label: '写入资源',
     description: 'Write the full content of a resource (create or overwrite).',
     parameters: writeParams,
-    execute: async (_id, { ref, content, expectedVersion }) => {
-      const result = await ura.write(ref, content, {
-        ...(expectedVersion ? { expectedVersion } : {}),
-      })
+    execute: async (_id, { ref, content }) => {
+      const result = await ura.write(ref, content)
       return text(`wrote ${ref} (${result.version})`, {
         ref,
         version: result.version,

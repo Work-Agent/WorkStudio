@@ -4,6 +4,7 @@
 // 运行期只查表，不再装载。
 
 import { registerBrowserFeatures } from '../capabilities/browser/features'
+import { BindingStore } from './bindings'
 import { PluginHost } from '../plugins/host'
 import { BUILTIN_PLUGINS } from '../plugins/builtin'
 import { Collections } from './collections'
@@ -27,6 +28,7 @@ export interface UraRuntime {
 export async function createUraRuntime(options: {
   pluginRoots: string[]
   dataRoot: string
+  bindingFile?: string
   workspace: () => string
 }): Promise<UraRuntime> {
   await uraRegistry.runAs('system', async () => {
@@ -49,9 +51,17 @@ export async function createUraRuntime(options: {
     registerBrowserFeatures()
   })
 
+  const bindingStore = options.bindingFile
+    ? new BindingStore(options.bindingFile)
+    : undefined
+  if (bindingStore) uraRegistry.setBindings(await bindingStore.load())
+
   const pipeline = new ResourcePipeline(uraRegistry)
-  const ura = new Ura(pipeline, uraRegistry, (surface, owner) =>
-    host.pageFor(surface, owner),
+  const ura = new Ura(
+    pipeline,
+    uraRegistry,
+    (surface, owner) => host.pageFor(surface, owner),
+    bindingStore,
   )
   const collections = new Collections(ura, host, options.workspace)
   const map = new ResourceMap(ura, collections, uraRegistry, options.workspace)

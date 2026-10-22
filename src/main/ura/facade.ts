@@ -14,12 +14,16 @@ import type {
   ReadOptions,
   WatchHandle,
   Change,
+  Binding,
+  Intent,
 } from '../../shared/ura'
 import { parseRef } from '../../shared/ura'
+import { sidecarProjection } from './sidecar'
 import { UraError } from './errors'
 import { ResourcePipeline, type Opened } from './pipeline'
 import { UraRegistry, uraRegistry } from './registry'
 import { WriteSession } from './write-session'
+import type { BindingStore } from './bindings'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -51,6 +55,7 @@ export class Ura {
     private readonly pipeline: ResourcePipeline = new ResourcePipeline(),
     private readonly registry: UraRegistry = uraRegistry,
     private readonly resolvePage: PageResolver = () => null,
+    private readonly bindingStore?: BindingStore,
   ) {}
 
   // ─── 读 ────────────────────────────────────────────────────────
@@ -72,6 +77,49 @@ export class Ura {
     }
   }
 
+  // ─── 绑定 ──────────────────────────────────────────────────────
+
+  bindings(): Binding[] {
+    return this.registry.bindingsSnapshot()
+  }
+
+  async setBinding(binding: Binding): Promise<Binding[]> {
+    const next = this.registry
+      .bindingsSnapshot()
+      .filter(
+        (item) =>
+          !(
+            item.transport === binding.transport &&
+            item.mime === binding.mime &&
+            item.intent === binding.intent
+          ),
+      )
+    next.push(binding)
+    this.registry.setBindings(next)
+    await this.bindingStore?.save(next)
+    return next
+  }
+
+  async removeBinding(
+    transport: string,
+    mime: string,
+    intent: Intent,
+  ): Promise<Binding[]> {
+    const next = this.registry
+      .bindingsSnapshot()
+      .filter(
+        (item) =>
+          !(
+            item.transport === transport &&
+            item.mime === mime &&
+            item.intent === intent
+          ),
+      )
+    this.registry.setBindings(next)
+    await this.bindingStore?.save(next)
+    return next
+  }
+
   // ─── 写 ────────────────────────────────────────────────────────
 
   /** 原始字节（页面会话冲突基线与二进制调用方使用）。 */
@@ -83,13 +131,11 @@ export class Ura {
   async write(
     ref: string,
     content: string | Uint8Array,
-    opts: { expectedVersion?: string } = {},
   ): Promise<{ version: string }> {
-    return this.pipeline.write(
-      ref,
-      { type: 'replace-all', bytes: toBytes(content) },
-      opts,
-    )
+    return this.pipeline.write(ref, {
+      type: 'replace-all',
+      bytes: toBytes(content),
+    })
   }
 
   /** 锚定替换（单步写）：定位 → 编码 → 提交。 */
@@ -106,9 +152,7 @@ export class Ura {
         anchor: { ...anchor, ...span },
         content,
       })
-      return this.pipeline.write(ref, patch, {
-        expectedVersion: opened.raw.version,
-      })
+      return this.pipeline.write(ref, patch)
     }
     return this.pipeline.write(
       ref,
@@ -119,7 +163,6 @@ export class Ura {
         bytes: toBytes(content),
         expected: anchor.expected,
       },
-      { expectedVersion: opened.raw.version },
     )
   }
 
@@ -221,23 +264,33 @@ export class Ura {
         docType,
         'agent',
         opened.capabilities,
+        undefined,
+        opened.transportId,
+        opened.mime,
       )
       if (consumer) {
         const projection = await consumer.project(opened.decoded!, opened.raw, opened.ref)
         if (projection.type === 'text') return sliceWindow(projection, window)
       }
     }
-    const content = textOf(opened)
-    return sliceWindow({ type: 'text', content }, window)
+    return sliceWindow(sidecarProjection(opened), window)
   }
 
   private async editorProjection(opened: Opened): Promise<EditorProjection> {
     const docType = opened.decoded?.docType
+    const binding = this.registry.bindingFor(
+      opened.transportId,
+      opened.mime,
+      'edit',
+    )
     if (docType) {
       const consumer = this.registry.consumerFor(
         docType,
         'editor',
         opened.capabilities,
+        binding?.projection,
+        opened.transportId,
+        opened.mime,
       )
       if (consumer?.surface) {
         const projection = await consumer.project(
@@ -251,6 +304,9 @@ export class Ura {
             docType,
             'editor',
             opened.capabilities,
+            binding?.projection,
+            opened.transportId,
+            opened.mime,
           )
           const page = this.resolvePage(projection.surface, owner)
           return { ...projection, page: page ?? '', ...(owner ? { owner } : {}) }

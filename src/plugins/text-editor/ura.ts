@@ -4,6 +4,7 @@
 // 模块求值时注册；页面入口由清单的 workstudio.page 解析。
 
 import { registerCodec, registerConsumer } from '../../main/ura/sdk'
+import { MIME } from '../../shared/ura'
 import type { Change, Codec, Consumer, DecodedDoc, Patch } from '../../shared/ura'
 
 const DOC_TYPE = 'text-doc@1' as const
@@ -24,6 +25,7 @@ function byteOffset(text: string, index: number): number {
 }
 
 const codec: Codec = {
+  mime: [MIME.text],
   hints: ['text'],
   docType: DOC_TYPE,
   patchType: 'text',
@@ -68,6 +70,7 @@ const codec: Codec = {
 
 const agentConsumer: Consumer = {
   docType: DOC_TYPE,
+  mime: [MIME.text],
   type: 'agent',
   project(decoded) {
     return { type: 'text', content: textOf(decoded) }
@@ -76,6 +79,7 @@ const agentConsumer: Consumer = {
 
 const editorConsumer: Consumer = {
   docType: DOC_TYPE,
+  mime: [MIME.text],
   type: 'editor',
   surface: 'text-editor',
   project(decoded) {

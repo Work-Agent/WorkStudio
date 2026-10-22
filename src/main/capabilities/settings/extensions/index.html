@@ -314,12 +314,12 @@
   <body>
     <div class="wrap">
       <header>
-        <h1>扩展管理</h1>
+        <h1>Pi 扩展</h1>
         <p>
           从 pi.dev 社区目录浏览安装 Pi 包（扩展 / 技能 / 提示词 /
-          主题）。安装写入
-          <code>settings.json</code> 的 <code>packages</code> 并落盘依赖；安装 /
-          卸载后自动热重载当前会话资源。
+          主题）。安装写入 <code>settings.json</code> 的
+          <code>packages</code> 并落盘依赖；安装 / 卸载后自动热重载当前会话资源。
+          技能清单见「技能」页，WorkStudio 插件见「插件」页。
         </p>
       </header>
 
@@ -349,15 +349,13 @@
       <section id="pane-installed" hidden>
         <div class="section-title">已安装的 Pi 包</div>
         <div id="configured"></div>
-        <div class="section-title">已加载资源（当前会话）</div>
+        <div class="section-title">已加载扩展（当前会话）</div>
         <div id="loaded"></div>
-        <div class="section-title">本机内置插件（src/plugins）</div>
-        <div id="builtin"></div>
       </section>
 
       <p class="foot">
         社区目录来自 pi.dev 包目录（服务端搜索与分页）；「已安装」= 当前
-        <code>settings.json</code> 中配置的包，卸载即从配置移除。
+        <code>settings.json</code> 中配置的 Pi 包，卸载即从配置移除。
         第三方包可执行代码，安装前请确认来源。
       </p>
     </div>
@@ -388,7 +386,6 @@
         packages: [],
         configured: [],
         loaded: null,
-        builtin: [],
         loading: false,
         busy: {},
       };
@@ -583,12 +580,12 @@
           el.innerHTML = '<div class="empty">读取中…</div>';
           return;
         }
-        const rows = [];
         const short = (p) =>
           String(p || '')
             .split(/[/\\]/)
             .slice(-2)
             .join('/');
+        const rows = [];
         for (const e of r.extensions) {
           const caps = [];
           if (e.tools.length) caps.push('工具 ' + e.tools.join(', '));
@@ -603,47 +600,10 @@
               '<div class="meta"><span title="' +
               esc(e.path) +
               '">' +
-              esc(e.path.replace(/^.*\/node_modules\//, 'node_modules/')) +
-              '</span></div>' +
-              (caps.length
-                ? '<div class="meta"><span>' +
-                  esc(caps.join(' · ')) +
-                  '</span></div>'
-                : '') +
-              '</div></div>',
-          );
-        }
-        for (const sk of r.skills) {
-          rows.push(
-            '<div class="card"><div class="body">' +
-              '<div class="name"><b>' +
-              esc(sk.name) +
-              '</b><span class="badge t-skill">skill</span></div>' +
-              '<p class="desc">' +
-              esc(sk.description || '（无描述）') +
-              '</p>' +
-              '</div></div>',
-          );
-        }
-        for (const pr of r.prompts) {
-          rows.push(
-            '<div class="card"><div class="body">' +
-              '<div class="name"><b>/' +
-              esc(pr.name) +
-              '</b><span class="badge t-prompt">prompt</span></div>' +
-              '<div class="meta"><span>' +
-              esc(short(pr.path)) +
-              '</span></div>' +
-              '</div></div>',
-          );
-        }
-        for (const th of r.themes) {
-          rows.push(
-            '<div class="card"><div class="body">' +
-              '<div class="name"><b>' +
-              esc(th.name) +
-              '</b><span class="badge t-theme">theme</span></div>' +
-              '</div></div>',
+              esc(e.path) +
+              '</span>' +
+              (caps.length ? '<span>' + esc(caps.join(' · ')) + '</span>' : '') +
+              '</div></div></div>',
           );
         }
         for (const err of r.errors) {
@@ -658,39 +618,7 @@
         el.innerHTML =
           rows.length > 0
             ? rows.join('')
-            : '<div class="empty">当前会话没有加载任何资源（harness 工具由应用内建）。</div>';
-      }
-
-      function renderBuiltin() {
-        const el = $('builtin');
-        if (state.builtin.length === 0) {
-          el.innerHTML = '<div class="empty">未扫描到内置插件。</div>';
-          return;
-        }
-        el.innerHTML = state.builtin
-          .map(
-            (p) =>
-              '<div class="card"><div class="body">' +
-              '<div class="name"><b>' +
-              esc(p.name) +
-              '</b><span class="badge">v' +
-              esc(p.version) +
-              '</span>' +
-              (p.hasConfig ? '<span class="badge">设置页</span>' : '') +
-              '</div>' +
-              '<p class="desc">' +
-              esc(p.description || '（无描述）') +
-              '</p>' +
-              '<div class="meta"><span>' +
-              esc(p.id) +
-              '</span><span>' +
-              (p.extensionCount > 0 ? p.extensionCount + ' 个视图' : '无视图') +
-              '</span><span>' +
-              (p.skillCount > 0 ? p.skillCount + ' 个技能' : '无技能') +
-              '</span></div>' +
-              '</div></div>',
-          )
-          .join('');
+            : '<div class="empty">当前会话没有加载 Pi 扩展。</div>';
       }
 
       function render() {
@@ -699,101 +627,6 @@
         renderCatalog();
         renderConfigured();
         renderLoaded();
-        renderBuiltin();
-      }
-
-      // ── 数据 ────────────────────────────────────────────
-
-      let searchTimer = 0;
-      async function loadCatalog(append) {
-        if (append && state.loading) return;
-        state.loading = true;
-        if (!append) {
-          state.page = 0;
-          state.packages = [];
-        }
-        renderCatalog();
-        try {
-          const page = append ? state.page + 1 : 1;
-          const res = await invoke('app:packages.catalog', {
-            query: state.query,
-            type: state.type,
-            page,
-          });
-          state.page = res.page;
-          state.total = res.total;
-          state.packages = append
-            ? [...state.packages, ...res.packages]
-            : res.packages;
-          $('catalog-error').innerHTML = '';
-        } catch (e) {
-          $('catalog-error').innerHTML =
-            '<div class="err">读取目录失败：' +
-            esc(e && e.message ? e.message : e) +
-            '</div>';
-        } finally {
-          state.loading = false;
-          render();
-        }
-      }
-
-      async function loadConfigured() {
-        try {
-          state.configured = await invoke('app:packages.list');
-        } catch {
-          state.configured = [];
-        }
-        try {
-          state.loaded = await invoke('app:packages.loaded');
-        } catch {
-          state.loaded = null;
-        }
-        try {
-          state.builtin = await invoke('app:plugins.list');
-        } catch {
-          state.builtin = [];
-        }
-        render();
-      }
-
-      async function install(name) {
-        state.busy['install:' + name] = true;
-        render();
-        try {
-          state.configured = await invoke('app:packages.install', { name });
-          try {
-            state.loaded = await invoke('app:packages.loaded');
-          } catch {
-            /* ignore */
-          }
-          toast('已安装 ' + name + '（资源已热重载）');
-        } catch (e) {
-          toast(e && e.message ? e.message : String(e), true);
-        } finally {
-          delete state.busy['install:' + name];
-          render();
-        }
-      }
-
-      async function remove(source, scope) {
-        state.busy['remove:' + source] = true;
-        render();
-        try {
-          const res = await invoke('app:packages.remove', { source, scope });
-          if (!res.removed) throw new Error('未找到已配置的包：' + source);
-          state.configured = await invoke('app:packages.list');
-          try {
-            state.loaded = await invoke('app:packages.loaded');
-          } catch {
-            /* ignore */
-          }
-          toast('已卸载 ' + source);
-        } catch (e) {
-          toast(e && e.message ? e.message : String(e), true);
-        } finally {
-          delete state.busy['remove:' + source];
-          render();
-        }
       }
 
       // ── 交互 ────────────────────────────────────────────
@@ -806,6 +639,7 @@
         state.tab = 'installed';
         void loadConfigured();
       };
+
 
       $('q').addEventListener('input', (e) => {
         state.query = e.target.value;

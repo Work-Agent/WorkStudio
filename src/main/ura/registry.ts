@@ -4,12 +4,16 @@
 // 注册是同步的、纯登记的；冲突按后注册者胜出并进诊断，不做静默合并。
 
 import type {
+  Binding,
   Codec,
   CollectionProvider,
   Consumer,
   DocType,
+  Intent,
+  Mime,
   Store,
   Transport,
+  TransportId,
   ViewAction,
 } from '../../shared/ura'
 
@@ -33,8 +37,11 @@ const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/i
 export class UraRegistry {
   private readonly transports = new Map<string, Entry<Transport>>()
   private readonly codecs = new Map<DocType, Entry<Codec>>()
+  private readonly codecsByMime = new Map<Mime, Entry<Codec>[]>()
+  private bindings: Binding[] = []
   private readonly stores = new Map<DocType, Entry<Store>>()
   private readonly consumers = new Map<string, Entry<Consumer>[]>()
+  private readonly consumersByMime = new Map<string, Entry<Consumer>[]>()
   private readonly collections = new Map<string, Entry<CollectionProvider>>()
   private readonly actions = new Map<string, Entry<ViewAction>>()
   private readonly logs: Diagnostic[] = []
@@ -87,6 +94,10 @@ export class UraRegistry {
       this.reject('codec.invalid-doc-type', `文档类型非法：${codec.docType}`)
       return
     }
+    if (!codec.mime?.length) {
+      this.reject('codec.no-mime', `格式缺少 MIME：${codec.docType}`)
+      return
+    }
     if (!codec.hints.length) {
       this.reject('codec.no-hints', `格式缺少提示：${codec.docType}`)
       return
@@ -105,8 +116,20 @@ export class UraRegistry {
     }
     if (this.codecs.has(codec.docType)) {
       this.warn('codec.override', `格式被覆盖：${codec.docType}`)
+      const previous = this.codecs.get(codec.docType)!.impl
+      for (const [mime, entries] of this.codecsByMime) {
+        const kept = entries.filter((entry) => entry.impl !== previous)
+        if (kept.length > 0) this.codecsByMime.set(mime, kept)
+        else this.codecsByMime.delete(mime)
+      }
     }
-    this.codecs.set(codec.docType, this.entry(codec))
+    const entry = this.entry(codec)
+    this.codecs.set(codec.docType, entry)
+    for (const mime of codec.mime ?? []) {
+      const list = this.codecsByMime.get(mime) ?? []
+      list.push(entry)
+      this.codecsByMime.set(mime, list)
+    }
     this.info('codec.registered', `格式注册：${codec.docType}`)
   }
 
@@ -155,10 +178,21 @@ export class UraRegistry {
       this.reject('consumer.no-surface', `editor 出口缺少 surface：${consumer.docType}`)
       return
     }
+    if (!consumer.mime?.length) {
+      this.reject('consumer.no-mime', `出口缺少 MIME：${consumer.docType}`)
+      return
+    }
+    const entry = this.entry(consumer)
     const key = consumerKey(consumer.docType, consumer.type)
     const list = this.consumers.get(key) ?? []
-    list.push(this.entry(consumer))
+    list.push(entry)
     this.consumers.set(key, list)
+    for (const mime of consumer.mime) {
+      const mimeKey = `${mime}:${consumer.type}`
+      const indexed = this.consumersByMime.get(mimeKey) ?? []
+      indexed.push(entry)
+      this.consumersByMime.set(mimeKey, indexed)
+    }
     this.info('consumer.registered', `出口注册：${consumer.docType} · ${consumer.type}`)
   }
 
@@ -166,6 +200,70 @@ export class UraRegistry {
 
   transportFor(scheme: string): Transport | undefined {
     return this.transports.get(scheme)?.impl
+  }
+
+  transportIdOf(scheme: string): TransportId {
+    return this.transports.get(scheme)?.impl.id ?? scheme
+  }
+
+  // ─── 绑定 ──────────────────────────────────────────────────────
+
+  setBindings(bindings: Binding[]): void {
+    this.bindings = [...bindings]
+  }
+
+  bindingsSnapshot(): Binding[] {
+    return [...this.bindings]
+  }
+
+  bindingFor(
+    transport: TransportId,
+    mime: Mime | undefined,
+    intent: Intent,
+  ): Binding | undefined {
+    return this.bindings
+      .filter((binding) => binding.intent === intent)
+      .map((binding) => ({ binding, score: bindingScore(binding, transport, mime) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]?.binding
+  }
+
+  codecForMime(
+    transport: TransportId,
+    mime: Mime | undefined,
+    hints: string[],
+    docTypeHint?: DocType,
+  ): Codec | undefined {
+    const explicit = this.bindings
+      .filter((binding) => binding.codec)
+      .map((binding) => ({ binding, score: bindingScore(binding, transport, mime) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]?.binding
+    if (explicit?.codec) {
+      const bound = this.codecs.get(explicit.codec)?.impl
+      if (bound) return bound
+    }
+    if (docTypeHint) {
+      const exact = this.codecs.get(docTypeHint)?.impl
+      if (exact) return exact
+      this.warn('codec.missing-hint', `指定的文档类型未注册：${docTypeHint}`)
+      return undefined
+    }
+    const candidates = mime ? (this.codecsByMime.get(mime) ?? []) : []
+    const scoped = candidates.filter(
+      (entry) =>
+        !entry.impl.transports || entry.impl.transports.includes(transport),
+    )
+    if (scoped.length > 0) {
+      if (scoped.length > 1) {
+        this.warn(
+          'codec.ambiguous',
+          `${mime} 有多个 codec：${scoped.map((e) => e.impl.docType).join(', ')}`,
+        )
+      }
+      return scoped[scoped.length - 1]!.impl
+    }
+    return this.codecForHints(hints)
   }
 
   codecForHints(hints: string[], docTypeHint?: DocType): Codec | undefined {
@@ -228,30 +326,67 @@ export class UraRegistry {
   consumerFor(
     docType: DocType,
     type: Consumer['type'],
-    capabilities: string[] = [],
+    capabilities: readonly string[] = [],
+    projection?: string,
+    transport?: TransportId,
+    mime?: Mime,
   ): Consumer | undefined {
-    return this.pickConsumer(docType, type, capabilities)?.impl
+    return this.pickConsumer(
+      docType,
+      type,
+      capabilities,
+      projection,
+      transport,
+      mime,
+    )?.impl
   }
 
   ownerOfConsumer(
     docType: DocType,
     type: Consumer['type'],
-    capabilities: string[] = [],
+    capabilities: readonly string[] = [],
+    projection?: string,
+    transport?: TransportId,
+    mime?: Mime,
   ): string | undefined {
-    return this.pickConsumer(docType, type, capabilities)?.owner
+    return this.pickConsumer(
+      docType,
+      type,
+      capabilities,
+      projection,
+      transport,
+      mime,
+    )?.owner
   }
 
   private pickConsumer(
     docType: DocType,
     type: Consumer['type'],
-    capabilities: string[],
+    capabilities: readonly string[],
+    projection?: string,
+    transport?: TransportId,
+    mime?: Mime,
   ): Entry<Consumer> | undefined {
-    const candidates = this.consumers.get(consumerKey(docType, type)) ?? []
+    const indexed = mime
+      ? this.consumersByMime.get(`${mime}:${type}`)
+      : undefined
+    const all = (indexed?.length ? indexed : this.consumers.get(consumerKey(docType, type))) ?? []
+    const sameDoc = all.filter((entry) => entry.impl.docType === docType)
+    const candidates =
+      projection === 'raw'
+        ? []
+        : projection
+          ? sameDoc.filter((entry) => entry.impl.surface === projection)
+          : sameDoc
     return candidates
-      .filter((entry) =>
-        (entry.impl.requires ?? []).every((req) =>
-          capabilities.includes(req),
-        ),
+      .filter(
+        (entry) =>
+          (!transport ||
+            !entry.impl.transports ||
+            entry.impl.transports.includes(transport)) &&
+          (entry.impl.requires ?? []).every((req) =>
+            capabilities.includes(req),
+          ),
       )
       .sort(
         (a, b) =>
@@ -286,6 +421,7 @@ export class UraRegistry {
       })),
       codecs: [...this.codecs.entries()].map(([docType, e]) => ({
         docType,
+        mime: e.impl.mime ?? [],
         hints: e.impl.hints,
         owner: e.owner,
       })),
@@ -299,10 +435,12 @@ export class UraRegistry {
           docType: e.impl.docType,
           type: e.impl.type,
           surface: e.impl.surface,
+          mime: e.impl.mime ?? [],
           requires: e.impl.requires ?? [],
           owner: e.owner,
         })),
       ),
+      bindings: [...this.bindings],
       collections: [...this.collections.entries()].map(([id, e]) => ({
         id,
         label: e.impl.label,
@@ -343,3 +481,16 @@ function consumerKey(docType: DocType, type: Consumer['type']): string {
 
 /** 应用级单例：插件入口与宿主共享同一张表。 */
 export const uraRegistry = new UraRegistry()
+
+function bindingScore(
+  binding: Binding,
+  transport: TransportId,
+  mime: Mime | undefined,
+): number {
+  let score = 0
+  if (binding.transport === transport) score += 2
+  else if (binding.transport !== '*') return -1
+  if (mime && binding.mime === mime) score += 2
+  else if (binding.mime !== '*') return -1
+  return score
+}
