@@ -12,7 +12,7 @@ import { useMemo, useState, type ComponentType } from 'react';
 import { FileText, FolderOpen, Globe, Hourglass } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import { useDocumentsStore } from '../../state/documents';
-import { useOpenTabsProjection } from '../../state/openTabs';
+import { useOpenTabsPresentation } from '../../state/openTabs';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { DocumentList } from './DocumentList';
 import { FindList } from './FindList';
@@ -45,7 +45,7 @@ export function Sidebar() {
   const documents = useDocumentsStore((s) => s.documents);
   const groupsData = useDocumentsStore((s) => s.groups);
 
-  const { openDocs, tempTabs, activeDocId } = useOpenTabsProjection();
+  const { openDocs, tempTabs, activeDocId } = useOpenTabsPresentation();
 
   // ── 分组（URA 资源按 source 分组；web 按域二级分组） ──
   const localDocs = useMemo(
@@ -62,7 +62,7 @@ export function Sidebar() {
   );
 
   /** 「临时网页」= 打开的 raw 标签页且域名不在名单内（不落盘，只活在标签里）。 */
-  /** 打开的文档集合（按 id 去重）——由 useOpenTabsProjection 提供。 */
+  /** 打开的文档集合（按 id 去重）——由 useOpenTabsPresentation 提供。 */
 
   const groups = useMemo<SidebarGroup[]>(() => {
     const list: SidebarGroup[] = [

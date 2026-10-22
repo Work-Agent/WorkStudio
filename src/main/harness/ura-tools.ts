@@ -32,10 +32,10 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     parameters: readParams,
     execute: async (_id, { ref, offset, limit }) => {
       const opened = await ura.read(ref, { as: 'agent' })
-      if (opened.projection.type !== 'text') {
-        return text(`(no text projection: ${ref})`, { ref, error: true })
+      if (opened.presentation.type !== 'text') {
+        return text(`(no sidecar: ${ref})`, { ref, error: true })
       }
-      const window = sliceLines(opened.projection.content, offset, limit)
+      const window = sliceLines(opened.presentation.content, offset, limit)
       const trailer = window.truncated
         ? `\n\n(truncated: lines ${window.startLine}-${window.endLine} of ${window.totalLines}; continue with offset=${window.endLine + 1})`
         : ''

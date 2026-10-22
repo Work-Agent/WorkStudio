@@ -87,10 +87,8 @@ export class WriteSession {
 }
 
 function textOf(opened: Opened): string {
-  const projection = opened.decoded?.projection
-  return typeof projection === 'string'
-    ? projection
-    : decoder.decode(opened.raw.bytes)
+  const mapping = opened.decoded?.anchorMap
+  return typeof mapping === 'string' ? mapping : decoder.decode(opened.raw.bytes)
 }
 
 function textOfContent(content: string | Uint8Array): string {

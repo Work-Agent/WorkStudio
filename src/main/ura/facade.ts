@@ -4,10 +4,10 @@
 // 门面只做编排：选来源、选格式、选出口、拼结果；不含格式解释与来源访问。
 
 import type {
-  AgentProjection,
+  Sidecar,
   TreeItem,
   Caller,
-  EditorProjection,
+  Presentation,
   ListEntry,
   OpenResult,
   Query,
@@ -18,7 +18,7 @@ import type {
   Intent,
 } from '../../shared/ura'
 import { parseRef } from '../../shared/ura'
-import { sidecarProjection } from './sidecar'
+import { sidecarPresentation } from './sidecar'
 import { UraError } from './errors'
 import { ResourcePipeline, type Opened } from './pipeline'
 import { UraRegistry, uraRegistry } from './registry'
@@ -63,17 +63,17 @@ export class Ura {
   async read(ref: string, options: ReadOptions = {}): Promise<OpenResult> {
     const opened = await this.pipeline.open(ref, options.docTypeHint)
     const as: Caller = options.as ?? 'agent'
-    const projection =
+    const presentation =
       as === 'editor'
-        ? await this.editorProjection(opened)
-        : await this.textProjection(opened, options.window)
+        ? await this.editorPresentation(opened)
+        : await this.textPresentation(opened, options.window)
     return {
       ref,
       version: opened.raw.version,
       docType: opened.decoded?.docType ?? null,
       formatHints: opened.raw.formatHints,
       degraded: opened.degraded,
-      projection,
+      presentation,
     }
   }
 
@@ -254,29 +254,26 @@ export class Ura {
 
   // ─── 出口 ──────────────────────────────────────────────────────
 
-  private async textProjection(
+  private async textPresentation(
     opened: Opened,
     window?: ReadOptions['window'],
-  ): Promise<AgentProjection> {
+  ): Promise<Sidecar> {
     const docType = opened.decoded?.docType
-    if (docType) {
-      const consumer = this.registry.consumerFor(
-        docType,
-        'agent',
-        opened.capabilities,
-        undefined,
-        opened.transportId,
-        opened.mime,
+    const provider = docType
+      ? this.registry.sidecarFor(docType, opened.transportId, opened.mime)
+      : undefined
+    if (provider) {
+      const sidecar = await provider.sidecar(
+        opened.decoded!,
+        opened.raw,
+        opened.ref,
       )
-      if (consumer) {
-        const projection = await consumer.project(opened.decoded!, opened.raw, opened.ref)
-        if (projection.type === 'text') return sliceWindow(projection, window)
-      }
+      return sliceWindow(sidecar, window)
     }
-    return sliceWindow(sidecarProjection(opened), window)
+    return sliceWindow(sidecarPresentation(opened), window)
   }
 
-  private async editorProjection(opened: Opened): Promise<EditorProjection> {
+  private async editorPresentation(opened: Opened): Promise<Presentation> {
     const docType = opened.decoded?.docType
     const binding = this.registry.bindingFor(
       opened.transportId,
@@ -284,33 +281,29 @@ export class Ura {
       'edit',
     )
     if (docType) {
-      const consumer = this.registry.consumerFor(
+      const presenter = this.registry.presenterFor(
         docType,
-        'editor',
         opened.capabilities,
-        binding?.projection,
+        binding?.presenter,
         opened.transportId,
         opened.mime,
       )
-      if (consumer?.surface) {
-        const projection = await consumer.project(
+      if (presenter) {
+        const presentation = await presenter.present(
           opened.decoded!,
           opened.raw,
           opened.ref,
         )
-        if (projection.type === 'browser') return projection
-        if (projection.type === 'page') {
-          const owner = this.registry.ownerOfConsumer(
-            docType,
-            'editor',
-            opened.capabilities,
-            binding?.projection,
-            opened.transportId,
-            opened.mime,
-          )
-          const page = this.resolvePage(projection.surface, owner)
-          return { ...projection, page: page ?? '', ...(owner ? { owner } : {}) }
-        }
+        if (presentation.type === 'browser') return presentation
+        const owner = this.registry.ownerOfPresenter(
+          docType,
+          opened.capabilities,
+          binding?.presenter,
+          opened.transportId,
+          opened.mime,
+        )
+        const page = this.resolvePage(presentation.surface, owner)
+        return { ...presentation, page: page ?? '', ...(owner ? { owner } : {}) }
       }
     }
     return {
@@ -348,19 +341,19 @@ function toBytes(content: string | Uint8Array): Uint8Array {
 }
 
 function textOf(opened: Opened): string {
-  const projection = opened.decoded?.projection
-  if (typeof projection === 'string') return projection
+  const mapping = opened.decoded?.anchorMap
+  if (typeof mapping === 'string') return mapping
   return decoder.decode(opened.raw.bytes)
 }
 
 function sliceWindow(
-  projection: AgentProjection,
+  sidecar: Sidecar,
   window?: ReadOptions['window'],
-): AgentProjection {
-  if (!window) return projection
+): Sidecar {
+  if (!window) return sidecar
   const start = Math.max(0, window.start ?? 0)
-  const end = window.end ?? projection.content.length
-  return { ...projection, content: projection.content.slice(start, end) }
+  const end = window.end ?? sidecar.content.length
+  return { ...sidecar, content: sidecar.content.slice(start, end) }
 }
 
 function extensionOf(name: string): string {

@@ -39,10 +39,10 @@ export class PageSessions {
 
   async open(ref: string): Promise<PageOpenTarget> {
     const opened = await this.ura.read(ref, { as: 'editor' })
-    if (opened.projection.type === 'browser') {
-      return { type: 'browser', url: opened.projection.url }
+    if (opened.presentation.type === 'browser') {
+      return { type: 'browser', url: opened.presentation.url }
     }
-    if (opened.projection.type !== 'page') {
+    if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${ref}`)
     }
     const binary = isBinaryRef(ref)
@@ -52,10 +52,10 @@ export class PageSessions {
       ref,
       version: opened.version,
       docType: opened.docType,
-      surface: opened.projection.surface,
-      ...(opened.projection.owner ? { owner: opened.projection.owner } : {}),
-      page: opened.projection.page,
-      data: opened.projection.data,
+      surface: opened.presentation.surface,
+      ...(opened.presentation.owner ? { owner: opened.presentation.owner } : {}),
+      page: opened.presentation.page,
+      data: opened.presentation.data,
       degraded: opened.degraded,
     }
     this.entries.set(info.id, { info, base, encoding: binary ? 'base64' : 'text', closed: false })
@@ -88,17 +88,17 @@ export class PageSessions {
   async reload(id: string): Promise<PageSessionInfo> {
     const entry = this.require(id)
     const opened = await this.ura.read(entry.info.ref, { as: 'editor' })
-    if (opened.projection.type !== 'page') {
+    if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${entry.info.ref}`)
     }
     entry.info = {
       ...entry.info,
       version: opened.version,
       docType: opened.docType,
-      surface: opened.projection.surface,
-      ...(opened.projection.owner ? { owner: opened.projection.owner } : {}),
-      page: opened.projection.page,
-      data: opened.projection.data,
+      surface: opened.presentation.surface,
+      ...(opened.presentation.owner ? { owner: opened.presentation.owner } : {}),
+      page: opened.presentation.page,
+      data: opened.presentation.data,
       degraded: opened.degraded,
     }
     entry.base = await this.baseOf(entry.info.ref, entry.encoding === 'base64')
@@ -114,7 +114,7 @@ export class PageSessions {
 
   private async textOf(ref: string): Promise<string> {
     const opened = await this.ura.read(ref, { as: 'agent' })
-    return opened.projection.type === 'text' ? opened.projection.content : ''
+    return opened.presentation.type === 'text' ? opened.presentation.content : ''
   }
 
   private async baseOf(ref: string, binary: boolean): Promise<string> {

@@ -13,14 +13,14 @@ import { useUiStore } from './uiState';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
-interface ShellProjection {
+interface ShellPresentation {
   /** 主进程布局快照（未水合前为 null）。 */
   layout: LayoutSnapshot | null;
   /** 视图集合投影（顺序 = 标签顺序；`active` 标出激活项）。 */
   views: ViewEntry[];
 }
 
-export const useShellStore = create<ShellProjection>()(() => ({
+export const useShellStore = create<ShellPresentation>()(() => ({
   layout: null,
   views: [],
 }));
@@ -37,7 +37,7 @@ function localLayout(): LayoutSnapshot {
 }
 
 /** 启动投影：主进程桥存在时订阅 ws:state / ws:view，否则本地计算（resize / UI 变化重算）。 */
-export async function initShellProjection(): Promise<void> {
+export async function initShellPresentation(): Promise<void> {
   if (mainBridge) {
     const result = await mainBridge.sync();
     useShellStore.setState({

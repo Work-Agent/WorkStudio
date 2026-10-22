@@ -41,6 +41,7 @@ import { AgentHost } from './agent/agent-host';
 import { ModelConfigStore } from './agent/config-service';
 import { PiPackageService } from './agent/package-service';
 import { PluginService } from './plugins/service';
+import { PluginCatalogService } from './plugins/catalog';
 import {
   ensureDefaultWorkspace,
   getAgentDir,
@@ -180,6 +181,7 @@ let workspaceWatcher: { close(): void } | null = null;
 let modelConfig: ModelConfigStore | null = null;
 let packageService: PiPackageService | null = null;
 let pluginService: PluginService | null = null;
+let pluginCatalog: PluginCatalogService | null = null;
 let browserAutomation: BrowserAutomation | null = null;
 let workspacePath = '';
 /** 运行期浮动助手几何（瞬时，不落盘）。 */
@@ -396,6 +398,11 @@ app.whenReady().then(async () => {
     cwd: () => workspacePath,
   });
   await pluginService.start();
+  pluginCatalog = new PluginCatalogService({
+    cacheFile: path.join(app.getPath('userData'), 'plugin-catalog.md'),
+    urlFile: path.join(app.getPath('userData'), 'plugin-catalog-url.txt'),
+  });
+  await pluginCatalog.start();
   uraRuntime = await createUraRuntime({
     dataRoot: path.join(app.getPath('userData'), 'plugin-data'),
     bindingFile: path.join(app.getPath('userData'), 'ura-bindings.json'),
@@ -443,6 +450,25 @@ app.whenReady().then(async () => {
     )
       uiState.set({ openPaths, activePath });
   }
+
+  // 6. ViewHost（原生视图层）
+  viewHost = new ViewHost({
+    getWindow: () => winRef,
+    plugins: uraRuntime.host,
+    pageSessions,
+    uiState,
+    workspaceId: () => getWorkspaceId(workspacePath),
+    getLayout: buildLayout,
+    broadcastState,
+    broadcastView: broadcastViews,
+    broadcastBus: (viewId, message) =>
+      broadcastToWindows(CH_BUS, { viewId, message }),
+    openExternal: (url) => void shell.openExternal(url),
+    ensureAppProtocol: (partition) =>
+      registerAppProtocol(session.fromPartition(partition)),
+  });
+
+  browserAutomation = new BrowserAutomation(viewHost);
 
   // 5. AgentHost（pi runtime + 自有 harness）
   modelConfig = new ModelConfigStore(getAgentDir());
@@ -503,24 +529,6 @@ app.whenReady().then(async () => {
     onChanged: () => agent?.reloadResources(),
   });
 
-  // 6. ViewHost（原生视图层）
-  viewHost = new ViewHost({
-    getWindow: () => winRef,
-    plugins: uraRuntime.host,
-    pageSessions,
-    uiState,
-    workspaceId: () => getWorkspaceId(workspacePath),
-    getLayout: buildLayout,
-    broadcastState,
-    broadcastView: broadcastViews,
-    broadcastBus: (viewId, message) =>
-      broadcastToWindows(CH_BUS, { viewId, message }),
-    openExternal: (url) => void shell.openExternal(url),
-    ensureAppProtocol: (partition) =>
-      registerAppProtocol(session.fromPartition(partition)),
-  });
-
-  browserAutomation = new BrowserAutomation(viewHost);
   interaction = new InteractionController({
     getWindow: () => winRef,
     viewHost,
@@ -568,6 +576,7 @@ app.whenReady().then(async () => {
     modelConfig,
     packages: packageService,
     pluginSources: pluginService,
+    pluginCatalog: pluginCatalog,
     getSettingsService: () => agent!.settingsService,
     interaction,
     getWindow: () => winRef,

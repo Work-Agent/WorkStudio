@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import { useDocumentsStore } from '../../state/documents';
-import { useOpenTabsProjection } from '../../state/openTabs';
+import { useOpenTabsPresentation } from '../../state/openTabs';
 import { useTabServiceStore } from '../../state/tabService';
 import { useUiStore } from '../../state/uiState';
 import { EmptyState, SubListView } from './SubListView';
@@ -105,7 +105,7 @@ export function DocumentList() {
   const sidebarDomain = useUiStore((s) => s.sidebarDomain);
   const documents = useDocumentsStore((s) => s.documents);
   const groups = useDocumentsStore((s) => s.groups);
-  const { tempTabs, activeDocId, activeInstanceId } = useOpenTabsProjection();
+  const { tempTabs, activeDocId, activeInstanceId } = useOpenTabsPresentation();
 
   const webGroups = groups.filter((g) => g.source === 'web');
   const activeWebGroup =

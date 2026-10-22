@@ -278,7 +278,7 @@
         </p>
         <div class="reg-groups" id="registry"></div>
         <div class="reg-group">
-          <div class="reg-title">绑定（transport × MIME → codec / projection）</div>
+          <div class="reg-title">绑定（transport × MIME → codec / presenter）</div>
           <div id="bindings"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
             <input id="b-transport" placeholder="transport: file / https / *" style="flex:1;min-width:120px" />
@@ -290,7 +290,7 @@
               <option value="agent">agent</option>
             </select>
             <input id="b-codec" placeholder="codec docType（可选）" style="flex:1;min-width:120px" />
-            <input id="b-projection" placeholder="projection（可选）" style="flex:1;min-width:120px" />
+            <input id="b-presenter" placeholder="presenter（可选）" style="flex:1;min-width:120px" />
             <button onclick="addBinding()">写入</button>
           </div>
         </div>
@@ -629,7 +629,7 @@
               '<div class="reg-row"><span class="reg-key">' +
               esc(b.transport + ' · ' + b.mime + ' · ' + b.intent) +
               '</span><span class="reg-owner">' +
-              esc([b.codec, b.projection].filter(Boolean).join(' → ') || '默认') +
+              esc([b.codec, b.presenter].filter(Boolean).join(' → ') || '默认') +
               ' <button data-bind-remove data-transport="' +
               esc(b.transport) +
               '" data-mime="' +
@@ -681,14 +681,14 @@
             ...($('b-codec').value.trim()
               ? { codec: $('b-codec').value.trim() }
               : {}),
-            ...($('b-projection').value.trim()
-              ? { projection: $('b-projection').value.trim() }
+            ...($('b-presenter').value.trim()
+              ? { presenter: $('b-presenter').value.trim() }
               : {}),
           });
           $('b-transport').value = '';
           $('b-mime').value = '';
           $('b-codec').value = '';
-          $('b-projection').value = '';
+          $('b-presenter').value = '';
           await loadRegistry();
           toast('绑定已写入');
         } catch (e) {

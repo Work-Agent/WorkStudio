@@ -47,6 +47,7 @@ import type { UiStateService } from '../state/ui-state';
 import type { InteractionController } from '../capabilities/webview/interaction';
 import type { ViewHost } from '../capabilities/webview/host';
 import type { PluginService } from '../plugins/service';
+import type { PluginCatalogService } from '../plugins/catalog';
 import { settingsPages } from '../capabilities/settings/registry';
 import {
   listWorkspaces,
@@ -71,6 +72,7 @@ export interface RouterDeps {
   modelConfig: ModelConfigStore;
   packages: PiPackageService;
   pluginSources: PluginService;
+  pluginCatalog: PluginCatalogService;
   getSettingsService: () => SettingsService;
   interaction: InteractionController;
   getWindow: () => BrowserWindow | null;
@@ -415,6 +417,12 @@ async function invoke(
         return ok(d.agent.getLoadedResources());
       case 'plugins.sources':
         return ok(d.pluginSources.list());
+      case 'plugins.catalog':
+        return ok(
+          await d.pluginCatalog.load(
+            typeof p.url === 'string' ? p.url : undefined,
+          ),
+        );
       case 'plugins.install': {
         const entry = await d.pluginSources.install(String(p.source ?? ''));
         return ok({
@@ -553,8 +561,8 @@ async function invoke(
             mime: String(p.mime ?? '*'),
             intent: p.intent as never,
             ...(typeof p.codec === 'string' ? { codec: p.codec as never } : {}),
-            ...(typeof p.projection === 'string'
-              ? { projection: p.projection }
+            ...(typeof p.presenter === 'string'
+              ? { presenter: p.presenter }
               : {}),
           }),
         );
@@ -857,6 +865,7 @@ async function invokeExt(
     'app:packages.install': 'config.packages.install',
     'app:packages.remove': 'config.packages.remove',
     'app:plugins.sources': 'plugins.sources',
+    'app:plugins.catalog': 'plugins.catalog',
     'app:plugins.install': 'plugins.install',
     'app:plugins.remove': 'plugins.remove',
     'app:models.read': 'config.models.read',

@@ -267,8 +267,8 @@ export interface DecodedDoc {
   docType: DocType
   /** 结构化文档（插件自定义）。 */
   doc: unknown
-  /** 投影映射：供 locate 反查锚点。 */
-  projection: unknown
+  /** 锚点映射：供 locate 反查锚点。 */
+  anchorMap: unknown
   outline?: unknown
 }
 
@@ -312,13 +312,13 @@ export interface Store {
 
 // ─── 出口（consumer） ────────────────────────────────────────────────
 
-export interface AgentProjection {
+export interface Sidecar {
   type: 'text'
   content: string
   truncated?: boolean
 }
 
-export interface PageProjection {
+export interface PagePresentation {
   type: 'page'
   surface: string
   /** 渲染器归属插件（页面与动作的作用域）。 */
@@ -329,33 +329,40 @@ export interface PageProjection {
   actions?: string[]
 }
 
-/** 实时视图投影：由视图宿主加载 URL（浏览器运行时）。 */
-export interface BrowserProjection {
+/** 浏览器表现层：由视图宿主加载 URL（Browser 即一种 Presenter）。 */
+export interface Browser {
   type: 'browser'
   surface: string
   url: string
 }
 
-export type EditorProjection = PageProjection | BrowserProjection
+export type Presentation = PagePresentation | Browser
 
-export type Projection = AgentProjection | EditorProjection
-
-export interface Consumer {
+/** 表现层实现：只负责“用户看到什么”。 */
+export interface Presenter {
   readonly docType: DocType
-  /** 可处理的规范 MIME（必填）。 */
   readonly mime: readonly Mime[]
-  /** 限定来源类型；缺省 = 通用。 */
   readonly transports?: readonly TransportId[]
-  readonly type: 'agent' | 'editor'
-  /** 需要 transport 具备的能力（如 live）；缺省 = 通用。 */
+  readonly type: 'page' | 'browser'
   readonly requires?: string[]
-  /** editor 出口的页面标识（页面由插件清单解析）。 */
   readonly surface?: string
-  project(
+  present(
     decoded: DecodedDoc,
     raw: RawContent,
     ref: string,
-  ): Promise<Projection> | Projection
+  ): Promise<Presentation> | Presentation
+}
+
+/** agent 读取面：只负责“agent 读到什么”。 */
+export interface SidecarProvider {
+  readonly docType: DocType
+  readonly mime: readonly Mime[]
+  readonly transports?: readonly TransportId[]
+  sidecar(
+    decoded: DecodedDoc,
+    raw: RawContent,
+    ref: string,
+  ): Promise<Sidecar> | Sidecar
 }
 
 // ─── 绑定（transport × MIME → 实现） ─────────────────────────────────
@@ -370,8 +377,8 @@ export interface Binding {
   intent: Intent
   /** 指定 codec 的 docType。 */
   codec?: DocType
-  /** 指定投影：'browser' / 'raw' / consumer surface。 */
-  projection?: string
+  /** 指定表现层：'browser' / 'raw' / presenter surface。 */
+  presenter?: string
 }
 
 // ─── 视图动作（地址栏工具条贡献） ────────────────────────────────────
@@ -467,15 +474,10 @@ export interface StoreRegistration {
   store: Store
 }
 
-export interface ConsumerRegistration {
-  consumer: Consumer
-}
-
 export type Registration =
   | TransportRegistration
   | CodecRegistration
   | StoreRegistration
-  | ConsumerRegistration
 
 // ─── 门面结果 ────────────────────────────────────────────────────────
 
@@ -486,7 +488,7 @@ export interface OpenResult {
   formatHints: string[]
   /** 没有匹配的格式实现时降级 raw。 */
   degraded: boolean
-  projection: Projection
+  presentation: Presentation | Sidecar
 }
 
 export interface ReadOptions {

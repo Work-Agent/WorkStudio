@@ -2,9 +2,9 @@
 //
 // 源码既是结构化文档也是投影；预览在页面里做，脚本默认关闭。
 
-import { registerCodec, registerConsumer } from '../../main/ura/sdk'
+import { registerCodec, registerPresenter, registerSidecar } from '../../main/ura/sdk'
 import { MIME } from '../../shared/ura'
-import type { Codec, Consumer, DecodedDoc, Patch } from '../../shared/ura'
+import type { Codec, DecodedDoc, Patch, Presenter, SidecarProvider } from '../../shared/ura'
 
 const DOC_TYPE = 'html-doc@1'
 const decoder = new TextDecoder()
@@ -34,7 +34,7 @@ const codec: Codec = {
     return {
       docType: DOC_TYPE,
       doc: { source } satisfies HtmlDoc,
-      projection: source,
+      anchorMap: source,
     }
   },
 
@@ -66,21 +66,20 @@ const codec: Codec = {
   },
 }
 
-const agentConsumer: Consumer = {
+const agentSidecar: SidecarProvider = {
   docType: DOC_TYPE,
   mime: [MIME.html],
-  type: 'agent',
-  project(decoded) {
+  sidecar(decoded) {
     return { type: 'text', content: sourceOf(decoded) }
   },
 }
 
-const editorConsumer: Consumer = {
+const editorPresenter: Presenter = {
   docType: DOC_TYPE,
   mime: [MIME.html],
-  type: 'editor',
+  type: 'page',
   surface: 'html-viewer',
-  project(decoded) {
+  present(decoded) {
     return {
       type: 'page',
       surface: 'html-viewer',
@@ -91,5 +90,5 @@ const editorConsumer: Consumer = {
 }
 
 registerCodec(codec)
-registerConsumer(agentConsumer)
-registerConsumer(editorConsumer)
+registerSidecar(agentSidecar)
+registerPresenter(editorPresenter)

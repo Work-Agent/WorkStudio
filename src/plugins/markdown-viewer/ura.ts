@@ -3,9 +3,9 @@
 // 格式提示 markdown（比 text 具体，先命中）；结构化文档保留源码，
 // 渲染是页面出口的事，不在管道里做。
 
-import { registerCodec, registerConsumer } from '../../main/ura/sdk'
+import { registerCodec, registerPresenter, registerSidecar } from '../../main/ura/sdk'
 import { MIME } from '../../shared/ura'
-import type { Codec, Consumer, DecodedDoc, Patch } from '../../shared/ura'
+import type { Codec, DecodedDoc, Patch, Presenter, SidecarProvider } from '../../shared/ura'
 
 const DOC_TYPE = 'markdown-doc@1'
 const decoder = new TextDecoder()
@@ -35,7 +35,7 @@ const codec: Codec = {
     return {
       docType: DOC_TYPE,
       doc: { source } satisfies MarkdownDoc,
-      projection: source,
+      anchorMap: source,
     }
   },
 
@@ -67,21 +67,20 @@ const codec: Codec = {
   },
 }
 
-const agentConsumer: Consumer = {
+const agentSidecar: SidecarProvider = {
   docType: DOC_TYPE,
   mime: [MIME.markdown],
-  type: 'agent',
-  project(decoded) {
+  sidecar(decoded) {
     return { type: 'text', content: sourceOf(decoded) }
   },
 }
 
-const editorConsumer: Consumer = {
+const editorPresenter: Presenter = {
   docType: DOC_TYPE,
   mime: [MIME.markdown],
-  type: 'editor',
+  type: 'page',
   surface: 'markdown-viewer',
-  project(decoded) {
+  present(decoded) {
     return {
       type: 'page',
       surface: 'markdown-viewer',
@@ -92,5 +91,5 @@ const editorConsumer: Consumer = {
 }
 
 registerCodec(codec)
-registerConsumer(agentConsumer)
-registerConsumer(editorConsumer)
+registerSidecar(agentSidecar)
+registerPresenter(editorPresenter)

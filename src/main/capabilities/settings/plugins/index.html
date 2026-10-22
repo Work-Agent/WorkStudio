@@ -202,6 +202,20 @@
         </p>
       </header>
 
+      <div class="section-title">社区目录</div>
+      <div class="install-row">
+        <input
+          id="catalog-url"
+          type="text"
+          placeholder="PLUGINS.md 地址"
+          autocomplete="off"
+        />
+        <button id="catalog-refresh">刷新</button>
+      </div>
+      <div class="hint" id="catalog-meta"></div>
+      <div id="catalog-list"></div>
+
+      <div class="section-title">手动安装</div>
       <div class="install-row">
         <input
           id="source"
@@ -243,6 +257,10 @@
 
       let sources = [];
       let loaded = [];
+      let catalog = [];
+      let catalogUrl = '';
+      let catalogMeta = '';
+      let catalogError = '';
       let busy = false;
 
       function applyTheme(theme) {
@@ -289,6 +307,52 @@
           .join('');
       }
 
+      function renderCatalog() {
+        const el = $('catalog-list');
+        if (catalogError) {
+          el.innerHTML =
+            '<div class="empty">目录读取失败：' + esc(catalogError) + '</div>';
+        } else if (catalog.length === 0) {
+          el.innerHTML = '<div class="empty">目录为空。</div>';
+        } else {
+          el.innerHTML = catalog
+            .map((entry) => {
+              const installed =
+                sources.some(
+                  (item) =>
+                    item.source === entry.source || item.name === entry.id,
+                ) || loaded.some((item) => item.id === entry.id);
+              return (
+                '<div class="card"><div style="min-width:0">' +
+                '<div class="name">' +
+                esc(entry.name) +
+                '<span class="badge">' +
+                esc(entry.category) +
+                '</span></div>' +
+                (entry.description
+                  ? '<p class="desc">' + esc(entry.description) + '</p>'
+                  : '') +
+                '<div class="meta">' +
+                esc(entry.id + ' · ' + entry.source) +
+                (entry.tags.length ? ' · ' + esc(entry.tags.join(', ')) : '') +
+                '</div></div>' +
+                '<button data-catalog-install="' +
+                esc(entry.source) +
+                '"' +
+                (installed || busy ? ' disabled' : '') +
+                '>' +
+                (installed ? '已安装' : '安装') +
+                '</button></div>'
+              );
+            })
+            .join('');
+        }
+        $('catalog-meta').textContent = catalogMeta;
+        if ($('catalog-url') && !$('catalog-url').value) {
+          $('catalog-url').value = catalogUrl;
+        }
+      }
+
       function renderPlugins() {
         const el = $('plugins');
         if (loaded.length === 0) {
@@ -331,6 +395,27 @@
         }
         renderSources();
         renderPlugins();
+        renderCatalog();
+      }
+
+      async function loadCatalog(url) {
+        try {
+          const res = await invoke('app:plugins.catalog', url ? { url } : {});
+          catalog = res.entries || [];
+          catalogUrl = res.url || '';
+          catalogError = res.error || '';
+          catalogMeta =
+            (res.stale ? '缓存（拉取失败）' : '已更新') +
+            (res.fetchedAt
+              ? ' · ' + new Date(res.fetchedAt).toLocaleString()
+              : '') +
+            (catalogError ? ' · ' + catalogError : '');
+        } catch (e) {
+          catalog = [];
+          catalogError = e && e.message ? e.message : String(e);
+          catalogMeta = '';
+        }
+        renderCatalog();
       }
 
       async function install() {
@@ -342,6 +427,7 @@
           const res = await invoke('app:plugins.install', { source });
           sources = res.sources;
           $('source').value = '';
+          renderCatalog();
           toast('已添加 ' + source + '，重启应用后生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
@@ -376,6 +462,15 @@
         const btn = e.target.closest('[data-remove]');
         if (btn) void remove(btn.dataset.remove);
       });
+      $('catalog-refresh').onclick = () => {
+        void loadCatalog($('catalog-url').value.trim());
+      };
+      $('catalog-list').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-catalog-install]');
+        if (!btn) return;
+        $('source').value = btn.dataset.catalogInstall;
+        void install();
+      });
 
       applyTheme(
         window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -387,6 +482,7 @@
       });
       window.extension.bus.loaded();
       void load();
+      void loadCatalog();
     </script>
   </body>
 </html>

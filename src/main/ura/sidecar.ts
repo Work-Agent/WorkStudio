@@ -4,7 +4,7 @@
 // 已解码投影优先，其次按 MIME 解码文本，最后给出二进制摘要。
 
 import { MIME } from '../../shared/ura'
-import type { AgentProjection } from '../../shared/ura'
+import type { Sidecar } from '../../shared/ura'
 import type { Opened } from './pipeline'
 
 const decoder = new TextDecoder()
@@ -16,14 +16,14 @@ const TEXTUAL = new Set<string>([
   MIME.tsv,
 ])
 
-export function sidecarProjection(opened: Opened): AgentProjection {
-  const projection = opened.decoded?.projection
-  if (typeof projection === 'string') {
-    return { type: 'text', content: projection }
+export function sidecarPresentation(opened: Opened): Sidecar {
+  const mapping = opened.decoded?.anchorMap
+  if (typeof mapping === 'string') {
+    return { type: 'text', content: mapping }
   }
-  if (projection !== undefined) {
+  if (mapping !== undefined) {
     try {
-      return { type: 'text', content: JSON.stringify(projection, null, 2) }
+      return { type: 'text', content: JSON.stringify(mapping, null, 2) }
     } catch {
       /* fall through */
     }

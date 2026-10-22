@@ -26,15 +26,15 @@ async function main(): Promise<void> {
   console.log('diagnostics:', registry.diagnostics())
 
   const agent = await ura.read(ref)
-  console.log('agent read:', agent.docType, agent.degraded, JSON.stringify(agent.projection))
+  console.log('agent read:', agent.docType, agent.degraded, JSON.stringify(agent.presentation))
 
   const editor = await ura.read(ref, { as: 'editor' })
-  console.log('editor read:', JSON.stringify(editor.projection))
+  console.log('editor read:', JSON.stringify(editor.presentation))
 
   const markdown = await ura.read(`file://${markdownFile}`, { as: 'editor' })
-  console.log('markdown:', markdown.docType, markdown.projection)
+  console.log('markdown:', markdown.docType, markdown.presentation)
   const html = await ura.read(`file://${htmlFile}`, { as: 'editor' })
-  console.log('html:', html.docType, html.projection)
+  console.log('html:', html.docType, html.presentation)
 
   console.log('ls:', (await ura.ls(`file://${dir}`)).map((e) => e.name))
   console.log('find:', (await ura.find('*.txt', { scope: `file://${dir}` })).map((e) => e.name))
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   const session = await ura.openWrite(ref)
   session.stage({ type: 'replace-all', content: 'line one\nline TWO\n' })
   console.log('commit:', await session.commit())
-  console.log('after:', (await ura.read(ref)).projection)
+  console.log('after:', (await ura.read(ref)).presentation)
 
   const a = await ura.openWrite(ref)
   const b = await ura.openWrite(ref)
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   b.stage({ type: 'replace-all', content: 'B' })
   console.log('commit a:', await a.commit())
   console.log('commit b:', await b.commit())
-  console.log('overwrite:', (await ura.read(ref)).projection)
+  console.log('overwrite:', (await ura.read(ref)).presentation)
 
   const tools = createUraTools(ura)
   const tool = (name: string) => tools.find((t) => t.name === name)!
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   const session2 = await ura.openWrite(ref)
   session2.stage({ type: 'replace-range', anchor: { start: 0, end: 1 }, content: 'Z' })
   console.log('range commit:', await session2.commit())
-  console.log('final:', (await ura.read(ref)).projection)
+  console.log('final:', (await ura.read(ref)).presentation)
 
   const pages = new PageSessions(ura)
   const mdRef = `file://${markdownFile}`

@@ -1,4 +1,4 @@
-// ─── 绑定配置（transport × MIME → codec / projection） ────────────────
+// ─── 绑定配置（transport × MIME → codec / presenter） ────────────────
 //
 // 用户覆盖优先于默认解析；文件损坏时回落空表，不影响启动。
 

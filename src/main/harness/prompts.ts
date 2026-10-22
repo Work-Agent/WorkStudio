@@ -20,7 +20,7 @@ Simple conversation and questions already answered by the map need no tool calls
 ## Rules
 
 - Access resources only by resource id from the map; never assume a physical path outside it.
-- Data objects (schema-carrying resources) never expose their rows: read returns text projection; use query for structure.
+- Data objects (schema-carrying resources) never expose their rows: read returns sidecar; use query for structure.
 - Prefer orchestrating the provided deterministic tools over long speculative plans.
 - Keep edits minimal and faithful to the document's existing language and structure.
 - Be concise and helpful.

@@ -59,7 +59,7 @@ prompts · themes                    providers · renderers
 扫描 package.json（含 workstudio）
         │
         ▼
-import exports["./ura"] ──► registerTransport / Codec / Store / Consumer
+import exports["./ura"] ──► registerTransport / Codec / Store / Presenter / Sidecar
         │                   registerCollection / ViewAction
         ▼
 建立 页面 + 资源实现 + 集合 + 动作 的归属关系
@@ -79,7 +79,7 @@ import exports["./ura"] ──► registerTransport / Codec / Store / Consumer
 
 URA 是资源内容的唯一入口：人（Studio）、AI（工具）、页面（编辑器）都只拿 ref，不拿路径与句柄。
 
-设计取向：请求侧不知道远端会返回什么，所以格式由响应决定；调用方不关心实现，所以投影按能力选择；写按资源键串行，所以写必须先进入草稿再显式提交。
+设计取向：请求侧不知道远端会返回什么，所以格式由响应决定；调用方不关心实现，所以表现层按能力选择；写按资源键串行，所以写必须先进入草稿再显式提交。
 
 ### 3.1 读与写
 
@@ -88,9 +88,9 @@ URA 是资源内容的唯一入口：人（Studio）、AI（工具）、页面�
 ref ─► transport ─► { mime, bytes }（可选 hints）
                 ─► binding(transport, mime, intent) ─► codec ─► 文档 + docType
                                                    ─► store ─► 结构化数据（派生）
-                ─► binding(transport, mime, intent) ─► projection
+                ─► binding(transport, mime, intent) ─► presenter
                        ├ render / edit ─► 插件页面 / 浏览器
-                       └ LLM sidecar   ─► 文本投影 / schema
+                       └ LLM sidecar   ─► 文本 / schema
 
 写：
 变更 ─► 定位（投影映射）─► 编码（最小补丁）─► 来源提交
@@ -113,11 +113,12 @@ ref ─► transport ─► { mime, bytes }（可选 hints）
 | `registerTransport`  | 协议 → `{ mime, bytes }`；能力在注册时声明       | 本地文件、http(s)      |
 | `registerCodec`      | MIME（可多个）+ 可选 transports → 文档 + docType | docx、xlsx、markdown   |
 | `registerStore`      | docType → 结构化查询                             | 表格、邮件             |
-| `registerConsumer`   | docType × 出口 → 文本 / 页面入口 + 数据          | 阅读器、编辑器         |
+| `registerPresenter`  | MIME × 来源 → 页面 / 浏览器表现层                | 阅读器、编辑器         |
+| `registerSidecar`    | MIME × 来源 → 文本 / schema                      | 阅读器、数据源         |
 | `registerCollection` | 侧栏分组                                         | 文档、网站资料         |
 | `registerViewAction` | 地址栏动作                                       | 布局切换、可访问性标记 |
 
-注册在装载期完成；同键后注册者胜出并记诊断。codec 与 projection 都必须声明 MIME（codec 可多个），`transports` 用于限定来源（缺省 = 通用）；注册期校验 MIME、docType、投影出口与页面匹配键，不兼容的注册被拒绝。
+注册在装载期完成；同键后注册者胜出并记诊断。codec 与 presenter 都必须声明 MIME（codec 可多个），`transports` 用于限定来源（缺省 = 通用）；注册期校验 MIME、docType、表现层出口与页面匹配键，不兼容的注册被拒绝。
 
 ### 3.3 MIME 与 transport 枚举
 
@@ -185,17 +186,17 @@ transport.read(ref)
         ├─ binding(transport, mime, intent) ─► codec
         │        codec 再产出 docType（store / 结构用）
         │
-        └─ binding(transport, mime, intent) ─► projection
+        └─ binding(transport, mime, intent) ─► presenter
                  ├ render / edit → 插件页面 / 浏览器
                  └ LLM sidecar   → 文本 / schema
 ```
 
-**绑定表**（可配置，codec 与 projection 共用同一个键）：
+**绑定表**（可配置，codec 与 presenter 共用同一个键）：
 
 ```
 binding(transport, mime, intent)
   ├─ codec      用哪个解码器
-  └─ projection 用哪个页面 / 浏览器 / 文本出口
+  └─ presenter 用哪个页面 / 浏览器 / 文本出口
 ```
 
 - `transport` 取注册的来源标识（如 `file` / `https` / 自定义来源）。
@@ -213,9 +214,9 @@ binding(transport, mime, intent)
 
 - `intent` 由调用方给出，不是数据层字段。
 - 绑定只决定「用哪个实现」，不改变 ref 与内容。
-- 同一 MIME 的多个 codec / projection 不静默合并：默认按来源限定与注册顺序选择并记诊断；用户绑定优先，落应用数据目录，可用 `ura.bindings.*` 命令或设置 → 偏好设置 → 注册项编辑。
+- 同一 MIME 的多个 codec / presenter 不静默合并：默认按来源限定与注册顺序选择并记诊断；用户绑定优先，落应用数据目录，可用 `ura.bindings.*` 命令或设置 → 偏好设置 → 注册项编辑。
 
-**LLM 投影是 sidecar**：它不参与 render / edit 的绑定竞争，始终提供文本或 schema 出口：
+**LLM 读取面是 sidecar**：它不参与 render / edit 的绑定竞争，始终提供文本或 schema 出口：
 
 - 已解码文档 → 结构化文本 / Markdown；
 - 无 codec 或解码失败 → 原始文本 / 字节摘要；
@@ -226,7 +227,7 @@ binding(transport, mime, intent)
 
 | 项       | 设计                                         |
 | -------- | -------------------------------------------- |
-| 草稿     | 暂存不落盘、不进投影、不进模型上下文         |
+| 草稿     | 暂存不落盘、不进表现层、不进模型上下文       |
 | 提交     | 单步 edit / write = 写会话的三步合成         |
 | 队列     | 按资源键分片；同键串行，跨资源并行           |
 | 写入     | 队列执行到即覆盖；最后写入胜出               |
@@ -287,8 +288,20 @@ harness 是自持能力层，也是内置的 Pi Extension：提示、技能、�
 ### 4.4 浏览器自动化
 
 - 作用对象是当前激活的网页标签；无网页时明确失败。
-- 能力：打开 / 导航 / 读取 / 点击 / 输入 / 截图 / 可访问性标记。
+
+| 工具                 | 作用                                    |
+| -------------------- | --------------------------------------- |
+| `browser_open`       | 打开 http(s) 页面；白名单域自动归档快照 |
+| `browser_read`       | 读取当前页面 URL / 标题 / 正文          |
+| `browser_click`      | 按 CSS selector 点击元素                |
+| `browser_type`       | 填写输入框 / textarea                   |
+| `browser_back`       | 后退                                    |
+| `browser_screenshot` | 截图                                    |
+| `browser_snapshot`   | 结构化快照（可归档为 Markdown）         |
+
+- 工具只在浏览器自动化实现可用时注册（L3 注入）；没有网页时返回明确错误。
 - 快照：白名单域名归档为 Markdown，落在工作区 `sites/<domain>/`，进入普通资源管道。
+- 这批工具是操作型工具，经浏览器契约注入，不走 URA。
 
 ## 五、会话与事件
 
@@ -391,7 +404,7 @@ pi 会话事件 ─┐
 1. **同源**：工具集合 = 7 个资源工具 + 操作型工具；默认模型与 pi 命令行读同一条设置链。
 2. **单一扩展体系**：新增能力只经资源轴与注册轴，没有第三套清单或加载器。
 3. **管道唯一**：人 / AI / 页面都经 URA；页面无 Node；工具不直连来源。
-4. **投影可选**：同一文档可按能力选择文本、插件页面或浏览器视图。
+4. **表现层可选**：同一文档可按能力选择文本、插件页面或浏览器视图。
 5. **写控制**：同键串行；后写覆盖先写；外部变更经 watch 提示。
 6. **上下文同源**：AGENTS.md 与资源地图来自 URA；外部改动下一轮生效。
 7. **生态分离**：插件、Pi 扩展、技能各自安装与管理，互不混淆。

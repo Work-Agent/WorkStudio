@@ -41,8 +41,8 @@ export function createHarnessExtension(
       const opened = await deps.ura
         .read(mapRef(), { as: 'agent' })
         .catch(() => null)
-      return opened && opened.projection.type === 'text'
-        ? opened.projection.content
+      return opened && opened.presentation.type === 'text'
+        ? opened.presentation.content
         : null
     }
     let lastMapVersion = ''

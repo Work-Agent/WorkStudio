@@ -15,7 +15,7 @@ import {
   bindThemeBroadcast,
   useTabServiceStore,
 } from './state/tabService';
-import { initShellProjection } from './state/shell';
+import { initShellPresentation } from './state/shell';
 import { initUiState } from './state/uiState';
 import './index.css';
 
@@ -23,8 +23,8 @@ async function bootstrap(): Promise<void> {
   try {
     // 1. 用户操作状态 hydrate（主进程 ui-state.json 真相源）+ shell 布局/视图投影
     await initUiState();
-    await initShellProjection();
-    console.log('[bootstrap] shell projection ready');
+    await initShellPresentation();
+    console.log('[bootstrap] shell presentation ready');
 
     // 2. 领域 store 初始化
     //    新架构（window.workbench 存在）：全线走主进程命令，mock / tabService 不初始化；

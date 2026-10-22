@@ -145,7 +145,7 @@ Workspace（聚合根）
 ref ─► transport ─► { mime, bytes }（可选 hints）
                 ─► binding(transport, mime, intent) ─► codec ─► 文档 + docType
                                                    ─► store ─► 可查询数据
-                ─► binding(transport, mime, intent) ─► projection
+                ─► binding(transport, mime, intent) ─► presenter
                        ├ render / edit ─► 插件页面 / 浏览器
                        └ LLM sidecar   ─► 文本 / schema
 
@@ -164,10 +164,10 @@ ref ─► transport ─► { mime, bytes }（可选 hints）
 
 关键决策：
 
-- **ref 是身份**：`scheme://authority/path`；不带格式、意图、投影。
+- **ref 是身份**：`scheme://authority/path`；不带格式、意图、表现层。
 - **MIME 是格式身份**：transport 返回规范 MIME 与字节；codec 注册自己可解析的 MIME；不嗅探字节，未知时回退 hints / 扩展名 / raw。
-- **绑定解决冲突**：`(transport, mime, intent)` 同时选择 codec 与 projection，是一张可配置的表；不同 transport 的同一 MIME 可以绑定不同实现（如 `https + text/html → 浏览器`，`file + text/html → HTML 阅读器`）。
-- **LLM 投影是 sidecar**：不参与 UI 投影竞争，始终把文档 / 原始字节转成文本或 schema，供 `read`、检索与上下文使用。
+- **绑定解决冲突**：`(transport, mime, intent)` 同时选择 codec 与 presenter，是一张可配置的表；不同 transport 的同一 MIME 可以绑定不同实现（如 `https + text/html → 浏览器`，`file + text/html → HTML 阅读器`）。
+- **LLM 读取面是 sidecar**：不参与表现层竞争，始终把文档 / 原始字节转成文本或 schema，供 `read`、检索与上下文使用。
 - **冲突由绑定解决**：默认按 MIME 与来源选择实现，用户可写入 `(transport, mime, intent)` 绑定覆盖；绑定配置在应用数据目录，启动时加载。
 - **读写同一门面**：AI 工具、页面、命令都走同一实现；写经过草稿 → 提交 → 分片队列，后写覆盖先写。
 - **失败降级 raw**：任一环缺失都返回原始内容与兜底页，并记录降级点。
@@ -234,15 +234,15 @@ git:<repo>@<ref>  ─┼─► 插件安装目录 ──────────
 ```
 URL ─► 内建 https transport（能力 read / live，共享浏览器 session）
     ─► codec：响应 Content-Type 决定
-    ─► browser 投影：WebContentsView 实时视图
-    ─► 自动化：读取 / 点击 / 输入 / 截图 / 可访问性标记
+    ─► browser 表现层：WebContentsView 实时视图
+    ─► 工具：browser_open / read / click / type / back / screenshot / snapshot
     ─► 快照：白名单域名归档为 Markdown
 ```
 
 - 网站没有逐站插件配置；transport、codec、render 都是框架固定实现。
 - 插件注册的 codec 仍可全局命中网站响应；浏览器本身不提供逐站 adapter。
 - 白名单只控制「是否归档 / 是否临时标签」，不影响能否访问。
-- 本地 HTML 等资源仍走插件页面，只有 `live` 能力才选择浏览器投影。
+- 本地 HTML 等资源仍走插件页面，只有 `live` 能力才选择浏览器表现层。
 
 ### 5.7 pi 接入
 

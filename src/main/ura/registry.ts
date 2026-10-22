@@ -7,10 +7,11 @@ import type {
   Binding,
   Codec,
   CollectionProvider,
-  Consumer,
   DocType,
   Intent,
   Mime,
+  Presenter,
+  SidecarProvider,
   Store,
   Transport,
   TransportId,
@@ -40,8 +41,10 @@ export class UraRegistry {
   private readonly codecsByMime = new Map<Mime, Entry<Codec>[]>()
   private bindings: Binding[] = []
   private readonly stores = new Map<DocType, Entry<Store>>()
-  private readonly consumers = new Map<string, Entry<Consumer>[]>()
-  private readonly consumersByMime = new Map<string, Entry<Consumer>[]>()
+  private readonly presenters = new Map<DocType, Entry<Presenter>[]>()
+  private readonly presentersByMime = new Map<string, Entry<Presenter>[]>()
+  private readonly sidecars = new Map<DocType, Entry<SidecarProvider>[]>()
+  private readonly sidecarsByMime = new Map<string, Entry<SidecarProvider>[]>()
   private readonly collections = new Map<string, Entry<CollectionProvider>>()
   private readonly actions = new Map<string, Entry<ViewAction>>()
   private readonly logs: Diagnostic[] = []
@@ -169,31 +172,56 @@ export class UraRegistry {
     this.info('collection.registered', `集合注册：${provider.id}`)
   }
 
-  registerConsumer(consumer: Consumer): void {
-    if (consumer.type !== 'agent' && consumer.type !== 'editor') {
-      this.reject('consumer.invalid-type', `出口类型非法：${String(consumer.type)}`)
+  registerPresenter(presenter: Presenter): void {
+    if (presenter.type !== 'page' && presenter.type !== 'browser') {
+      this.reject('presenter.invalid-type', `表现层类型非法：${String(presenter.type)}`)
       return
     }
-    if (consumer.type === 'editor' && !consumer.surface) {
-      this.reject('consumer.no-surface', `editor 出口缺少 surface：${consumer.docType}`)
+    if (!presenter.surface) {
+      this.reject('presenter.no-surface', `表现层缺少 surface：${presenter.docType}`)
       return
     }
-    if (!consumer.mime?.length) {
-      this.reject('consumer.no-mime', `出口缺少 MIME：${consumer.docType}`)
+    if (typeof presenter.present !== 'function') {
+      this.reject('presenter.incomplete', `表现层缺少 present：${presenter.docType}`)
       return
     }
-    const entry = this.entry(consumer)
-    const key = consumerKey(consumer.docType, consumer.type)
-    const list = this.consumers.get(key) ?? []
+    if (!presenter.mime?.length) {
+      this.reject('presenter.no-mime', `表现层缺少 MIME：${presenter.docType}`)
+      return
+    }
+    const entry = this.entry(presenter)
+    const list = this.presenters.get(presenter.docType) ?? []
     list.push(entry)
-    this.consumers.set(key, list)
-    for (const mime of consumer.mime) {
-      const mimeKey = `${mime}:${consumer.type}`
-      const indexed = this.consumersByMime.get(mimeKey) ?? []
+    this.presenters.set(presenter.docType, list)
+    for (const mime of presenter.mime) {
+      const key = `${mime}:presenter`
+      const indexed = this.presentersByMime.get(key) ?? []
       indexed.push(entry)
-      this.consumersByMime.set(mimeKey, indexed)
+      this.presentersByMime.set(key, indexed)
     }
-    this.info('consumer.registered', `出口注册：${consumer.docType} · ${consumer.type}`)
+    this.info('presenter.registered', `表现层注册：${presenter.docType} · ${presenter.surface}`)
+  }
+
+  registerSidecar(provider: SidecarProvider): void {
+    if (typeof provider.sidecar !== 'function') {
+      this.reject('sidecar.incomplete', `sidecar 缺少 sidecar()：${provider.docType}`)
+      return
+    }
+    if (!provider.mime?.length) {
+      this.reject('sidecar.no-mime', `sidecar 缺少 MIME：${provider.docType}`)
+      return
+    }
+    const entry = this.entry(provider)
+    const list = this.sidecars.get(provider.docType) ?? []
+    list.push(entry)
+    this.sidecars.set(provider.docType, list)
+    for (const mime of provider.mime) {
+      const key = `${mime}:sidecar`
+      const indexed = this.sidecarsByMime.get(key) ?? []
+      indexed.push(entry)
+      this.sidecarsByMime.set(key, indexed)
+    }
+    this.info('sidecar.registered', `sidecar 注册：${provider.docType}`)
   }
 
   // ─── 查询 ──────────────────────────────────────────────────────
@@ -323,60 +351,55 @@ export class UraRegistry {
     return this.stores.get(docType)?.impl
   }
 
-  consumerFor(
+  presenterFor(
     docType: DocType,
-    type: Consumer['type'],
     capabilities: readonly string[] = [],
-    projection?: string,
+    surface?: string,
     transport?: TransportId,
     mime?: Mime,
-  ): Consumer | undefined {
-    return this.pickConsumer(
+  ): Presenter | undefined {
+    return this.pickPresenter(
       docType,
-      type,
       capabilities,
-      projection,
+      surface,
       transport,
       mime,
     )?.impl
   }
 
-  ownerOfConsumer(
+  ownerOfPresenter(
     docType: DocType,
-    type: Consumer['type'],
     capabilities: readonly string[] = [],
-    projection?: string,
+    surface?: string,
     transport?: TransportId,
     mime?: Mime,
   ): string | undefined {
-    return this.pickConsumer(
+    return this.pickPresenter(
       docType,
-      type,
       capabilities,
-      projection,
+      surface,
       transport,
       mime,
     )?.owner
   }
 
-  private pickConsumer(
+  private pickPresenter(
     docType: DocType,
-    type: Consumer['type'],
     capabilities: readonly string[],
-    projection?: string,
+    surface?: string,
     transport?: TransportId,
     mime?: Mime,
-  ): Entry<Consumer> | undefined {
+  ): Entry<Presenter> | undefined {
     const indexed = mime
-      ? this.consumersByMime.get(`${mime}:${type}`)
+      ? this.presentersByMime.get(`${mime}:presenter`)
       : undefined
-    const all = (indexed?.length ? indexed : this.consumers.get(consumerKey(docType, type))) ?? []
+    const all = (indexed?.length ? indexed : this.presenters.get(docType)) ?? []
     const sameDoc = all.filter((entry) => entry.impl.docType === docType)
     const candidates =
-      projection === 'raw'
+      surface === 'raw'
         ? []
-        : projection
-          ? sameDoc.filter((entry) => entry.impl.surface === projection)
+        : surface
+          ? sameDoc.filter((entry) => entry.impl.surface === surface)
           : sameDoc
     return candidates
       .filter(
@@ -393,6 +416,26 @@ export class UraRegistry {
           (b.impl.requires?.length ?? 0) - (a.impl.requires?.length ?? 0) ||
           b.order - a.order,
       )[0]
+  }
+
+  sidecarFor(
+    docType: DocType,
+    transport?: TransportId,
+    mime?: Mime,
+  ): SidecarProvider | undefined {
+    const indexed = mime
+      ? this.sidecarsByMime.get(`${mime}:sidecar`)
+      : undefined
+    const all = (indexed?.length ? indexed : this.sidecars.get(docType)) ?? []
+    return all
+      .filter(
+        (entry) =>
+          entry.impl.docType === docType &&
+          (!transport ||
+            !entry.impl.transports ||
+            entry.impl.transports.includes(transport)),
+      )
+      .sort((a, b) => b.order - a.order)[0]?.impl
   }
 
   /** 数据对象的 schema 清单（模型侧可见）。 */
@@ -429,14 +472,20 @@ export class UraRegistry {
         docType,
         owner: e.owner,
       })),
-      consumers: [...this.consumers.entries()].flatMap(([key, entries]) =>
+      presenters: [...this.presenters.entries()].flatMap(([docType, entries]) =>
         entries.map((e) => ({
-          key,
-          docType: e.impl.docType,
+          docType,
           type: e.impl.type,
           surface: e.impl.surface,
           mime: e.impl.mime ?? [],
           requires: e.impl.requires ?? [],
+          owner: e.owner,
+        })),
+      ),
+      sidecars: [...this.sidecars.entries()].flatMap(([docType, entries]) =>
+        entries.map((e) => ({
+          docType,
+          mime: e.impl.mime ?? [],
           owner: e.owner,
         })),
       ),
@@ -473,10 +522,6 @@ export class UraRegistry {
   private reject(code: string, message: string): void {
     this.logs.push({ level: 'error', code, message })
   }
-}
-
-function consumerKey(docType: DocType, type: Consumer['type']): string {
-  return `${docType}|${type}`
 }
 
 /** 应用级单例：插件入口与宿主共享同一张表。 */

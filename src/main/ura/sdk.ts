@@ -3,7 +3,7 @@
 // 插件在 ./ura 模块求值时调用这些函数，把自己提供的能力登记进应用级注册表。
 // 注册是同步的、纯登记的：不打开资源、不解析内容。
 
-import type { Codec, CollectionProvider, Consumer, Store, Transport, ViewAction } from '../../shared/ura'
+import type { Codec, CollectionProvider, Presenter, SidecarProvider, Store, Transport, ViewAction } from '../../shared/ura'
 import { uraRegistry } from './registry'
 
 export function registerTransport(transport: Transport): void {
@@ -18,8 +18,14 @@ export function registerStore(store: Store): void {
   uraRegistry.registerStore(store)
 }
 
-export function registerConsumer(consumer: Consumer): void {
-  uraRegistry.registerConsumer(consumer)
+/** 表现层：页面 / 浏览器。 */
+export function registerPresenter(presenter: Presenter): void {
+  uraRegistry.registerPresenter(presenter)
+}
+
+/** agent 读取面：文本 / schema。 */
+export function registerSidecar(provider: SidecarProvider): void {
+  uraRegistry.registerSidecar(provider)
 }
 
 export function registerCollection(provider: CollectionProvider): void {

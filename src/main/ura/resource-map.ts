@@ -83,8 +83,8 @@ export class ResourceMap {
   private async readMap(): Promise<string | null> {
     try {
       const opened = await this.ura.read(this.ref, { as: 'agent' })
-      return opened.projection.type === 'text'
-        ? opened.projection.content
+      return opened.presentation.type === 'text'
+        ? opened.presentation.content
         : null
     } catch {
       return null

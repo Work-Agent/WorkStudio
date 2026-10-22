@@ -3,9 +3,9 @@
 // 一个插件只声明自己提供的能力：一个格式（纯文本）+ 两个出口（agent / editor）。
 // 模块求值时注册；页面入口由清单的 workstudio.page 解析。
 
-import { registerCodec, registerConsumer } from '../../main/ura/sdk'
+import { registerCodec, registerPresenter, registerSidecar } from '../../main/ura/sdk'
 import { MIME } from '../../shared/ura'
-import type { Change, Codec, Consumer, DecodedDoc, Patch } from '../../shared/ura'
+import type { Change, Codec, DecodedDoc, Patch, Presenter, SidecarProvider } from '../../shared/ura'
 
 const DOC_TYPE = 'text-doc@1' as const
 const decoder = new TextDecoder()
@@ -35,7 +35,7 @@ const codec: Codec = {
     return {
       docType: DOC_TYPE,
       doc: { text } satisfies TextDoc,
-      projection: text,
+      anchorMap: text,
     }
   },
 
@@ -68,21 +68,20 @@ const codec: Codec = {
   },
 }
 
-const agentConsumer: Consumer = {
+const agentSidecar: SidecarProvider = {
   docType: DOC_TYPE,
   mime: [MIME.text],
-  type: 'agent',
-  project(decoded) {
+  sidecar(decoded) {
     return { type: 'text', content: textOf(decoded) }
   },
 }
 
-const editorConsumer: Consumer = {
+const editorPresenter: Presenter = {
   docType: DOC_TYPE,
   mime: [MIME.text],
-  type: 'editor',
+  type: 'page',
   surface: 'text-editor',
-  project(decoded) {
+  present(decoded) {
     return {
       type: 'page',
       surface: 'text-editor',
@@ -93,5 +92,5 @@ const editorConsumer: Consumer = {
 }
 
 registerCodec(codec)
-registerConsumer(agentConsumer)
-registerConsumer(editorConsumer)
+registerSidecar(agentSidecar)
+registerPresenter(editorPresenter)

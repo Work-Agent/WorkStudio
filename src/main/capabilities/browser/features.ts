@@ -3,7 +3,7 @@
 // 一个白名单域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
 // 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
 
-import { registerCollection, registerConsumer, registerViewAction } from '../../ura/sdk'
+import { registerCollection, registerPresenter, registerViewAction } from '../../ura/sdk'
 import { MIME } from '../../../shared/ura'
 import type { CollectionGroup, CollectionProvider } from '../../../shared/ura'
 
@@ -144,14 +144,14 @@ const MARKS_SCRIPT = `(() => {
 
 export function registerBrowserFeatures(): void {
   registerCollection(webCollection)
-  registerConsumer({
+  registerPresenter({
     docType: 'html-doc@1',
     mime: [MIME.html],
     transports: ['http', 'https'],
-    type: 'editor',
+    type: 'browser',
     requires: ['live'],
     surface: 'browser',
-    project: (_decoded, _raw, ref) => ({
+    present: (_decoded, _raw, ref) => ({
       type: 'browser',
       surface: 'browser',
       url: ref,

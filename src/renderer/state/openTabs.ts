@@ -16,23 +16,23 @@ import {
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
-export interface TempTabProjection {
+export interface TempTabPresentation {
   instanceId: string;
   title: string;
   url: string;
 }
 
-export interface OpenTabsProjection {
+export interface OpenTabsPresentation {
   openDocs: DocumentMeta[];
-  tempTabs: TempTabProjection[];
+  tempTabs: TempTabPresentation[];
   activeDocId: string | null;
   activeInstanceId: string | null;
 }
 
 /** 从 ViewHost 集合投影（顺序 = 标签顺序；document 去重）。 */
-function fromViews(views: ViewEntry[]): OpenTabsProjection {
+function fromViews(views: ViewEntry[]): OpenTabsPresentation {
   const seen = new Map<string, DocumentMeta>();
-  const tempTabs: TempTabProjection[] = [];
+  const tempTabs: TempTabPresentation[] = [];
   for (const v of views) {
     if (v.document) seen.set(v.document.id, v.document);
     if (v.type === 'browser' && v.temporary) {
@@ -51,7 +51,7 @@ function fromViews(views: ViewEntry[]): OpenTabsProjection {
 function fromTabs(
   tabs: TabEntry[],
   activeId: string | null,
-): OpenTabsProjection {
+): OpenTabsPresentation {
   return {
     openDocs: openDocsOf(tabs),
     tempTabs: tempTabsOf(tabs).map((t) => ({
@@ -64,7 +64,7 @@ function fromTabs(
   };
 }
 
-export function useOpenTabsProjection(): OpenTabsProjection {
+export function useOpenTabsPresentation(): OpenTabsPresentation {
   const views = useShellStore((s) => s.views);
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
