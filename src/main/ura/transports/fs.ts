@@ -31,6 +31,16 @@ import { UraError, VersionConflictError } from '../errors'
 const decoder = new TextDecoder()
 
 const HINTS: Record<string, string[]> = {
+  docx: ['ooxml-docx', 'ooxml', 'binary'],
+  docm: ['ooxml-docx', 'ooxml', 'binary'],
+  dotx: ['ooxml-docx', 'ooxml', 'binary'],
+  xlsx: ['ooxml-xlsx', 'ooxml', 'binary'],
+  xlsm: ['ooxml-xlsx', 'ooxml', 'binary'],
+  xltx: ['ooxml-xlsx', 'ooxml', 'binary'],
+  pptx: ['ooxml-pptx', 'ooxml', 'binary'],
+  pptm: ['ooxml-pptx', 'ooxml', 'binary'],
+  potx: ['ooxml-pptx', 'ooxml', 'binary'],
+  pdf: ['pdf', 'binary'],
   md: ['markdown', 'text'],
   markdown: ['markdown', 'text'],
   html: ['html', 'text'],
@@ -43,6 +53,16 @@ const HINTS: Record<string, string[]> = {
 }
 
 const MIME: Record<string, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  docm: 'application/vnd.ms-word.document.macroEnabled.12',
+  dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  xltx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
+  pdf: 'application/pdf',
   md: 'text/markdown',
   markdown: 'text/markdown',
   html: 'text/html',

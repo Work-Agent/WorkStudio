@@ -54,6 +54,9 @@ const api = {
         api.invoke('app:ura.page.open', { ref }),
       save: <T = unknown>(id: string, content: string): Promise<T> =>
         api.invoke('app:ura.page.save', { id, content }),
+      /** 二进制保存（OOXML 等）；返回 CommitResult，冲突稿为 base64。 */
+      saveBytes: <T = unknown>(id: string, data: Uint8Array): Promise<T> =>
+        api.invoke('app:ura.page.saveBytes', { id, data }),
       reload: <T = unknown>(id: string): Promise<T> =>
         api.invoke('app:ura.page.reload', { id }),
       close: (id: string): Promise<unknown> =>

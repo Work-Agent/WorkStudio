@@ -27,7 +27,9 @@ export interface PageSessionInfo {
 
 interface Entry {
   info: PageSessionInfo
+  /** 文本基线，或二进制内容的 base64（见 encoding）。 */
   base: string
+  encoding: 'text' | 'base64'
   closed: boolean
 }
 
@@ -44,7 +46,8 @@ export class PageSessions {
     if (opened.projection.type !== 'page') {
       throw new Error(`资源没有页面出口：${ref}`)
     }
-    const base = await this.textOf(ref)
+    const binary = isBinaryRef(ref)
+    const base = await this.baseOf(ref, binary)
     const info: PageSessionInfo = {
       id: randomUUID(),
       ref,
@@ -56,7 +59,7 @@ export class PageSessions {
       data: opened.projection.data,
       degraded: opened.degraded,
     }
-    this.entries.set(info.id, { info, base, closed: false })
+    this.entries.set(info.id, { info, base, encoding: binary ? 'base64' : 'text', closed: false })
     return { type: 'page', info }
   }
 
@@ -64,26 +67,40 @@ export class PageSessions {
     return this.require(id).info
   }
 
-  async save(id: string, content: string): Promise<CommitResult> {
+  async save(
+    id: string,
+    content: string | Uint8Array,
+  ): Promise<CommitResult> {
     const entry = this.require(id)
+    const binary = content instanceof Uint8Array
     try {
       const { version } = await this.ura.write(entry.info.ref, content, {
         expectedVersion: entry.info.version,
       })
       entry.info = { ...entry.info, version }
-      entry.base = content
+      entry.base = binary ? base64Of(content) : content
+      entry.encoding = binary ? 'base64' : 'text'
       return { ok: true, version }
     } catch (error) {
       if (!(error instanceof VersionConflictError)) throw error
+      const current = binary
+        ? base64Of((await this.ura.readBytes(entry.info.ref)).bytes)
+        : await this.textOf(entry.info.ref)
       return {
         ok: false,
         conflict: {
           base: entry.base,
-          current: await this.textOf(entry.info.ref),
-          mine: content,
+          current,
+          mine: binary ? base64Of(content) : content,
+          encoding: entry.encoding,
         },
       }
     }
+  }
+
+  /** 二进制页面内容（Office 等 OOXML 文档）；冲突稿同样以 base64 返回。 */
+  async saveBytes(id: string, bytes: Uint8Array): Promise<CommitResult> {
+    return this.save(id, bytes)
   }
 
   /** 重新投递（冲突弃稿 / 外部变更后对齐）。 */
@@ -103,7 +120,7 @@ export class PageSessions {
       data: opened.projection.data,
       degraded: opened.degraded,
     }
-    entry.base = await this.textOf(entry.info.ref)
+    entry.base = await this.baseOf(entry.info.ref, entry.encoding === 'base64')
     return entry.info
   }
 
@@ -119,9 +136,28 @@ export class PageSessions {
     return opened.projection.type === 'text' ? opened.projection.content : ''
   }
 
+  private async baseOf(ref: string, binary: boolean): Promise<string> {
+    if (binary) return base64Of((await this.ura.readBytes(ref)).bytes)
+    return this.textOf(ref)
+  }
+
   private require(id: string): Entry {
     const entry = this.entries.get(id)
     if (!entry || entry.closed) throw new Error(`页面会话不存在：${id}`)
     return entry
+  }
+}
+
+function base64Of(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64')
+}
+
+const BINARY_EXT = /\.(docx|docm|dotx|xlsx|xlsm|xltx|pptx|pptm|potx|pdf|zip|png|jpe?g|gif|webp|mp4|mp3)$/i
+
+function isBinaryRef(ref: string): boolean {
+  try {
+    return BINARY_EXT.test(new URL(ref).pathname)
+  } catch {
+    return BINARY_EXT.test(ref)
   }
 }

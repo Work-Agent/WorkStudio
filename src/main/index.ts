@@ -141,7 +141,9 @@ function handleAppRequest(request: Request): Response | Promise<Response> {
     const url = new URL(request.url);
     if (url.hostname !== 'page')
       return new Response('Not found', { status: 404 });
-    const file = decodeURIComponent(url.pathname.replace(/^\//, ''));
+    const file = decodeURIComponent(url.pathname).replace(/^\/+/, '/');
+    if (!file.startsWith('/'))
+      return new Response('Not found', { status: 404 });
     if (!uraRuntime?.host.containsPage(file) && !containsSettingsPage(file))
       return new Response('Forbidden', { status: 403 });
     if (!existsSync(file)) return new Response('Not found', { status: 404 });

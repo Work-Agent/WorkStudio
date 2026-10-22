@@ -561,6 +561,13 @@ async function invoke(
             String(p.content ?? ''),
           ),
         );
+      case 'ura.page.saveBytes':
+        return ok(
+          await d.pageSessions.saveBytes(
+            String(p.id ?? ''),
+            p.data as Uint8Array,
+          ),
+        );
       case 'ura.page.reload':
         return ok(await d.pageSessions.reload(String(p.id ?? '')));
       case 'ura.page.close':
@@ -838,6 +845,7 @@ async function invokeExt(
     'app:ura.page.get': 'ura.page.get',
     'app:ura.page.open': 'ura.page.open',
     'app:ura.page.save': 'ura.page.save',
+    'app:ura.page.saveBytes': 'ura.page.saveBytes',
     'app:ura.page.reload': 'ura.page.reload',
     'app:ura.page.close': 'ura.page.close',
     'app:plugins.list': 'plugins.list',

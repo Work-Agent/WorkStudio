@@ -7,6 +7,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { uraRegistry, type UraRegistry } from '../ura/registry'
+import * as uraSdk from '../ura/sdk'
 import type { PluginInfo } from '../../shared/types'
 import { scanPluginPackages, type PluginPackage } from './packages'
 
@@ -42,6 +43,8 @@ export class PluginHost {
 
   async start(): Promise<void> {
     const registry = this.registry
+    // 外部插件包无法相对引用宿主源码：装载前把 SDK 注册面注入运行时。
+    ;(globalThis as { __workstudioSdk?: typeof uraSdk }).__workstudioSdk = uraSdk
     const scanned = await scanPluginPackages(this.options.roots)
     for (const pkg of scanned) this.packages.set(pkg.id, pkg)
 

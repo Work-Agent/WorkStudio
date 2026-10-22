@@ -28,6 +28,21 @@ export function pageUrl(page: 'index' | 'assistant' | 'overlay'): string {
 }
 
 /**
+ * 插件页 / 设置页的 app:// 地址。
+ *
+ * 只编码路径段、保留斜杠：页面里的相对资源（./assets/…）才能解析到
+ * 同一插件目录；整段 encodeURIComponent 会把斜杠也编码掉，导致
+ * app://page/assets/… 落到协议根目录而被 containsPage 拒绝。
+ */
+export function pageUrlFor(file: string): string {
+  const normalized = file.replace(/\\/g, '/');
+  return `app://page${normalized
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')}`;
+}
+
+/**
  * 指针捕获层内联页（无 UI、无脚本）：事件监听全在 capture-preload 里；
  * 透明全窗视图需要的是一个能收指针事件的 webContents，而非页面。
  */

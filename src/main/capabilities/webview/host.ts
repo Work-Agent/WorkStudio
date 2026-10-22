@@ -41,6 +41,7 @@ import { createLogger } from '../../log';
 import {
   CAPTURE_PAGE_URL,
   pageUrl,
+  pageUrlFor,
   partitionFor,
   themeBackground,
   viewWebPreferences,
@@ -355,7 +356,7 @@ export class ViewHost {
       extensionId: `ura:${info.surface}`,
       title: document?.title ?? (ref.slice(ref.lastIndexOf('/') + 1) || ref),
       url: ref,
-      loadUrl: `app://page/${encodeURIComponent(info.page)}?session=${info.id}`,
+      loadUrl: `${pageUrlFor(info.page)}?session=${info.id}`,
       state: 'dormant',
       pinned: false,
       dirty: false,
@@ -828,7 +829,7 @@ export class ViewHost {
         extensionId: `settings:${page.id}`,
         title: page.label,
         url: `settings://${page.id}`,
-        loadUrl: `app://page/${encodeURIComponent(page.page)}`,
+        loadUrl: pageUrlFor(page.page),
         renderer: {
           id: `settings:${page.id}`,
           label: page.label,
@@ -849,7 +850,7 @@ export class ViewHost {
         extensionId: `plugin:${pkg.id}`,
         title: pkg.label,
         url: `plugin://${pkg.id}${input.settings ? '/settings' : ''}`,
-        loadUrl: `app://page/${encodeURIComponent(page)}`,
+        loadUrl: pageUrlFor(page),
         renderer: {
           id: pkg.id,
           label: pkg.label,

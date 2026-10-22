@@ -329,9 +329,11 @@ export interface ReadOptions {
 }
 
 export interface WriteConflict {
+  /** 文本内容，或二进制内容的 base64（见 encoding）。 */
   base: string
   current: string
   mine: string
+  encoding?: 'text' | 'base64'
 }
 
 export type CommitResult =

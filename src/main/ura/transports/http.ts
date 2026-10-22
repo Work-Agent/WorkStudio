@@ -18,6 +18,16 @@ import { UraError } from '../errors'
 const PARTITION = 'persist:workstudio:browser'
 
 const EXT_HINTS: Record<string, string[]> = {
+  docx: ['ooxml-docx', 'ooxml', 'binary'],
+  docm: ['ooxml-docx', 'ooxml', 'binary'],
+  dotx: ['ooxml-docx', 'ooxml', 'binary'],
+  xlsx: ['ooxml-xlsx', 'ooxml', 'binary'],
+  xlsm: ['ooxml-xlsx', 'ooxml', 'binary'],
+  xltx: ['ooxml-xlsx', 'ooxml', 'binary'],
+  pptx: ['ooxml-pptx', 'ooxml', 'binary'],
+  pptm: ['ooxml-pptx', 'ooxml', 'binary'],
+  potx: ['ooxml-pptx', 'ooxml', 'binary'],
+  pdf: ['pdf', 'binary'],
   md: ['markdown', 'text'],
   markdown: ['markdown', 'text'],
   html: ['html', 'text'],
@@ -90,7 +100,11 @@ function hintsFor(contentType: string | null, url: string): string[] {
   else if (mime.includes('html')) hints.push('html')
   else if (mime === 'text/csv' || mime === 'text/tab-separated-values') {
     hints.push('table')
-  } else if (mime.startsWith('text/')) hints.push('text')
+  } else if (mime === 'application/pdf') hints.push('pdf', 'binary')
+  else if (mime.includes('wordprocessingml')) hints.push('ooxml-docx', 'ooxml', 'binary')
+  else if (mime.includes('spreadsheetml')) hints.push('ooxml-xlsx', 'ooxml', 'binary')
+  else if (mime.includes('presentationml')) hints.push('ooxml-pptx', 'ooxml', 'binary')
+  else if (mime.startsWith('text/')) hints.push('text')
 
   let path = ''
   try {

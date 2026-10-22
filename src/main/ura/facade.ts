@@ -74,6 +74,12 @@ export class Ura {
 
   // ─── 写 ────────────────────────────────────────────────────────
 
+  /** 原始字节（页面会话冲突基线与二进制调用方使用）。 */
+  async readBytes(ref: string): Promise<{ bytes: Uint8Array; version: string }> {
+    const opened = await this.pipeline.open(ref)
+    return { bytes: opened.raw.bytes, version: opened.raw.version }
+  }
+
   async write(
     ref: string,
     content: string | Uint8Array,
