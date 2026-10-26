@@ -8,7 +8,7 @@
 
 > This document follows one complete line of thought: why working material scatters across tools, how three claims respond, how the domain model, product shape and overall architecture follow, and finally the extension surfaces, state and communication, and development workflow. It answers why WorkStudio is what it is; implementation details live in the code.
 >
-> The detailed design is in [`docs/architecture.md`](./docs/architecture.md): agent domain (pi integration, plugins, URA, harness, sessions) and page domain (shell, tabs, native views, pages). This document argues the thinking and trade-offs; that one specifies structure, contracts and invariants; the two do not overlap.
+> The detailed design is in [`docs/architecture.md`](./docs/architecture.md), layer by layer: renderer · contract bridge · assembly · domain services · capability layer · extension surfaces. This document argues the thinking and trade-offs; that one specifies structure, contracts and invariants; the two do not overlap.
 
 ## 1. Where we are
 
@@ -163,13 +163,13 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 ```
 
 - **Views only consume contracts**: page resolution, page sessions, change subscriptions, commands; they never touch formats, versions or write queues.
-- **Main is layered**: assembly (composition root) → domain services (state and ports shared by several blocks) → capability layer (two blocks + one pipeline).
+- **Main is layered**: assembly is the composition root; domain services hold the state and ports shared by several blocks; the capability layer holds two blocks and one pipeline.
 - **The capability layer is two blocks**: surfaces are listed by delivery (plugins · settings · browser); the sidecar is organised vertically by session (runtime · wrapping · tools). The blocks do not depend on each other; they share only domain services and the pipeline.
 - **The sidecar is a secondary view**: a rail attached to the right of the workspace, not a second primary surface; closing the sidecar changes neither surfaces nor pipeline, and surfaces do not change because the sidecar exists.
 - **Sessions belong to the sidecar**: the session host is the sidecar's outward port; regenerating a session replaces the sidecar as a whole and does not touch surfaces or the pipeline.
 - **Surfaces only deliver, the sidecar only consumes**: plugins register pipeline segments and pages, settings only yield pages, the browser yields a live view plus automation; the only channel through which surfaces inject capability into the sidecar is the action-tool contract (plugins cannot register tools).
 - **There is one kind of extension**: plugins are the only installable surface; settings and browser are the other two framework built-ins and take no part in installation or versioning.
-- **Dependencies are one-way**: views → agent → pi; agent does not depend on Electron, views does not depend on pi.
+- **Dependencies are one-way**: the renderer depends only on the contract bridge; the assembly layer depends on domain services and the capability layer; the capability layer depends on domain services and the pi SDK; extensions only fill capability-layer registration points, and the pi SDK knows nothing about WorkStudio.
 
 ## 5. Extension surfaces
 
@@ -474,7 +474,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # renderer (React + Tailwind)
 │   ├── plugins/              # built-in plugins (shipped with the app)
 │   └── shared/               # types and styles shared by main / renderer
-├── docs/                     # architecture design (agent + page domains)
+├── docs/                     # architecture design (by layer)
 ├── index.html                # renderer page template
 ├── electron.vite.config.ts   # build config for the three targets (main / preload / renderer)
 ├── electron-builder.yml      # packaging config (targets, fuses, signing)
