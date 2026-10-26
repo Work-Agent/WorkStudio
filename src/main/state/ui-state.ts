@@ -1,5 +1,5 @@
 /**
- * UiStateService —— 用户操作状态的主进程真相源（architecture.md §三 / §六）。
+ * UiStateService —— 用户操作状态的主进程真相源（README.md §三 / §6.1）。
  *
  * 存储：<agentDir>/ws/<wsId>/ui-state.json（按工作区隔离）。
  * 写策略：内存缓存 + 标脏 + 500ms 防抖 + 退出强制 flush；原子写（tmp → rename）。

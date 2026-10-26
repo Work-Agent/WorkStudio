@@ -1,5 +1,5 @@
 /**
- * 命令路由（architecture.md §四）—— ws:cmd 唯一分发器 + 握手 / 扩展页 / 交互通道。
+ * 命令路由（README.md §四）—— ws:cmd 唯一分发器 + 握手 / 扩展页 / 交互通道。
  *
  * 命令目录（域 × 动作）：
  *   session.*       会话生命周期（AgentHost）
@@ -30,6 +30,7 @@ import type {
   WorkspaceInfo,
 } from '../../shared/types';
 import { CH_CMD, CH_EXT, CH_INTERACTION, CH_SYNC } from '../../shared/channels';
+import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
 import type {
   ModelConfigStore,
@@ -477,15 +478,9 @@ async function invoke(
 
       // ═══ URA（资源管道） ═══
       case 'ura.read': {
-        const as =
-          p.as === 'editor' || p.as === 'system' ? p.as : 'agent';
+        const as = p.as === 'editor' || p.as === 'system' ? p.as : 'agent';
         return ok(
-          await d.ura.read(String(p.ref ?? ''), {
-            as,
-            ...(typeof p.docTypeHint === 'string'
-              ? { docTypeHint: p.docTypeHint as never }
-              : {}),
-          }),
+          await d.ura.read(String(p.ref ?? ''), { as }),
         );
       }
       case 'ura.write':
@@ -508,7 +503,7 @@ async function invoke(
             scope:
               typeof p.scope === 'string' && p.scope
                 ? p.scope
-                : `file://${getCurrentWorkspace()}`,
+                : fileRef(getCurrentWorkspace()),
             ...(typeof p.limit === 'number' ? { limit: p.limit } : {}),
           }),
         );
@@ -518,7 +513,7 @@ async function invoke(
             scope:
               typeof p.scope === 'string' && p.scope
                 ? p.scope
-                : `file://${getCurrentWorkspace()}`,
+                : fileRef(getCurrentWorkspace()),
             ...(typeof p.ignoreCase === 'boolean'
               ? { ignoreCase: p.ignoreCase }
               : {}),
@@ -527,10 +522,7 @@ async function invoke(
         );
       case 'ura.query':
         return ok(
-          await d.ura.query(
-            String(p.ref ?? ''),
-            (p.query ?? {}) as never,
-          ),
+          await d.ura.query(String(p.ref ?? ''), (p.query ?? {}) as never),
         );
 
       case 'plugin.settings.get':
@@ -559,8 +551,7 @@ async function invoke(
           await d.ura.setBinding({
             transport: String(p.transport ?? '*'),
             mime: String(p.mime ?? '*'),
-            intent: p.intent as never,
-            ...(typeof p.codec === 'string' ? { codec: p.codec as never } : {}),
+            ...(typeof p.codec === 'string' ? { codec: p.codec } : {}),
             ...(typeof p.presenter === 'string'
               ? { presenter: p.presenter }
               : {}),
@@ -571,7 +562,6 @@ async function invoke(
           await d.ura.removeBinding(
             String(p.transport ?? '*'),
             String(p.mime ?? '*'),
-            p.intent as never,
           ),
         );
       case 'ura.registry':
@@ -581,7 +571,7 @@ async function invoke(
         });
 
       case 'ura.workspace':
-        return ok({ root: `file://${getCurrentWorkspace()}` });
+        return ok({ root: fileRef(getCurrentWorkspace()) });
 
       case 'ura.collections':
         return ok(await d.collections.list());
@@ -590,7 +580,7 @@ async function invoke(
         const root =
           typeof p.ref === 'string' && p.ref
             ? p.ref
-            : `file://${getCurrentWorkspace()}`;
+            : fileRef(getCurrentWorkspace());
         return ok(await d.ura.tree(root));
       }
 
@@ -621,9 +611,7 @@ async function invoke(
       case 'ura.session.open':
         return ok(await d.writeSessions.open(String(p.ref ?? '')));
       case 'ura.session.stage':
-        return ok(
-          d.writeSessions.stage(String(p.id ?? ''), p.change as never),
-        );
+        return ok(d.writeSessions.stage(String(p.id ?? ''), p.change as never));
       case 'ura.session.commit':
         return ok(await d.writeSessions.commit(String(p.id ?? '')));
       case 'ura.session.abort':
@@ -668,10 +656,7 @@ async function invoke(
         );
       case 'views.runAction':
         return ok(
-          d.viewHost.runAction(
-            String(p.id ?? ''),
-            String(p.action ?? ''),
-          ),
+          d.viewHost.runAction(String(p.id ?? ''), String(p.action ?? '')),
         );
       case 'views.openBrowser': {
         const url = String(p.url ?? '');
@@ -918,8 +903,7 @@ function onAllowlist(url: string, allowlist: string[]): boolean {
     return allowlist.some((entry) => {
       const normalized = entry.trim().toLowerCase().replace(/^\./, '');
       return (
-        !!normalized &&
-        (host === normalized || host.endsWith(`.${normalized}`))
+        !!normalized && (host === normalized || host.endsWith(`.${normalized}`))
       );
     });
   } catch {

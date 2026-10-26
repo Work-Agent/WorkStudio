@@ -8,7 +8,6 @@ import type {
   ChangeEvent,
   Codec,
   DecodedDoc,
-  DocType,
   Mime,
   Patch,
   RawContent,
@@ -16,69 +15,72 @@ import type {
   TransportCapability,
   TransportId,
   WatchHandle,
-} from '../../shared/ura'
-import { parseContentType, parseRef } from '../../shared/ura'
-import { UraError } from './errors'
-import { UraRegistry, uraRegistry } from './registry'
+} from '../../shared/ura';
+import { MIME, parseContentType, parseRef } from '../../shared/ura';
+import { UraError } from './errors';
+import { UraRegistry, uraRegistry } from './registry';
 
 export interface Opened {
-  ref: string
-  transportId: TransportId
-  mime?: Mime
-  capabilities: readonly TransportCapability[]
-  raw: RawContent
-  codec: Codec | null
-  decoded: DecodedDoc | null
-  degraded: boolean
+  ref: string;
+  transportId: TransportId;
+  mime?: Mime;
+  capabilities: readonly TransportCapability[];
+  raw: RawContent;
+  codec: Codec | null;
+  decoded: DecodedDoc | null;
+  degraded: boolean;
 }
 
 export interface WriteResult {
-  version: string
+  version: string;
 }
 
-type Listener = (event: ChangeEvent) => void
+type Listener = (event: ChangeEvent) => void;
 
 interface Subscription {
-  listeners: Set<Listener>
-  stop?: () => void
+  listeners: Set<Listener>;
+  stop?: () => void;
 }
 
 export class ResourcePipeline {
-  private readonly cache = new Map<string, Opened>()
-  private readonly queues = new Map<string, Promise<unknown>>()
-  private readonly subscriptions = new Map<string, Subscription>()
+  private readonly cache = new Map<string, Opened>();
+  private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly subscriptions = new Map<string, Subscription>();
 
   constructor(private readonly registry: UraRegistry = uraRegistry) {}
 
   // ─── 读 ────────────────────────────────────────────────────────
 
-  async open(ref: string, docTypeHint?: DocType): Promise<Opened> {
-    const transport = this.requireTransport(ref)
-    const transportId = transport.id ?? parseRef(ref).scheme
-    const raw = await transport.read(ref)
-    const mime = raw.mime ? parseContentType(raw.mime).mime : undefined
-    const cacheKey = `${ref}|${docTypeHint ?? ''}`
-    const cached = this.cache.get(cacheKey)
-    if (cached && cached.raw.version === raw.version) return cached
+  async open(ref: string): Promise<Opened> {
+    const transport = this.requireTransport(ref);
+    const transportId = transport.id ?? parseRef(ref).scheme;
+    const raw = await transport.read(ref);
+    const mime = raw.mime ? parseContentType(raw.mime).mime : undefined;
+    const cached = this.cache.get(ref);
+    if (cached && cached.raw.version === raw.version) return cached;
 
-    const codec = this.registry.codecForMime(
-      transportId,
-      mime,
-      raw.formatHints,
-      docTypeHint,
-    )
-    let decoded: DecodedDoc | null = null
-    let degraded = false
+    // 在线网页是整段旁路：live 来源上的 HTML 不进 codec，直接交给浏览器表现层。
+    const livePage =
+      (transport.capabilities ?? []).includes('live') && mime === MIME.html;
+    const codec = livePage
+      ? undefined
+      : this.registry.codecFor(transportId, mime);
+    let decoded: DecodedDoc | null = null;
+    let degraded = false;
     if (codec) {
       try {
-        decoded = await codec.decode(raw, ref)
+        decoded = await codec.decode(raw, ref);
       } catch (error) {
-        degraded = true
-        this.note('warn', 'codec.decode-failed', `${ref}：${messageOf(error)}`)
+        degraded = true;
+        this.note('warn', 'codec.decode-failed', `${ref}：${messageOf(error)}`);
       }
-    } else {
-      degraded = true
-      this.note('info', 'codec.missing', `${ref} → raw（提示：${raw.formatHints.join(',') || '无'}）`)
+    } else if (!livePage) {
+      degraded = true;
+      this.note(
+        'info',
+        'codec.missing',
+        `${ref} → raw（${mime ?? '无 MIME'}）`,
+      );
     }
 
     const opened: Opened = {
@@ -90,101 +92,111 @@ export class ResourcePipeline {
       codec: decoded ? (codec ?? null) : null,
       decoded,
       degraded,
-    }
-    this.cache.set(cacheKey, opened)
-    return opened
+    };
+    this.cache.set(ref, opened);
+    return opened;
   }
 
   // ─── 写 ────────────────────────────────────────────────────────
 
   async write(ref: string, patch: Patch): Promise<WriteResult> {
     return this.runExclusive(ref, async () => {
-      const transport = this.requireTransport(ref)
-      const result = await transport.write(ref, patch, {})
-      this.invalidate(ref)
-      this.emit({ ref, type: 'content', version: result.version, at: Date.now() })
-      return { version: result.version }
-    })
+      const transport = this.requireTransport(ref);
+      const result = await transport.write(ref, patch, {});
+      this.invalidate(ref);
+      this.emit({
+        ref,
+        type: 'content',
+        version: result.version,
+        at: Date.now(),
+      });
+      return { version: result.version };
+    });
   }
 
   // ─── 监听 ──────────────────────────────────────────────────────
 
   watch(ref: string, listener: Listener): WatchHandle {
-    let subscription = this.subscriptions.get(ref)
+    let subscription = this.subscriptions.get(ref);
     if (!subscription) {
-      subscription = { listeners: new Set() }
-      const transport = this.registry.transportFor(parseRef(ref).scheme)
+      subscription = { listeners: new Set() };
+      const transport = this.registry.transportFor(parseRef(ref).scheme);
       if (transport?.watch) {
         subscription.stop = transport.watch(ref, (event) => {
-          this.invalidate(event.ref)
-          this.emit(event)
-        })
+          this.invalidate(event.ref);
+          this.emit(event);
+        });
       }
-      this.subscriptions.set(ref, subscription)
+      this.subscriptions.set(ref, subscription);
     }
-    subscription.listeners.add(listener)
-    const current = subscription
+    subscription.listeners.add(listener);
+    const current = subscription;
     return {
       ref,
       close: () => {
-        current.listeners.delete(listener)
+        current.listeners.delete(listener);
         if (current.listeners.size === 0) {
-          current.stop?.()
-          this.subscriptions.delete(ref)
+          current.stop?.();
+          this.subscriptions.delete(ref);
         }
       },
-    }
+    };
   }
 
   // ─── 内部 ──────────────────────────────────────────────────────
 
   transportFor(ref: string): Transport | undefined {
-    return this.registry.transportFor(parseRef(ref).scheme)
+    return this.registry.transportFor(parseRef(ref).scheme);
   }
 
   private requireTransport(ref: string): Transport {
-    const transport = this.transportFor(ref)
+    const transport = this.transportFor(ref);
     if (!transport) {
       throw new UraError(
         'transport.missing',
         `没有注册来源：${parseRef(ref).scheme}`,
-      )
+      );
     }
-    return transport
+    return transport;
   }
 
   private invalidate(ref: string): void {
-    for (const key of this.cache.keys()) {
-      if (key === ref || key.startsWith(`${ref}|`)) this.cache.delete(key)
-    }
+    this.cache.delete(ref);
   }
 
   private emit(event: ChangeEvent): void {
     for (const [ref, subscription] of this.subscriptions) {
-      if (event.ref !== ref && !event.ref.startsWith(`${ref.replace(/\/$/, '')}/`)) continue
-      for (const listener of subscription.listeners) listener(event)
+      if (
+        event.ref !== ref &&
+        !event.ref.startsWith(`${ref.replace(/\/$/, '')}/`)
+      )
+        continue;
+      for (const listener of subscription.listeners) listener(event);
     }
   }
 
   private runExclusive<T>(key: string, run: () => Promise<T>): Promise<T> {
-    const previous = this.queues.get(key) ?? Promise.resolve()
-    const next = previous.then(run, run)
+    const previous = this.queues.get(key) ?? Promise.resolve();
+    const next = previous.then(run, run);
     this.queues.set(
       key,
       next.then(
         () => undefined,
         () => undefined,
       ),
-    )
-    return next
+    );
+    return next;
   }
 
-  private note(level: 'info' | 'warn' | 'error', code: string, message: string): void {
-    this.registry.diagnosticsFor(level, code, message)
+  private note(
+    level: 'info' | 'warn' | 'error',
+    code: string,
+    message: string,
+  ): void {
+    this.registry.diagnosticsFor(level, code, message);
   }
 }
 
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error ? error.message : String(error);
 }
-

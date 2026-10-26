@@ -649,7 +649,7 @@ export interface ElectronAPI {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 主进程新契约（architecture.md / views-design.md）
+// 主进程新契约（README.md / views-design.md）
 // ═══════════════════════════════════════════════════════════
 
 // ─── Agent 快照与命令信封 ──────────────────────────────────
@@ -705,8 +705,8 @@ export interface RendererInfo {
   iconUrl?: string;
   /** 渲染器归属插件。 */
   owner?: string;
-  /** 资源文档类型（资源页）。 */
-  docType?: string;
+  /** 命中的 codec（资源页）。 */
+  codec?: string;
 }
 
 export interface ViewEntry {

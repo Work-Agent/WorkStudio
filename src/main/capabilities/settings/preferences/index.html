@@ -278,18 +278,12 @@
         </p>
         <div class="reg-groups" id="registry"></div>
         <div class="reg-group">
-          <div class="reg-title">绑定（transport × MIME → codec / presenter）</div>
+          <div class="reg-title">绑定（(transport, mime) → codec / presenter）</div>
           <div id="bindings"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
             <input id="b-transport" placeholder="transport: file / https / *" style="flex:1;min-width:120px" />
             <input id="b-mime" placeholder="mime: text/html / *" style="flex:1;min-width:120px" />
-            <select id="b-intent">
-              <option value="edit">edit</option>
-              <option value="render">render</option>
-              <option value="query">query</option>
-              <option value="agent">agent</option>
-            </select>
-            <input id="b-codec" placeholder="codec docType（可选）" style="flex:1;min-width:120px" />
+            <input id="b-codec" placeholder="codec id（可选）" style="flex:1;min-width:120px" />
             <input id="b-presenter" placeholder="presenter（可选）" style="flex:1;min-width:120px" />
             <button onclick="addBinding()">写入</button>
           </div>
@@ -617,6 +611,10 @@
           .join('');
       }
 
+      function outletKey(key) {
+        return key ? key.transport + '/' + key.mime + '/' + (key.codec || '-') : '';
+      }
+
       function renderBindings(rows) {
         const el = $('bindings');
         if (!rows || rows.length === 0) {
@@ -627,15 +625,13 @@
           .map(
             (b) =>
               '<div class="reg-row"><span class="reg-key">' +
-              esc(b.transport + ' · ' + b.mime + ' · ' + b.intent) +
+              esc(b.transport + ' · ' + b.mime) +
               '</span><span class="reg-owner">' +
               esc([b.codec, b.presenter].filter(Boolean).join(' → ') || '默认') +
               ' <button data-bind-remove data-transport="' +
               esc(b.transport) +
               '" data-mime="' +
               esc(b.mime) +
-              '" data-intent="' +
-              esc(b.intent) +
               '">删除</button></span></div>',
           )
           .join('');
@@ -645,9 +641,18 @@
         renderBindings(data.bindings || []);
         const groups = [
           ['来源 transport', data.transports || [], (r) => r.scheme],
-          ['格式 codec', data.codecs || [], (r) => r.docType + ' · ' + (r.hints || []).join('/')],
-          ['数据 store', data.stores || [], (r) => r.docType],
-          ['出口 consumer', data.consumers || [], (r) => r.key + (r.surface ? ' → ' + r.surface : '')],
+          [
+            '格式 codec',
+            data.codecs || [],
+            (r) => r.id + ' · ' + (r.keys || []).map((k) => k.transport + '/' + k.mime).join(' '),
+          ],
+          ['数据 store', data.stores || [], (r) => outletKey(r.key)],
+          [
+            '页面出口 presenter',
+            data.presenters || [],
+            (r) => outletKey(r.key) + (r.surface ? ' → ' + r.surface : ''),
+          ],
+          ['文本出口 sidecar', data.sidecars || [], (r) => outletKey(r.key)],
           ['集合 collection', data.collections || [], (r) => r.id + ' · ' + r.label],
           [
             '动作 view action',
@@ -677,7 +682,6 @@
           await invoke('app:ura.bindings.set', {
             transport: $('b-transport').value.trim() || '*',
             mime: $('b-mime').value.trim() || '*',
-            intent: $('b-intent').value,
             ...($('b-codec').value.trim()
               ? { codec: $('b-codec').value.trim() }
               : {}),
@@ -696,9 +700,9 @@
         }
       }
 
-      async function removeBinding(transport, mime, intent) {
+      async function removeBinding(transport, mime) {
         try {
-          await invoke('app:ura.bindings.remove', { transport, mime, intent });
+          await invoke('app:ura.bindings.remove', { transport, mime });
           await loadRegistry();
           toast('绑定已删除');
         } catch (e) {
@@ -731,11 +735,7 @@
       $('bindings').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-bind-remove]');
         if (btn) {
-          void removeBinding(
-            btn.dataset.transport,
-            btn.dataset.mime,
-            btn.dataset.intent,
-          );
+          void removeBinding(btn.dataset.transport, btn.dataset.mime);
         }
       });
 

@@ -1,5 +1,5 @@
 /**
- * IPC 通道名单一事实源（architecture.md §四）。
+ * IPC 通道名单一事实源（README.md §6.2）。
  *
  * 所有模块一律 import 本文件，不得内联通道字符串。
  */

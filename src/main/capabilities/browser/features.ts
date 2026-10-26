@@ -3,14 +3,18 @@
 // 一个白名单域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
 // 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
 
-import { registerCollection, registerPresenter, registerViewAction } from '../../ura/sdk'
-import { MIME } from '../../../shared/ura'
-import type { CollectionGroup, CollectionProvider } from '../../../shared/ura'
+import {
+  registerCollection,
+  registerPresenter,
+  registerViewAction,
+} from '../../ura/sdk';
+import { MIME } from '../../../shared/ura';
+import type { CollectionGroup, CollectionProvider } from '../../../shared/ura';
 
-const SITES_DIR = 'sites'
+const SITES_DIR = 'sites';
 
 function titleOf(ref: string): string {
-  return ref.slice(ref.lastIndexOf('/') + 1)
+  return ref.slice(ref.lastIndexOf('/') + 1);
 }
 
 const webCollection: CollectionProvider = {
@@ -19,13 +23,13 @@ const webCollection: CollectionProvider = {
   icon: 'globe',
 
   async list(ctx) {
-    const allowlist = await ctx.settings.get<string[]>('allowlist', [])
-    const groups: CollectionGroup[] = []
+    const allowlist = await ctx.settings.get<string[]>('allowlist', []);
+    const groups: CollectionGroup[] = [];
     for (const domain of allowlist) {
-      const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`
+      const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`;
       const entries = await ctx
         .find('*.md', { scope, limit: 200 })
-        .catch(() => [])
+        .catch(() => []);
       groups.push({
         id: domain,
         title: domain,
@@ -33,11 +37,11 @@ const webCollection: CollectionProvider = {
         items: entries
           .filter((entry) => entry.type === 'file')
           .map((entry) => ({ ref: entry.ref, title: titleOf(entry.ref) })),
-      })
+      });
     }
-    return groups
+    return groups;
   },
-}
+};
 
 // ─── 地址栏动作：可访问性元素标记 ────────────────────────────────────
 
@@ -140,14 +144,12 @@ const MARKS_SCRIPT = `(() => {
 
   window[KEY] = { stop };
   return items.length;
-})()`
+})()`;
 
 export function registerBrowserFeatures(): void {
-  registerCollection(webCollection)
+  registerCollection(webCollection);
   registerPresenter({
-    docType: 'html-doc@1',
-    mime: [MIME.html],
-    transports: ['http', 'https'],
+    key: { transport: 'https', mime: MIME.html, codec: '' },
     type: 'browser',
     requires: ['live'],
     surface: 'browser',
@@ -156,22 +158,22 @@ export function registerBrowserFeatures(): void {
       surface: 'browser',
       url: ref,
     }),
-  })
+  });
   registerViewAction({
-  id: 'a11y-marks',
-  label: '可访问性标记',
-  icon: 'mouse-pointer-click',
-  target: 'browser',
-  toggle: true,
-  async run(ctx) {
-    if (ctx.on) {
-      await ctx.execute<number>(MARKS_SCRIPT)
-    } else {
-      await ctx.execute(
-        `(window.__wsA11yMarks && window.__wsA11yMarks.stop(), 0)`,
-      )
-    }
-    ctx.setState(ctx.on ? 'on' : 'off')
-  },
-})
+    id: 'a11y-marks',
+    label: '可访问性标记',
+    icon: 'mouse-pointer-click',
+    target: 'browser',
+    toggle: true,
+    async run(ctx) {
+      if (ctx.on) {
+        await ctx.execute<number>(MARKS_SCRIPT);
+      } else {
+        await ctx.execute(
+          `(window.__wsA11yMarks && window.__wsA11yMarks.stop(), 0)`,
+        );
+      }
+      ctx.setState(ctx.on ? 'on' : 'off');
+    },
+  });
 }

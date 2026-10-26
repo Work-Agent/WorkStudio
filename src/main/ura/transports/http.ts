@@ -4,9 +4,10 @@
 // 格式提示来自响应 Content-Type，URL 扩展名兜底；不做内容嗅探。
 // 只读：API 变更属于操作型能力，不走资源写入。
 
-import { createHash } from 'node:crypto'
-import { session } from 'electron'
+import { createHash } from 'node:crypto';
+import { session } from 'electron';
 import type {
+  Mime,
   RawContent,
   ResourceStat,
   Transport,
@@ -14,69 +15,47 @@ import type {
   TransportId,
   TransportWriteOptions,
   TransportWriteResult,
-} from '../../../shared/ura'
-import { parseContentType } from '../../../shared/ura'
-import { UraError } from '../errors'
+} from '../../../shared/ura';
+import { MIME, mimeFromExtension, parseContentType } from '../../../shared/ura';
+import { UraError } from '../errors';
 
-const PARTITION = 'persist:workstudio:browser'
-
-const EXT_HINTS: Record<string, string[]> = {
-  docx: ['ooxml-docx', 'ooxml', 'binary'],
-  docm: ['ooxml-docx', 'ooxml', 'binary'],
-  dotx: ['ooxml-docx', 'ooxml', 'binary'],
-  xlsx: ['ooxml-xlsx', 'ooxml', 'binary'],
-  xlsm: ['ooxml-xlsx', 'ooxml', 'binary'],
-  xltx: ['ooxml-xlsx', 'ooxml', 'binary'],
-  pptx: ['ooxml-pptx', 'ooxml', 'binary'],
-  pptm: ['ooxml-pptx', 'ooxml', 'binary'],
-  potx: ['ooxml-pptx', 'ooxml', 'binary'],
-  pdf: ['pdf', 'binary'],
-  md: ['markdown', 'text'],
-  markdown: ['markdown', 'text'],
-  html: ['html', 'text'],
-  htm: ['html', 'text'],
-  json: ['json', 'text'],
-  xml: ['xml', 'text'],
-  csv: ['table', 'text'],
-  tsv: ['table', 'text'],
-}
+const PARTITION = 'persist:workstudio:browser';
 
 export class HttpTransport implements Transport {
-  readonly id: TransportId
-  readonly capabilities: readonly TransportCapability[] = ['read', 'live']
+  readonly id: TransportId;
+  readonly capabilities: readonly TransportCapability[] = ['read', 'live'];
 
   constructor(readonly scheme: 'http' | 'https') {
-    this.id = scheme
+    this.id = scheme;
   }
 
   async stat(ref: string): Promise<ResourceStat> {
-    const response = await this.net().fetch(ref, { method: 'HEAD' })
+    const response = await this.net().fetch(ref, { method: 'HEAD' });
     if (!response.ok) {
-      throw new UraError('http.status', `HTTP ${response.status}: ${ref}`)
+      throw new UraError('http.status', `HTTP ${response.status}: ${ref}`);
     }
-    const length = Number(response.headers.get('content-length') ?? 0)
+    const length = Number(response.headers.get('content-length') ?? 0);
     return {
       version: versionOf(response, null),
       type: 'file',
       size: Number.isFinite(length) ? length : 0,
-    }
+    };
   }
 
   async read(ref: string): Promise<RawContent> {
-    const response = await this.net().fetch(ref)
+    const response = await this.net().fetch(ref);
     if (!response.ok) {
-      throw new UraError('http.status', `HTTP ${response.status}: ${ref}`)
+      throw new UraError('http.status', `HTTP ${response.status}: ${ref}`);
     }
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    const contentType = response.headers.get('content-type')
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const contentType = response.headers.get('content-type');
     return {
       bytes,
       version: versionOf(response, bytes),
       type: 'file',
       size: bytes.length,
-      formatHints: hintsFor(contentType, response.url || ref),
-      mime: parseContentType(contentType).mime,
-    }
+      mime: mimeOf(contentType, ref),
+    };
   }
 
   async write(
@@ -84,50 +63,43 @@ export class HttpTransport implements Transport {
     _patch: never,
     _opts: TransportWriteOptions,
   ): Promise<TransportWriteResult> {
-    throw new UraError('transport.read-only', 'http 来源只读')
+    throw new UraError('transport.read-only', 'http 来源只读');
   }
 
   async list(): Promise<never> {
-    throw new UraError('transport.no-list', 'http 来源不支持列目录')
+    throw new UraError('transport.no-list', 'http 来源不支持列目录');
   }
 
   private net(): Electron.Session {
-    return session.fromPartition(PARTITION)
+    return session.fromPartition(PARTITION);
   }
 }
 
-function hintsFor(contentType: string | null, url: string): string[] {
-  const hints: string[] = []
-  const mime = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-  if (mime.includes('json')) hints.push('json')
-  else if (mime.includes('xml')) hints.push('xml')
-  else if (mime.includes('html')) hints.push('html')
-  else if (mime === 'text/csv' || mime === 'text/tab-separated-values') {
-    hints.push('table')
-  } else if (mime === 'application/pdf') hints.push('pdf', 'binary')
-  else if (mime.includes('wordprocessingml')) hints.push('ooxml-docx', 'ooxml', 'binary')
-  else if (mime.includes('spreadsheetml')) hints.push('ooxml-xlsx', 'ooxml', 'binary')
-  else if (mime.includes('presentationml')) hints.push('ooxml-pptx', 'ooxml', 'binary')
-  else if (mime.startsWith('text/')) hints.push('text')
-
-  let path = ''
+/**
+ * 响应 MIME：以 Content-Type 为准；缺失或只给出 `application/octet-stream` 时，
+ * 按 URL 扩展名兜底（远端静态资源的常见情况），仍不命中就是 octet-stream。
+ */
+function mimeOf(contentType: string | null, url: string): Mime {
+  const declared = parseContentType(contentType).mime;
+  if (declared !== MIME.octetStream) return declared;
+  let pathname = url;
   try {
-    path = new URL(url).pathname
+    pathname = new URL(url).pathname;
   } catch {
-    path = url
+    pathname = url;
   }
-  const index = path.lastIndexOf('.')
-  const ext = index < 0 ? '' : path.slice(index + 1).toLowerCase()
-  for (const hint of EXT_HINTS[ext] ?? []) {
-    if (!hints.includes(hint)) hints.push(hint)
-  }
-  return hints.length ? hints : ['binary']
+  const index = pathname.lastIndexOf('.');
+  const ext = index < 0 ? '' : pathname.slice(index + 1).toLowerCase();
+  return (ext && mimeFromExtension(ext)) || declared;
 }
 
 function versionOf(response: Response, bytes: Uint8Array | null): string {
-  const etag = response.headers.get('etag')
-  if (etag) return `etag:${etag.replace(/^W\//, '').replace(/"/g, '')}`
-  const modified = response.headers.get('last-modified')
-  if (modified) return `lm:${modified}`
-  return `hash:${createHash('sha1').update(bytes ?? new Uint8Array()).digest('hex').slice(0, 16)}`
+  const etag = response.headers.get('etag');
+  if (etag) return `etag:${etag.replace(/^W\//, '').replace(/"/g, '')}`;
+  const modified = response.headers.get('last-modified');
+  if (modified) return `lm:${modified}`;
+  return `hash:${createHash('sha1')
+    .update(bytes ?? new Uint8Array())
+    .digest('hex')
+    .slice(0, 16)}`;
 }

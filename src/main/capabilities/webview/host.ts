@@ -320,8 +320,7 @@ export class ViewHost {
         role: 'tab',
         type: 'browser',
         extensionId: 'browser',
-        title:
-          document?.title ?? (ref.slice(ref.lastIndexOf('/') + 1) || ref),
+        title: document?.title ?? (ref.slice(ref.lastIndexOf('/') + 1) || ref),
         url: ref,
         loadUrl: target.url,
         state: 'dormant',
@@ -346,7 +345,12 @@ export class ViewHost {
     const info = target.info;
     if (!info.page) {
       this.deps.pageSessions.close(info.id);
-      throw new Error(`资源没有页面入口：${ref}`);
+      const mime = (info.data as { mime?: string } | undefined)?.mime;
+      throw new Error(
+        info.surface === 'raw'
+          ? `该格式没有可用的查看器：${ref}${mime ? `（${mime}）` : ''}，安装对应插件后可打开`
+          : `资源没有页面入口：${ref}`,
+      );
     }
     const record: ViewRecord = {
       id: randomUUID(),
@@ -379,7 +383,7 @@ export class ViewHost {
                 : {}),
             }
           : {}),
-        ...(info.docType ? { docType: info.docType } : {}),
+        ...(info.codec ? { codec: info.codec } : {}),
       },
       plugin: null,
       titlebarActions: [],
@@ -530,7 +534,10 @@ export class ViewHost {
     const current = record.actionStates?.[actionId];
     const on = action.toggle ? current !== 'on' : true;
     const setState = (state: string): void => {
-      record.actionStates = { ...(record.actionStates ?? {}), [actionId]: state };
+      record.actionStates = {
+        ...(record.actionStates ?? {}),
+        [actionId]: state,
+      };
       this.broadcastViews();
     };
     const execute = async <T>(script: string): Promise<T> => {
@@ -821,6 +828,14 @@ export class ViewHost {
     temporary?: boolean;
   } {
     if (input.type === 'settings') {
+      // 插件设置页与内置页同属设置面：settings://plugin.<id> 转交插件页面。
+      if (input.pageId.startsWith('plugin.')) {
+        return this.buildOpenInput({
+          type: 'plugin',
+          pluginId: input.pageId.slice('plugin.'.length),
+          settings: true,
+        });
+      }
       const page = settingsPage(input.pageId);
       if (!page) throw new Error(`Settings page not found: ${input.pageId}`);
       return {
@@ -842,14 +857,24 @@ export class ViewHost {
     if (input.type === 'plugin') {
       const pkg = this.deps.plugins.getPage(input.pluginId);
       if (!pkg) throw new Error(`Plugin not found: ${input.pluginId}`);
-      const page = (input.settings ? (pkg.settings ?? pkg.page) : (pkg.page ?? pkg.settings)) ?? null;
+      // 设置入口只给真有 settings 页的插件；没有就报错，不退化成打开资源页。
+      if (input.settings && !pkg.settings) {
+        throw new Error(`插件没有设置页：${pkg.id}`);
+      }
+      const page =
+        (input.settings ? pkg.settings : (pkg.page ?? pkg.settings)) ?? null;
       if (!page) throw new Error(`Plugin page not found: ${input.pluginId}`);
+      // 插件设置页归设置面：ref 用 settings: scheme，标签键与内置设置页同构。
       return {
-        tabKey: `plugin:${pkg.id}${input.settings ? ':settings' : ''}`,
+        tabKey: input.settings
+          ? `settings:plugin.${pkg.id}`
+          : `plugin:${pkg.id}`,
         type: 'extension',
         extensionId: `plugin:${pkg.id}`,
-        title: pkg.label,
-        url: `plugin://${pkg.id}${input.settings ? '/settings' : ''}`,
+        title: input.settings ? `${pkg.label} 设置` : pkg.label,
+        url: input.settings
+          ? `settings://plugin.${pkg.id}`
+          : `plugin://${pkg.id}`,
         loadUrl: pageUrlFor(page),
         renderer: {
           id: pkg.id,
@@ -893,10 +918,14 @@ export class ViewHost {
     try {
       let built: ReturnType<ViewHost['buildOpenInput']>;
       if (prefix === 'settings') {
-        built = this.buildOpenInput({
-          type: 'settings',
-          pageId: rest.join(':'),
-        });
+        const pageId = rest.join(':');
+        built = pageId.startsWith('plugin.')
+          ? this.buildOpenInput({
+              type: 'plugin',
+              pluginId: pageId.slice('plugin.'.length),
+              settings: true,
+            })
+          : this.buildOpenInput({ type: 'settings', pageId });
       } else if (prefix === 'plugin') {
         const pluginId = rest[0] ?? '';
         const settings = rest.slice(1).join(':') === 'settings';
@@ -921,7 +950,7 @@ export class ViewHost {
         dirty: false,
         temporary: false,
         interactiveElements: false,
-          plugin: built.plugin,
+        plugin: built.plugin,
         titlebarActions: built.titlebarActions,
         actionStates: {},
         view: null,
@@ -1060,7 +1089,7 @@ export class ViewHost {
         const title = wc.getTitle();
         if (title && title !== record.url) record.title = title;
       }
-        this.broadcastViews();
+      this.broadcastViews();
     });
     if (isBrowser) {
       const onNav = (): void => {
@@ -1333,7 +1362,7 @@ export class ViewHost {
         return (
           action.target === renderer.id ||
           action.target === renderer.owner ||
-          action.target === renderer.docType
+          action.target === renderer.codec
         );
       })
       .map(({ action }) => ({

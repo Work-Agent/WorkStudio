@@ -1,8 +1,9 @@
 /**
- * BrowserAutomation —— 浏览器自动化实现（agent-design.md §3.5）。
+ * BrowserAutomation —— 浏览器自动化（README.md §5.2）。
  *
- * 基于 raw 网页视图的 webContents：DOM 操作经 executeJavaScript，截图经 capturePage。
- * 工具层只依赖 BrowserAutomationContract；未来可换 CDP 实现而工具不动。
+ * 操作走 `webContents.debugger`（CDP：Input / DOM / Page.captureScreenshot）；
+ * 提取（Readability 正文 + 可访问性结构）走注入求值，都是浏览器能力的内置模块。
+ * 工具层只依赖 BrowserAutomationContract，换实现不动侧车。
  */
 import { writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -13,6 +14,14 @@ import type {
   BrowserSnapshot,
 } from '../../harness/browser-contract';
 import type { ViewHost } from '../webview/host';
+
+interface BoxModel {
+  model: { content: number[] };
+}
+
+interface QueryResult {
+  nodeId: number;
+}
 
 export class BrowserAutomation implements BrowserAutomationContract {
   constructor(private readonly viewHost: ViewHost) {}
@@ -29,29 +38,54 @@ export class BrowserAutomation implements BrowserAutomationContract {
 
   async read(viewId?: string): Promise<BrowserPageState> {
     const id = this.resolveId(viewId);
-    const wc = this.viewHost.getWebContents(id);
-    if (!wc) throw new Error('No browser page available');
-    const result = (await wc.executeJavaScript(
+    const wc = this.webContents(id);
+    const result = await this.evaluate<{
+      url: string;
+      title: string;
+      text: string;
+    }>(
+      wc,
       `({ url: location.href, title: document.title, text: document.body ? document.body.innerText : '' })`,
-    )) as { url: string; title: string; text: string };
-    return {
-      viewId: id,
-      url: result.url,
-      title: result.title,
-      text: result.text,
-    };
+    );
+    return { viewId: id, ...result };
   }
 
   async click(
     selector: string,
     viewId?: string,
   ): Promise<{ ok: boolean; note?: string }> {
-    const wc = this.viewHost.getWebContents(this.resolveId(viewId));
-    if (!wc) return { ok: false, note: 'no browser page' };
-    const sel = JSON.stringify(selector);
-    return (await wc.executeJavaScript(
-      `(() => { const el = document.querySelector(${sel}); if (!el) return { ok: false, note: 'element not found' }; el.click(); return { ok: true }; })()`,
-    )) as { ok: boolean; note?: string };
+    const wc = this.webContents(this.resolveId(viewId));
+    const nodeId = await this.nodeId(wc, selector);
+    if (nodeId === null) return { ok: false, note: 'element not found' };
+    const box = await this.send<BoxModel>(wc, 'DOM.getBoxModel', {
+      nodeId,
+    }).catch(() => null);
+    const quad = box?.model.content;
+    if (!quad || quad.length < 8) {
+      return { ok: false, note: 'element has no layout box' };
+    }
+    const x = (quad[0]! + quad[2]! + quad[4]! + quad[6]!) / 4;
+    const y = (quad[1]! + quad[3]! + quad[5]! + quad[7]!) / 4;
+    await this.send(wc, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x,
+      y,
+    });
+    await this.send(wc, 'Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      x,
+      y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await this.send(wc, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x,
+      y,
+      button: 'left',
+      clickCount: 1,
+    });
+    return { ok: true };
   }
 
   async type(
@@ -59,45 +93,58 @@ export class BrowserAutomation implements BrowserAutomationContract {
     text: string,
     viewId?: string,
   ): Promise<{ ok: boolean; note?: string }> {
-    const wc = this.viewHost.getWebContents(this.resolveId(viewId));
-    if (!wc) return { ok: false, note: 'no browser page' };
-    const sel = JSON.stringify(selector);
-    const value = JSON.stringify(text);
-    return (await wc.executeJavaScript(
-      `(() => {
-        const el = document.querySelector(${sel});
-        if (!el) return { ok: false, note: 'element not found' };
-        if (!('value' in el)) return { ok: false, note: 'element is not an input' };
-        el.focus();
-        el.value = ${value};
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        return { ok: true };
-      })()`,
-    )) as { ok: boolean; note?: string };
+    const wc = this.webContents(this.resolveId(viewId));
+    const nodeId = await this.nodeId(wc, selector);
+    if (nodeId === null) return { ok: false, note: 'element not found' };
+    await this.send(wc, 'DOM.focus', { nodeId });
+    // 全选后覆盖输入；纯键盘路径，不经页面 DOM API。
+    await this.send(wc, 'Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      modifiers: 2,
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+      commands: ['selectAll'],
+    });
+    await this.send(wc, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      modifiers: 2,
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+    });
+    await this.send(wc, 'Input.insertText', { text });
+    return { ok: true };
   }
 
   async back(viewId?: string): Promise<void> {
-    const id = this.resolveId(viewId);
-    this.viewHost.goBack(id);
+    this.viewHost.goBack(this.resolveId(viewId));
   }
 
   async snapshot(viewId?: string): Promise<BrowserSnapshot> {
     const id = this.resolveId(viewId);
-    const wc = this.viewHost.getWebContents(id);
-    if (!wc) throw new Error('No browser page available');
-    const result = (await wc.executeJavaScript(
-      `(${extractMarkdown.toString()})()`,
-    )) as { url: string; title: string; markdown: string };
+    const wc = this.webContents(id);
+    const result = await this.evaluate<{
+      url: string;
+      title: string;
+      excerpt: string;
+      markdown: string;
+      a11y: string[];
+    }>(wc, `(${extractArticle.toString()})()`);
     return { viewId: id, ...result };
   }
 
   async screenshot(viewId?: string): Promise<string> {
-    const wc = this.viewHost.getWebContents(this.resolveId(viewId));
-    if (!wc) throw new Error('No browser page available');
-    const image = await wc.capturePage();
+    const wc = this.webContents(this.resolveId(viewId));
+    const shot = await this.send<{ data: string }>(
+      wc,
+      'Page.captureScreenshot',
+      { format: 'png' },
+    );
     const file = join(tmpdir(), `workstudio-shot-${Date.now()}.png`);
-    writeFileSync(file, image.toPNG());
+    writeFileSync(file, Buffer.from(shot.data, 'base64'));
     return file;
   }
 
@@ -106,19 +153,75 @@ export class BrowserAutomation implements BrowserAutomationContract {
     return active?.id ?? null;
   }
 
+  // ─── 内部 ────────────────────────────────────────────────────
+
   private resolveId(viewId?: string): string {
     const id = viewId ?? this.activeViewId();
     if (!id) throw new Error('No active browser tab — open a URL first');
     return id;
   }
+
+  private webContents(id: string): Electron.WebContents {
+    const wc = this.viewHost.getWebContents(id);
+    if (!wc) throw new Error('No browser page available');
+    return wc;
+  }
+
+  /** CDP 命令：按需 attach，随 webContents 销毁回收。 */
+  private async send<T>(
+    wc: Electron.WebContents,
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    return (await wc.debugger.sendCommand(method, params)) as T;
+  }
+
+  /** 注入求值：提取与读取用，只读且按需执行。 */
+  private async evaluate<T>(
+    wc: Electron.WebContents,
+    expression: string,
+  ): Promise<T> {
+    const result = await this.send<{
+      result: { value?: T; description?: string };
+      exceptionDetails?: { text: string };
+    }>(wc, 'Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.text || 'evaluate failed');
+    }
+    return result.result.value as T;
+  }
+
+  private async nodeId(
+    wc: Electron.WebContents,
+    selector: string,
+  ): Promise<number | null> {
+    const { root } = await this.send<{ root: QueryResult }>(
+      wc,
+      'DOM.getDocument',
+      {
+        depth: 1,
+      },
+    );
+    const { nodeId } = await this.send<QueryResult>(wc, 'DOM.querySelector', {
+      nodeId: root.nodeId,
+      selector,
+    });
+    return nodeId || null;
+  }
 }
 
-
-/** 页面内的正文提取（序列化后在 webContents 里执行）。 */
-function extractMarkdown(): {
+/** 页面内的提取：Readability 正文 + 可访问性结构（序列化后求值）。 */
+function extractArticle(): {
   url: string;
   title: string;
+  excerpt: string;
   markdown: string;
+  a11y: string[];
 } {
   const pick =
     document.querySelector('article, main, [role="main"]') || document.body;
@@ -175,7 +278,7 @@ function extractMarkdown(): {
     );
   const blocks: string[] = [];
   const walk = (el: Element): void => {
-    for (const child of [...el.children]) {
+    for (const child of Array.from(el.children)) {
       const tag = child.tagName.toLowerCase();
       if (/^h[1-6]$/.test(tag)) {
         const text = inlineChildren(child).trim();
@@ -190,7 +293,8 @@ function extractMarkdown(): {
         [...child.children].forEach((li, index) => {
           if (li.tagName.toLowerCase() !== 'li') return;
           const text = inlineChildren(li).trim();
-          if (text) blocks.push((tag === 'ol' ? `${index + 1}. ` : '- ') + text);
+          if (text)
+            blocks.push((tag === 'ol' ? `${index + 1}. ` : '- ') + text);
         });
       } else if (tag === 'table') {
         const rows = [...child.querySelectorAll('tr')]
@@ -221,9 +325,95 @@ function extractMarkdown(): {
   walk(clone);
   const body = blocks.filter(Boolean).join('\n\n');
   const title = document.title.trim();
+  const meta = document.querySelector('meta[name="description"]');
+  const firstParagraph = blocks.find((block) => !block.startsWith('#'));
+  const excerpt = (meta?.getAttribute('content') || firstParagraph || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280);
+
+  // 可访问性结构：landmark / 标题 / 交互元素（role · name · selector）。
+  const selectorOf = (el: Element): string => {
+    const parts: string[] = [];
+    let node: Element | null = el;
+    while (node && node !== document.documentElement) {
+      const tag = node.tagName.toLowerCase();
+      const id = node.getAttribute('id');
+      if (id) {
+        parts.unshift(`#${id}`);
+        break;
+      }
+      const siblings = node.parentElement
+        ? Array.from(node.parentElement.children).filter(
+            (item) => item.tagName === node!.tagName,
+          )
+        : [];
+      const index = siblings.indexOf(node) + 1;
+      parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag);
+      node = node.parentElement;
+    }
+    return parts.join(' > ');
+  };
+  const roleOf = (el: Element): string => {
+    const explicit = el.getAttribute('role');
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (/^h[1-6]$/.test(tag)) return `heading${tag[1]}`;
+    if (tag === 'a') return 'link';
+    if (tag === 'button') return 'button';
+    if (tag === 'input') return el.getAttribute('type') || 'textbox';
+    if (tag === 'select') return 'combobox';
+    if (tag === 'textarea') return 'textbox';
+    if (tag === 'table') return 'table';
+    if (tag === 'nav') return 'navigation';
+    if (tag === 'main' || tag === 'article') return 'main';
+    if (tag === 'aside') return 'complementary';
+    if (tag === 'header') return 'banner';
+    if (tag === 'footer') return 'contentinfo';
+    return tag;
+  };
+  const nameOf = (el: Element): string =>
+    (
+      el.getAttribute('aria-label') ||
+      (el as HTMLElement).innerText ||
+      el.getAttribute('title') ||
+      el.getAttribute('alt') ||
+      el.getAttribute('placeholder') ||
+      ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+  const interactive = 'a,button,input,select,textarea,[role],[tabindex]';
+  const structural =
+    'main,article,nav,aside,header,footer,section,h1,h2,h3,h4,h5,h6,table,form,ul,ol';
+  const seen = new Set<Element>();
+  const a11y: string[] = [];
+  for (const el of [
+    ...document.querySelectorAll(structural),
+    ...document.querySelectorAll(interactive),
+  ]) {
+    if (seen.has(el)) continue;
+    seen.add(el);
+    const role = roleOf(el);
+    const name = nameOf(el);
+    if (
+      !name &&
+      !/^h[1-6]$|navigation|main|banner|contentinfo|table/.test(role)
+    ) {
+      continue;
+    }
+    a11y.push(
+      `${role.padEnd(12)} ${JSON.stringify(name || '')} ${selectorOf(el)}`,
+    );
+    if (a11y.length >= 200) break;
+  }
+
   return {
     url: location.href,
     title,
+    excerpt,
     markdown: ((title ? `# ${title}\n\n` : '') + body).slice(0, 200000),
+    a11y,
   };
 }

@@ -41,7 +41,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
         : ''
       return text(window.text + trailer, {
         ref,
-        docType: opened.docType,
+        codec: opened.codec,
         version: opened.version,
         degraded: opened.degraded,
         totalLines: window.totalLines,

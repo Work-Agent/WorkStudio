@@ -1,15 +1,19 @@
 /**
- * 浏览器自动化契约（agent-design.md §3.5）—— 工具层依赖的接口，实现由 L3 注入。
+ * 浏览器自动化契约（agent-design.md §4.4）—— 工具层依赖的接口，实现由 L3 注入。
  *
- * v1 实现基于 ViewHost 的 raw 网页视图（webContents DOM 操作 + capturePage）；
- * 未来可替换为 CDP / debugger 实现，工具层不动。
+ * 实现基于视图自己的 webContents：操作走 CDP（webContents.debugger），
+ * 提取走注入求值；工具层只依赖本契约，换实现不动侧车。
  */
 export interface BrowserSnapshot {
-  viewId: string
-  url: string
-  title: string
-  /** 正文的 Markdown 投影（供 AI 上下文与快照落盘）。 */
-  markdown: string
+  viewId: string;
+  url: string;
+  title: string;
+  /** Readability 概述（列表与检索摘要用）。 */
+  excerpt: string;
+  /** 正文的 Markdown 投影（供侧车上下文与快照落盘）。 */
+  markdown: string;
+  /** 可访问性结构：role · name · selector，供自动化定位与结构核对。 */
+  a11y: string[];
 }
 
 export interface BrowserPageState {

@@ -5,7 +5,7 @@
 // 保存按队列写入，后写覆盖先写。
 
 import { randomUUID } from 'node:crypto'
-import type { CommitResult, DocType } from '../../shared/ura'
+import type { CommitResult } from '../../shared/ura'
 import type { Ura } from './facade'
 
 export type PageOpenTarget =
@@ -16,7 +16,7 @@ export interface PageSessionInfo {
   id: string
   ref: string
   version: string
-  docType: DocType | null
+  codec: string | null
   surface: string
   owner?: string
   page: string
@@ -51,7 +51,7 @@ export class PageSessions {
       id: randomUUID(),
       ref,
       version: opened.version,
-      docType: opened.docType,
+      codec: opened.codec,
       surface: opened.presentation.surface,
       ...(opened.presentation.owner ? { owner: opened.presentation.owner } : {}),
       page: opened.presentation.page,
@@ -94,7 +94,7 @@ export class PageSessions {
     entry.info = {
       ...entry.info,
       version: opened.version,
-      docType: opened.docType,
+      codec: opened.codec,
       surface: opened.presentation.surface,
       ...(opened.presentation.owner ? { owner: opened.presentation.owner } : {}),
       page: opened.presentation.page,

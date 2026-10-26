@@ -114,7 +114,7 @@ export class AgentSession {
 function buildSystemPrompt(): string {
   const stores = uraRegistry.schemas()
   if (stores.length === 0) return SYSTEM_PROMPT
-  const list = stores.map((s) => `- ${s.docType}`).join('\n')
+  const list = stores.map((s) => `- ${s.codec}`).join('\n')
   return `${SYSTEM_PROMPT}
 
 ## Data objects（schema-only，query 查询结构）

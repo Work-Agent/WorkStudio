@@ -1,15 +1,17 @@
-// ─── 网站快照（白名单域归档） ────────────────────────────────────────
+// ─── 网站快照（白名单域整理） ────────────────────────────────────────
 //
-// 只有白名单域（含子域）的页面才落盘；快照是可读的 Markdown，
-// 既给页面渲染，也给 AI 上下文（经 URA read 的文本投影）。
+// 只有白名单域（含子域）的页面才落盘；快照是已解码的 Markdown：
+// 头部 = url + Readability 的 title / excerpt，正文 = Readability 正文，
+// 尾部 = 可访问性结构。落在应用管理的 sites/<domain>/ 下，只有浏览器写入。
 
-import { createHash } from 'node:crypto'
-import type { BrowserSnapshot } from '../../harness/browser-contract'
-import type { PluginHost } from '../../plugins/host'
-import type { Ura } from '../../ura/facade'
+import { createHash } from 'node:crypto';
+import { fileRef } from '../../../shared/ura';
+import type { BrowserSnapshot } from '../../harness/browser-contract';
+import type { PluginHost } from '../../plugins/host';
+import type { Ura } from '../../ura/facade';
 
-const PLUGIN_ID = 'browser'
-const ALLOWLIST_KEY = 'allowlist'
+const PLUGIN_ID = 'browser';
+const ALLOWLIST_KEY = 'allowlist';
 
 export class SiteSnapshots {
   constructor(
@@ -18,59 +20,69 @@ export class SiteSnapshots {
     private readonly workspace: () => string,
   ) {}
 
-  /** 白名单域才归档；返回快照资源 id。 */
+  /** 白名单域才整理；返回快照资源 id。 */
   async capture(page: BrowserSnapshot): Promise<{ ref: string } | null> {
-    const domain = domainOf(page.url)
-    if (!domain) return null
+    const domain = domainOf(page.url);
+    if (!domain) return null;
     const allowlist = await this.host.getSetting<string[]>(
       PLUGIN_ID,
       ALLOWLIST_KEY,
       [],
-    )
-    if (!allowlist.some((entry) => matches(domain, entry))) return null
+    );
+    if (!allowlist.some((entry) => matches(domain, entry))) return null;
 
-    const root = `file://${this.workspace().replace(/\/$/, '')}`
-    const ref = `${root}/sites/${domain}/${slugOf(page.url)}.md`
-    await this.ura.write(ref, render(page, domain))
-    return { ref }
+    const root = fileRef(this.workspace());
+    const ref = `${root}/sites/${domain}/${slugOf(page.url)}.md`;
+    await this.ura.write(ref, render(page, domain));
+    return { ref };
   }
 }
 
 function domainOf(url: string): string | null {
   try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
-    return parsed.hostname.toLowerCase()
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+      return null;
+    return parsed.hostname.toLowerCase();
   } catch {
-    return null
+    return null;
   }
 }
 
 function matches(domain: string, entry: string): boolean {
-  const normalized = entry.trim().toLowerCase().replace(/^\./, '')
-  if (!normalized) return false
-  return domain === normalized || domain.endsWith(`.${normalized}`)
+  const normalized = entry.trim().toLowerCase().replace(/^\./, '');
+  if (!normalized) return false;
+  return domain === normalized || domain.endsWith(`.${normalized}`);
 }
 
 function slugOf(url: string): string {
-  const parsed = new URL(url)
+  const parsed = new URL(url);
   const path = parsed.pathname
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .toLowerCase()
-  const hash = createHash('sha1').update(url).digest('hex').slice(0, 8)
-  return `${path || 'index'}-${hash}`
+    .toLowerCase();
+  const hash = createHash('sha1').update(url).digest('hex').slice(0, 8);
+  return `${path || 'index'}-${hash}`;
 }
 
 function render(page: BrowserSnapshot, domain: string): string {
-  const frontmatter = [
+  const lines = [
     '---',
     `url: ${page.url}`,
-    `title: ${page.title.replace(/\n/g, ' ')}`,
+    `title: ${oneLine(page.title)}`,
+    `excerpt: ${oneLine(page.excerpt)}`,
     `domain: ${domain}`,
     `capturedAt: ${new Date().toISOString()}`,
     '---',
     '',
-  ].join('\n')
-  return frontmatter + page.markdown + '\n'
+    page.markdown.trim(),
+  ];
+  if (page.a11y.length > 0) {
+    lines.push('', '## 可访问性结构', '', ...page.a11y);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }

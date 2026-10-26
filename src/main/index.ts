@@ -1,5 +1,5 @@
 /**
- * L3 装配（architecture.md §五）—— 应用生命周期、窗口、域服务装配、IPC 注册。
+ * L3 装配（README.md §四）—— 应用生命周期、窗口、域服务装配、IPC 注册。
  *
  * 启动链：
  *   agentDir → 工作区 → 插件扫描 → 资源网关 → UiState → AgentHost → ViewHost
@@ -22,6 +22,7 @@ import { ipcMain } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from '../shared/titlebar';
+import { fileRef } from '../shared/ura';
 import type {
   InteractionPreview,
   Rect,
@@ -394,7 +395,7 @@ app.whenReady().then(async () => {
   // 2.5 URA（资源管道 + 插件包）
   pluginService = new PluginService({
     root: path.join(app.getPath('userData'), 'plugins'),
-    file: path.join(app.getPath('userData'), 'plugins.json'),
+    file: path.join(app.getPath('userData'), 'plugins.md'),
     cwd: () => workspacePath,
   });
   await pluginService.start();
@@ -414,17 +415,25 @@ app.whenReady().then(async () => {
     ],
   });
   bootLog(
-    `ura ready: plugins=${uraRuntime.host.list().map((p) => p.id).join(',') || '(none)'}`,
+    `ura ready: plugins=${
+      uraRuntime.host
+        .list()
+        .map((p) => p.id)
+        .join(',') || '(none)'
+    }`,
   );
   const pageSessions = new PageSessions(uraRuntime.ura);
 
   // 3. 工作区订阅（URA watch → 渲染层刷新）
   const watchWorkspaceRoot = (): void => {
     workspaceWatcher?.close();
-    workspaceWatcher = uraRuntime!.ura.watch(`file://${workspacePath}`, (event) => {
-      broadcastToWindows(CH_URA, event);
-      broadcastViews();
-    });
+    workspaceWatcher = uraRuntime!.ura.watch(
+      fileRef(workspacePath),
+      (event) => {
+        broadcastToWindows(CH_URA, event);
+        broadcastViews();
+      },
+    );
   };
   watchWorkspaceRoot();
   bootLog('workspace watch ready');
