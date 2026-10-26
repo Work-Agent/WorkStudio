@@ -1,5 +1,5 @@
 /**
- * 声明式标题栏动作目录（architecture.md §13.1）。
+ * 声明式标题栏动作目录（architecture.md §2.2）。
  *
  * 插件 manifest 的 `titlebarActions` 只声明语义 id；主窗口按本目录渲染按钮
  * （图标 / 标题 / 激活态 / 禁用态），点击经 `views.action` 下发到视图页，

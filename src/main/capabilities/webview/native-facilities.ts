@@ -1,5 +1,5 @@
 /**
- * 原生设施（architecture.md §14.5）—— shell 能力与原生菜单。
+ * 原生设施（architecture.md §5.1.6）—— shell 能力与原生菜单。
  *
  * 通道：ws:shell（invoke）——命令目录：shell.openPath / shell.openExternal /
  * shell.pickDirectory / popup.show；Menu.popup 选中经 ws:popup:select 回执发起窗口。

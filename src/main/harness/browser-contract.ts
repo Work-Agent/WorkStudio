@@ -1,5 +1,5 @@
 /**
- * 浏览器自动化契约（architecture.md §5.4）—— 工具层依赖的接口，实现由 L3 注入。
+ * 浏览器自动化契约（architecture.md §6.5.2）—— 工具层依赖的接口，实现由 L3 注入。
  *
  * 实现基于视图自己的 webContents：操作走 CDP（webContents.debugger），
  * 提取走注入求值；工具层只依赖本契约，换实现不动侧车。

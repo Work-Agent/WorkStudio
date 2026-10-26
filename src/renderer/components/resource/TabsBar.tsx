@@ -1,5 +1,5 @@
 /**
- * TabsBar —— 中栏统一标签栏（architecture.md §13.3）。
+ * TabsBar —— 中栏统一标签栏（architecture.md §2.4）。
  *
  * 纯视图（不触达宿主）：滚动 / 激活标 / 脏点 / 错误标 / 固定 Pin / 拖拽排序 /
  * 右键菜单（关闭族 + 固定/取消固定）。集合语义全部在 state/tabs.ts，本组件只回调。

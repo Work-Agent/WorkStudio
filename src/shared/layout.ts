@@ -1,5 +1,5 @@
 /**
- * 布局常量单一事实源（architecture.md §14.1）。
+ * 布局常量单一事实源（architecture.md §5.1.4）。
  *
  * 主进程的布局引擎据此计算全部原生视图 bounds；工作台渲染层的 DOM 条带
  * （TitleBar / Sidebar / TabsBar）消费同一份常量，保证 DOM 与原生视图对齐。

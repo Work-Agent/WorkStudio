@@ -1,5 +1,5 @@
 /**
- * 浏览器工具面（architecture.md §5.4）—— browser_* 工具，经契约调用 L3 实现。
+ * 浏览器工具面（architecture.md §6.5.2）—— browser_* 工具，经契约调用 L3 实现。
  */
 import { Type } from 'typebox';
 import {

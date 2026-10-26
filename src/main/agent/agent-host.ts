@@ -1,5 +1,5 @@
 /**
- * AgentHost —— pi SDK 的桌面封装（architecture.md §2）。
+ * AgentHost —— pi SDK 的桌面封装（architecture.md §6.2.1）。
  *
  * 唯一持有 pi runtime 与 session 的模块；对外只暴露三面：
  *   命令（session/agent 域）、快照（AgentSnapshot）、事件（EventBridge 唯一出口）。

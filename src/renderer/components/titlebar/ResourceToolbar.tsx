@@ -1,5 +1,5 @@
 /**
- * TitleBar 中区资源地址栏 + 地址工具条（声明式动作，浏览器地址栏语义）—— architecture.md §13.1。
+ * TitleBar 中区资源地址栏 + 地址工具条（声明式动作，浏览器地址栏语义）—— architecture.md §2.2。
  *
  *   - 地址 = 激活视图的 `url`（本地文档 = 工作区路径 / 应用内资源 = app:// scheme / 网页 = 原 URL）
  *   - spinner 只在激活视图未就绪时出现在此（TabsBar 内不出 spinner）

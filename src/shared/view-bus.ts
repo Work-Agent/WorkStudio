@@ -1,5 +1,5 @@
 /**
- * 视图总线类型化消息（architecture.md §14.3）。
+ * 视图总线类型化消息（architecture.md §3.3）。
  *
  * 经主进程 ws:bus 双向传递；主进程按 event.sender → viewId 路由。
  */

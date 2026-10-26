@@ -1,5 +1,5 @@
 /**
- * S1 应用壳层 TitleBar —— architecture.md §13.1。
+ * S1 应用壳层 TitleBar —— architecture.md §2.2。
  *
  *   - 左区：① 工作区选择器 + ② 侧栏开关（同一布局分组，次序可互换）
  *   - 中区：资源地址栏（浏览器地址栏语义：url + spinner + 按类型动作）

@@ -4,7 +4,7 @@ const CONTENT_SURFACE = 'bg-zinc-100 dark:bg-[#1a1c1d]';
 const ASSISTANT_SURFACE = 'bg-zinc-50 dark:bg-[#202124]';
 
 /**
- * 停靠分隔条把手（DOM）—— architecture.md §14.1 / §14.4。
+ * 停靠分隔条把手（DOM）—— architecture.md §5.1.4 / §5.1.5。
  *
  * 位置完全来自主进程 layout 矩形（两侧原生视图按 SPLITTER_GAP 让位），本组件不测量容器、
  * 不计算栏宽：按下 → `interaction.begin`，移动 → `interaction.move`（主进程算几何并经

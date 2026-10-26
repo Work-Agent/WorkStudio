@@ -1,5 +1,5 @@
 /**
- * 文档域 store（zustand）—— URA 资源的渲染层投影（architecture.md §13.2）。
+ * 文档域 store（zustand）—— URA 资源的渲染层投影（architecture.md §2.3）。
  *
  * 数据面：主进程命令 `ura.collections`；打开 = `views.openResource`（页面会话由主进程持有）。
  * 失效：`ws:resources` 事件订阅（文件系统变化 / agent 写盘 / 每轮收敛）。

@@ -1,5 +1,5 @@
 /**
- * 工作区注册表（architecture.md §8）—— 目录自描述，无独立「当前选中」文件。
+ * 工作区注册表（architecture.md §5.3）—— 目录自描述，无独立「当前选中」文件。
  *
  * <userData>/agent/                     ← agentDir（应用自持，与用户全局 pi 隔离）
  *   models.json / auth.json / settings.json

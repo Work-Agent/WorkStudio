@@ -1,5 +1,5 @@
 /**
- * 技能激活过滤（architecture.md §5.3）。
+ * 技能激活过滤（architecture.md §6.3.3）。
  *
  * 装载走 pi 官方链（additionalSkillPaths + ResourceLoader），本模块只做激活语义：
  *   空选中 = 全量注入（pi 官方默认）；有选中 = 按名过滤 appendSystemPrompt 段与清单。

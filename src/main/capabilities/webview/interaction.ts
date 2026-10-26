@@ -1,5 +1,5 @@
 /**
- * InteractionController —— 指针交互会话（architecture.md §14.4）。
+ * InteractionController —— 指针交互会话（architecture.md §5.1.5）。
  *
  * 主进程是唯一执行者：拖拽期间由捕获层接收指针事件，本控制器按
  * screen 光标位置计算预览（栏宽 / 浮动几何 / 插入位），结束时夹取提交。
