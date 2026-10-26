@@ -1,5 +1,5 @@
 /**
- * DocumentList —— 文档二级列表（views-design.md §12.3）。
+ * DocumentList —— 文档二级列表（architecture.md §13.2）。
  *
  * 形态（按 sidebarView）：
  *   docs  → 本地文档

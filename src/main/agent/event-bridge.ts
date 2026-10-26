@@ -1,5 +1,5 @@
 /**
- * EventBridge —— session 事件 → 线格式 → 合帧 → ws:event（agent-design.md §四）。
+ * EventBridge —— session 事件 → 线格式 → 合帧 → ws:event（architecture.md §6）。
  *
  * 线格式：pi 事件直接结构化克隆回渲染层，唯一瘦身点是 message_update 的累积快照
  * （partial / message）：delta-only 后帧体积恒定，避免平方放大。

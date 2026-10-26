@@ -1,5 +1,5 @@
 /**
- * 布局引擎（views-design.md §四）—— bounds 唯一真相源，纯函数无副作用。
+ * 布局引擎（architecture.md §14.1）—— bounds 唯一真相源，纯函数无副作用。
  *
  * 输入：窗口尺寸 + UiState + 浮动几何 + 交互预览；
  * 输出：全部 DOM 条带与原生视图共用的 Rect（渲染层从 ws:state 读同一份）。

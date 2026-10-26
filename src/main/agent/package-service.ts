@@ -1,5 +1,5 @@
 /**
- * Pi 包服务（agent-design.md §十）—— 社区目录 + 安装 / 卸载 / 清单。
+ * Pi 包服务（architecture.md §9）—— 社区目录 + 安装 / 卸载 / 清单。
  *
  * 目录：pi.dev 无公开 JSON API（/api/* 返回 501）；包目录页为 SSR HTML，
  * 抓 `?name=`（模糊搜索）/ `?type=`（过滤）/ `?page=`（分页）并解析卡片。

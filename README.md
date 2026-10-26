@@ -1,15 +1,14 @@
 # WorkStudio
 
-> 一个把工作资料当一等公民的桌面工作台：人、AI 与页面在同一份真实资料上读写，产物落在原处，核对发生在对象上。
+> 一个把工作资料当一等公民的桌面工作台：一屏之内管理项目空间的所有资料，让 AI 基于全部资料做全局理解与智能执行；人机在同一份真实内容上读写，产物落回原处，核对发生在对象上。
 
 ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D22.12-brightgreen) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
 **简体中文** | [English](./README.en.md)
 
-> 本文是整体架构与开发入口：问题分析 · 三条主张 · 领域模型 · 产品形态 · 整体架构 · 能力扩展 · 状态与通讯 · 开发。域文档另有两份，边界不重叠：
+> 这份文档是一条完整的思路：从工作资料为什么会在工具之间散落，到三条主张如何回应，再到领域模型、产品形态与整体架构，最后落到能力扩展、状态与通讯、开发方式。它回答「为什么是 WorkStudio、为什么长成这样」；实现细节由代码承载。
 >
-> - Agent 域：[`docs/agent-design.md`](./docs/agent-design.md)（pi 接入、插件、URA、harness、会话）
-> - 页面域：[`docs/views-design.md`](./docs/views-design.md)（窗口、布局、原生视图、页面）
+> 更详细的设计见 [`docs/architecture.md`](./docs/architecture.md)：Agent 域（pi 接入、插件、URA、harness、会话）与页面域（壳层、标签、原生视图、页面）。本文讲思路与取舍，那里讲结构、契约与不变量；两文边界不重叠。
 
 ## 一、现状
 
@@ -471,7 +470,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # 渲染进程（React + Tailwind）
 │   ├── plugins/              # 内置插件（随应用分发）
 │   └── shared/               # 主/渲染共享类型与样式
-├── docs/                     # 域设计文档（agent / views）
+├── docs/                     # 架构设计（Agent 域 + 页面域）
 ├── index.html                # 渲染页面模板
 ├── electron.vite.config.ts   # 三端构建配置（main / preload / renderer）
 ├── electron-builder.yml      # 打包配置（目标平台、fuses、签名）

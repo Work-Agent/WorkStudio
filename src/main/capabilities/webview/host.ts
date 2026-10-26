@@ -1,5 +1,5 @@
 /**
- * ViewHost —— 多类型原生视图管理（views-design.md）。
+ * ViewHost —— 多类型原生视图管理（architecture.md）。
  *
  * 一条记录 = 壳（WebContentsView）+ 体（页面）+ 生命周期（状态机）+ 集合语义；
  * 渲染层拿到的是 ViewEntry 投影（列表快照），命令按 id 寻址。

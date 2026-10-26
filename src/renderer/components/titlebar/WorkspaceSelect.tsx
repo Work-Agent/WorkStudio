@@ -1,5 +1,5 @@
 /**
- * 工作区选择器（TitleBar 左区 ①）—— views-design.md §3.1。
+ * 工作区选择器（TitleBar 左区 ①）—— architecture.md §13.1。
  *
  * 弹出面板 = 原生 Menu.popup（中栏扩展视图恒绘制于 DOM 之上——DOM 弹层必被遮挡）；
  * 按钮本体保留 DOM（工作区名 + 图标常态展示），仅弹出层走原生。

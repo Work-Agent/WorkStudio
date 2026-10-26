@@ -1,5 +1,5 @@
 /**
- * S3 资源面板（DOM 部分）—— docs/views-design.md §四/§六/§七。
+ * S3 资源面板（DOM 部分）—— docs/architecture.md §13.3 / §13.4。
  *
  * DOM 只承载 chrome：标签栏与空态；全部视图内容一律由原生视图（WebContentsView）承载。
  * 矩形全部取主进程 layout（`tabbar` / `resourceContent`）；本组件不渲染 mock 内容、不丈量容器、

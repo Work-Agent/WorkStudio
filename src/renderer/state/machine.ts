@@ -1,5 +1,5 @@
 /**
- * 通用有限状态机内核 —— docs/views-design.md §六。
+ * 通用有限状态机内核 —— docs/architecture.md §13.3。
  *
  *   - 转换表显式（`"from:event": "to"`）：非法组合 = 表里没有 = 拒绝 + warn
  *   - 状态为普通值（响应性由消费方 store 镜像承接：onEnter 里同步镜像）

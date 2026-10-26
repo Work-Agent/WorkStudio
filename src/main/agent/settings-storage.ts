@@ -1,5 +1,5 @@
 /**
- * AppSpaceSettingsStorage —— pi SettingsManager 的 App 空间存储（agent-design.md §八）。
+ * AppSpaceSettingsStorage —— pi SettingsManager 的 App 空间存储（architecture.md §8）。
  *
  * pi 的 settings 分层：global 落 <agentDir>/settings.json；project 层默认落项目内
  * .pi/settings.json。我们把 project 层搬到 App 空间（<agentDir>/ws/<wsId>/settings.json），

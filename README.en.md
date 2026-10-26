@@ -1,15 +1,14 @@
 # WorkStudio
 
-> A desktop workbench that treats working material as a first-class citizen: people, AI and pages read and write the same real documents, deliverables stay where they live, and verification happens on the object itself.
+> A desktop workbench that treats working material as a first-class citizen: manage every asset in a project space from a single screen, and let AI reason across all of it and act intelligently; people and AI read and write the same real content, deliverables stay where they live, and verification happens on the object itself.
 
 ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D22.12-brightgreen) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
 [简体中文](./README.md) | **English**
 
-> This document is the overall architecture and the developer entry point: problem analysis · three claims · domain model · product shape · overall architecture · extension surfaces · state and communication · development. Two domain docs complete the picture, with no overlap:
+> This document follows one complete line of thought: why working material scatters across tools, how three claims respond, how the domain model, product shape and overall architecture follow, and finally the extension surfaces, state and communication, and development workflow. It answers why WorkStudio is what it is; implementation details live in the code.
 >
-> - Agent domain: [`docs/agent-design.md`](./docs/agent-design.md) (pi integration, plugins, URA, harness, sessions)
-> - Page domain: [`docs/views-design.md`](./docs/views-design.md) (window, layout, native views, pages)
+> The detailed design is in [`docs/architecture.md`](./docs/architecture.md): agent domain (pi integration, plugins, URA, harness, sessions) and page domain (shell, tabs, native views, pages). This document argues the thinking and trade-offs; that one specifies structure, contracts and invariants; the two do not overlap.
 
 ## 1. Where we are
 
@@ -475,7 +474,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # renderer (React + Tailwind)
 │   ├── plugins/              # built-in plugins (shipped with the app)
 │   └── shared/               # types and styles shared by main / renderer
-├── docs/                     # domain design docs (agent / views)
+├── docs/                     # architecture design (agent + page domains)
 ├── index.html                # renderer page template
 ├── electron.vite.config.ts   # build config for the three targets (main / preload / renderer)
 ├── electron-builder.yml      # packaging config (targets, fuses, signing)

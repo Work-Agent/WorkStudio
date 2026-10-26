@@ -1,7 +1,7 @@
 /**
  * AI 助手视图（独立渲染进程）—— S4，主进程事实的投影。
  *
- * 形态（views-design.md §12.5）：
+ * 形态（architecture.md §13.4）：
  *   停靠 = 单排 tabs（tabs 右端：浮动 / 新会话），无独立标题行；
  *   浮动 = 拖拽标题栏 + 同一排 tabs；移动/缩放交主进程交互层。
  * 会话标签集合语义（打开/关闭/激活）在主进程（session.openTab / closeTabs）。

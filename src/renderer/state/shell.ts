@@ -1,7 +1,7 @@
 /**
  * Shell 投影 store —— 主进程 shell 快照（layout）与视图集合（views）的渲染层唯一镜像。
  *
- * views-design.md §四：几何真相在主进程。DOM 区域（TitleBar / Sidebar / TabsBar / 空态）
+ * architecture.md §14.1：几何真相在主进程。DOM 区域（TitleBar / Sidebar / TabsBar / 空态）
  * 直接消费 layout 矩形（内联样式），不自行分栏、不丈量容器；无主进程桥时（独立页面开发）
  * 用同一个纯函数 computeLayout 本地计算——布局永远只有一份实现。
  */

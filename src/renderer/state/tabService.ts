@@ -1,11 +1,11 @@
 /**
- * 视图宿主适配层（zustand）—— docs/views-design.md §六。
+ * 视图宿主适配层（zustand）—— docs/architecture.md §13.3。
  *
  * 职责：与视图宿主通信（getOrCreate / destroy / setActive / reload / syncBounds /
  * sendToView / broadcast）、生命周期状态机（FSM 槽）、内容投递、总线转译；
  * 把视图事实投影进 tabs 集合（state/tabs.ts）——本层不维护第二份 tab 列表。
  *
- * 状态机纪律（views-design.md §2.5）：
+ * 状态机纪律（architecture.md §13.3.2）：
  *   - 内容投递前置：CONTENT 仅在 ready 态接受（排队，不发进黑洞）
  *   - 就绪幂等收敛：任何状态收到 LOADED → ready（reload/重连统一）
  *   - RELOAD 转换内置清投递记录
@@ -34,7 +34,7 @@ import { setUiState, useUiStore } from './uiState';
 
 type InstanceEvent = 'LOADED' | 'ASSIGN_DOC' | 'CONTENT' | 'RELOAD' | 'FAIL';
 
-/** 转换表（views-design.md §三）——评审表 = 评审代码。 */
+/** 转换表（architecture.md §13.3）——评审表 = 评审代码。 */
 const INSTANCE_TRANSITIONS: Record<string, ViewState> = {
   'creating:LOADED': 'ready',
   'creating:FAIL': 'error',

@@ -1,5 +1,5 @@
 /**
- * 配置服务（agent-design.md §八）—— models.json / settings.json 的读写薄层。
+ * 配置服务（architecture.md §8）—— models.json / settings.json 的读写薄层。
  *
  * 归属：pi 的 ModelConfig 是 load-only 快照，models.json 的写侧是本服务补的能力。
  * 规则：

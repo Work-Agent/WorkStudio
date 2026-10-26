@@ -1,5 +1,5 @@
 /**
- * 视图构造参数（views-design.md §三 2.2 presets）。
+ * 视图构造参数（architecture.md §13.3）。
  *
  * preload / partition / 页面 URL 的单一解析点；ViewHost 只消费本模块结果。
  */

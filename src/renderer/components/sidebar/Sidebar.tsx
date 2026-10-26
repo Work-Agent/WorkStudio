@@ -1,5 +1,5 @@
 /**
- * S2 左栏 Sidebar（工作台）—— views-design.md §12.3。
+ * S2 左栏 Sidebar（工作台）—— architecture.md §13.2。
  *
  * 形态路由：主列表（资源分组 + 打开项）/ 二级列表 / 插件列表 / 设置列表。
  * 核心规则：

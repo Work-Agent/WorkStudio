@@ -1,6 +1,6 @@
 /**
  * Mock 演示数据 —— 页面开发期的数据面（真实主进程服务就绪后由 IPC 替换）。
- * 内容按 views-design.md §12.3 的列表投影组织：Document / UraGroup / Plugin / Skill / Session。
+ * 内容按 architecture.md §13.2 的列表投影组织：Document / UraGroup / Plugin / Skill / Session。
  */
 import type {
   DocumentContent,

@@ -1,5 +1,5 @@
 /**
- * 会话索引 / JSONL 解析（agent-design.md §七）。
+ * 会话索引 / JSONL 解析（architecture.md §8）。
  *
  * 落盘由 pi SessionManager 负责；本模块只做只读解析：
  *   - 会话列表（标题 / 时间 / 预览 / token 与消息计数）

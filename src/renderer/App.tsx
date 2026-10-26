@@ -1,5 +1,5 @@
 /**
- * App —— 根组件：壳层装配（views-design.md §十二）。
+ * App —— 根组件：壳层装配（architecture.md §10）。
  *
  * 单轨布局：所有区域（TitleBar / Sidebar / 资源面板 / 分隔条）都按主进程 `shell.layout`
  * 的矩形绝对定位——DOM 不分栏、不丈量；资源内容与 AI 助手是主进程的原生视图，DOM 不重复渲染。
