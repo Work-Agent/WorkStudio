@@ -6,6 +6,7 @@
 
 import type { AppCommand, AppSnapshot, ScopeEpochs } from '../../shared/app';
 import type { CommandResponse } from '../../shared/types';
+import { scopeForCommand } from '../../shared/command-scope';
 
 export interface AppHostDeps {
   snapshot: (epochs: ScopeEpochs) => Promise<AppSnapshot>;
@@ -30,6 +31,16 @@ export class AppHost {
   }
 
   async dispatch(command: AppCommand): Promise<CommandResponse> {
+    const expected = scopeForCommand(command.action);
+    if (command.scope !== expected) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid_scope',
+          message: `Command "${command.action}" requires scope "${expected}"`,
+        },
+      };
+    }
     return this.deps.dispatch(command);
   }
 
