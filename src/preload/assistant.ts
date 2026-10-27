@@ -12,26 +12,13 @@ import {
   CH_POPUP_SELECT,
   CH_SHELL,
 } from '../shared/channels';
-import type { AppCommand, AppEvent, AppSnapshot, Scope } from '../shared/app';
+import type { AppCommand, AppEvent, AppSnapshot } from '../shared/app';
+import { scopeForCommand } from '../shared/command-scope';
 import type {
   CommandResponse,
   InteractionBeginInput,
   UiDialogResponse,
 } from '../shared/types';
-
-function scopeFor(action: string): Scope {
-  if (action.startsWith('session.')) return 'session';
-  if (action.startsWith('ui.')) return 'ui';
-  if (
-    action.startsWith('agent.') ||
-    action.startsWith('config.') ||
-    action.startsWith('plugins.') ||
-    action.startsWith('packages.') ||
-    action.startsWith('skills.')
-  )
-    return 'app';
-  return 'workspace';
-}
 
 const api = {
   platform: process.platform,
@@ -40,7 +27,7 @@ const api = {
     params?: unknown,
   ): Promise<CommandResponse<T>> =>
     ipcRenderer.invoke(APP_CMD, {
-      scope: scopeFor(command),
+      scope: scopeForCommand(command),
       action: command,
       payload: params,
     } satisfies AppCommand),
