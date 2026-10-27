@@ -89,6 +89,7 @@ export class AgentHost {
   private workspacePath!: string;
   private settingsStorage!: AppSpaceSettingsStorage;
   private dialogHost: DialogHost | null = null;
+  private editorText = '';
   private pendingReason = 'replace';
 
   private constructor(
@@ -250,6 +251,23 @@ export class AgentHost {
         dialogs: this.dialogHost,
         onNotify: (message, level, source) =>
           this.deps.ui.onNotify(message, level, source),
+        onEditorText: (text, source, paste) => {
+          this.editorText = paste ? `${this.editorText}${text}` : text;
+          this.pushInternal({
+            type: 'editor_text',
+            text,
+            source,
+            ...(paste ? { paste: true } : {}),
+          });
+        },
+        getEditorText: () => this.editorText,
+        onStatus: (key, text) =>
+          this.pushInternal({ type: 'ui_status', key, text }),
+        onWorking: (message) =>
+          this.pushInternal({ type: 'ui_working', message }),
+        onWidget: (key, lines) =>
+          this.pushInternal({ type: 'ui_widget', key, lines }),
+        onTitle: (title) => this.pushInternal({ type: 'ui_title', title }),
       }),
       mode: 'rpc' as never,
       onError: (err) => log.error('extension error', err),

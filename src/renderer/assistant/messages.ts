@@ -350,6 +350,40 @@ export function useMessages(activePath: string | null): {
           pendingSendRef.current = false;
           dropEmptyTrailing();
           break;
+        case 'editor_text':
+          window.dispatchEvent(
+            new CustomEvent('wa:editor-text', {
+              detail: {
+                text: String(ev.text ?? ''),
+                paste: ev.paste === true,
+              },
+            }),
+          );
+          break;
+        case 'ui_status':
+          window.dispatchEvent(
+            new CustomEvent('wa:extension-ui', {
+              detail: { type: 'status', key: ev.key, text: ev.text },
+            }),
+          );
+          break;
+        case 'ui_widget':
+          window.dispatchEvent(
+            new CustomEvent('wa:extension-ui', {
+              detail: { type: 'widget', key: ev.key, lines: ev.lines },
+            }),
+          );
+          break;
+        case 'ui_working':
+          window.dispatchEvent(
+            new CustomEvent('wa:extension-ui', {
+              detail: { type: 'working', message: ev.message },
+            }),
+          );
+          break;
+        case 'ui_title':
+          document.title = String(ev.title ?? '');
+          break;
         case 'error':
           setStreaming(false);
           pendingSendRef.current = false;

@@ -23,13 +23,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from '../shared/titlebar';
 import { fileRef } from '../shared/ura';
-import type { AppCommand } from '../shared/app';
 import type { Rect, UiState } from '../shared/types';
 import {
-  APP_CMD,
   APP_EVENT,
   APP_SNAPSHOT,
-  APP_SYNC,
   CH_BUS,
   CH_RESOURCES,
   CH_URA,
@@ -72,6 +69,7 @@ import { NativeFacilities } from './capabilities/webview/native-facilities';
 import { BrowserAutomation } from './capabilities/browser/views';
 import { ViewHost } from './capabilities/webview/host';
 import { AppHost } from './app/app-host';
+import { registerAppIpc } from './app/app-ipc';
 import { buildAppSnapshot } from './app/snapshot';
 import { WorkspaceManager } from './app/workspace-manager';
 import { WorkspaceScope } from './app/workspace-scope';
@@ -390,52 +388,6 @@ function registerShortcuts(): void {
         }
       }
     });
-  });
-}
-
-// ─── App 作用域 IPC ───────────────────────────────────────
-
-function registerAppIpc(deps: RouterDeps): void {
-  ipcMain.handle(APP_SYNC, (event) => {
-    const type = classifySender(event, deps);
-    if (type === 'unknown' || type === 'view') {
-      return {
-        ok: false,
-        error: { code: 'forbidden', message: 'App sync is not allowed' },
-      };
-    }
-    return appHost!.snapshot();
-  });
-  ipcMain.handle(APP_CMD, (event, command: AppCommand) => {
-    const type = classifySender(event, deps);
-    if (type === 'unknown' || type === 'view') {
-      return {
-        ok: false,
-        error: {
-          code: 'forbidden',
-          message: `Command "${command.action}" is not allowed from this sender`,
-        },
-      };
-    }
-    if (type === 'assistant' && !isAssistantCommand(command.action)) {
-      return {
-        ok: false,
-        error: {
-          code: 'forbidden',
-          message: `Command "${command.action}" is not allowed for the assistant view`,
-        },
-      };
-    }
-    if (type === 'overlay' && command.action !== 'ui.respond') {
-      return {
-        ok: false,
-        error: {
-          code: 'forbidden',
-          message: `Command "${command.action}" is not allowed for the overlay view`,
-        },
-      };
-    }
-    return appHost!.dispatch(command);
   });
 }
 
@@ -792,6 +744,7 @@ app.whenReady().then(async () => {
           uiState,
           registry: uraRuntime!.host,
           pluginService: pluginService!,
+          modelConfig: modelConfig!,
           workspacePath,
           resourceMapVersion: () => uraRuntime?.map.currentVersion ?? '',
           layout: buildLayout,
@@ -805,7 +758,7 @@ app.whenReady().then(async () => {
         (command.payload ?? {}) as Record<string, unknown>,
       ),
   });
-  registerAppIpc(routerDeps);
+  registerAppIpc(routerDeps, () => appHost!);
   publishAppSnapshot();
 
   nativeFacilities.registerShellIpc(() => winRef);

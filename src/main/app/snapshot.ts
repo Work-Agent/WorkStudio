@@ -4,7 +4,7 @@
  * 从各作用域服务拼出快照。
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import type {
   AppSnapshot,
@@ -16,7 +16,8 @@ import type {
   WorkspaceSlice,
   WorkspaceUiSlice,
 } from '../../shared/app';
-import type { LayoutSnapshot } from '../../shared/types';
+import type { LayoutSnapshot, ParsedMessage } from '../../shared/types';
+import { readSessionMessages } from '../agent/session-index';
 import type { AgentHost } from '../agent/agent-host';
 import {
   getWorkspaceId,
@@ -29,6 +30,7 @@ import type { ListService } from './lists/list-service';
 import type { PluginService } from '../plugins/service';
 import type { PluginHost } from '../plugins/host';
 import type { UiStateService } from '../state/ui-state';
+import type { ModelConfigStore } from '../agent/config-service';
 
 export interface SnapshotDeps {
   agent: AgentHost;
@@ -38,6 +40,7 @@ export interface SnapshotDeps {
   uiState: UiStateService;
   registry: PluginHost;
   pluginService: PluginService;
+  modelConfig: ModelConfigStore;
   workspacePath: string;
   resourceMapVersion: () => string;
   layout: () => LayoutSnapshot | null;
@@ -83,6 +86,26 @@ function workspaceMeta(path: string): WorkspaceMeta {
   };
 }
 
+let messageCachePath = '';
+let messageCacheStamp = '';
+let messageCache: ParsedMessage[] = [];
+
+function sessionMessages(path: string | null): ParsedMessage[] {
+  if (!path || !existsSync(path)) return [];
+  try {
+    const stat = statSync(path);
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    if (path !== messageCachePath || stamp !== messageCacheStamp) {
+      messageCachePath = path;
+      messageCacheStamp = stamp;
+      messageCache = readSessionMessages(path);
+    }
+    return messageCache;
+  } catch {
+    return [];
+  }
+}
+
 export async function buildAppSnapshot(
   deps: SnapshotDeps,
   epochs: ScopeEpochs,
@@ -97,6 +120,19 @@ export async function buildAppSnapshot(
 
   const models = deps.agent.getModels();
   const providerIds = [...new Set(models.map((model) => model.provider))];
+  const catalog = deps.agent.getProviderCatalog(
+    Object.keys(deps.modelConfig.readView().providers),
+  );
+  const credentials = catalog.map((provider) => ({
+    providerId: provider.id,
+    configured: provider.configured,
+    source:
+      provider.authSource === 'environment'
+        ? ('env' as const)
+        : provider.configured
+          ? ('keychain' as const)
+          : ('none' as const),
+  }));
   const resources = loadedResources(deps.agent);
   const app: AppSlice = {
     models: {
@@ -108,7 +144,7 @@ export async function buildAppSnapshot(
       models,
       defaultModel: agentSnapshot.modelId ?? null,
     },
-    credentials: [],
+    credentials,
     plugins: deps.registry.pluginInfoList(),
     pluginSources: deps.pluginService.list().map((entry) => ({
       source: entry.source,
@@ -164,6 +200,8 @@ export async function buildAppSnapshot(
     openSessionPaths: ui.openPaths.filter((path) => existsSync(path)),
   };
 
+  const sessionPath = agentSnapshot.sessionFile;
+  const messages = sessionMessages(sessionPath);
   const session: SessionSlice = {
     meta: currentSession,
     status: agentSnapshot.isStreaming
@@ -171,12 +209,14 @@ export async function buildAppSnapshot(
       : agentSnapshot.isCompacting
         ? 'compacting'
         : 'idle',
-    streaming: null,
+    streaming: agentSnapshot.isStreaming
+      ? { sessionPath: sessionPath ?? '', startedAt: 0 }
+      : null,
     queue: {
       steering: agentSnapshot.pendingMessageCount,
       followUp: 0,
     },
-    messages: [],
+    messages,
     usage: {
       input: currentSession?.tokens?.input ?? 0,
       output: currentSession?.tokens?.output ?? 0,

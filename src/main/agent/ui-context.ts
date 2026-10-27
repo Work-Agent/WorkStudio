@@ -283,7 +283,12 @@ export interface UiContextDeps {
     source: string,
   ) => void;
   /** 编辑器镜像（setEditorText / pasteToEditor）。 */
-  onEditorText?: (text: string, source: string) => void;
+  onEditorText?: (text: string, source: string, paste?: boolean) => void;
+  getEditorText?: () => string;
+  onStatus?: (key: string, text?: string) => void;
+  onWorking?: (message?: string) => void;
+  onWidget?: (key: string, lines?: string[]) => void;
+  onTitle?: (title: string) => void;
 }
 
 /** 构造 ExtensionUIContext（状态族进快照由 AgentHost 收集，本层只实现契约）。 */
@@ -321,19 +326,21 @@ export function makeUiContext(deps: UiContextDeps = {}): ExtensionUIContext {
     notify: (message, type) =>
       deps.onNotify?.(message, type ?? 'info', source()),
     onTerminalInput: () => () => {},
-    setStatus: () => {},
-    setWorkingMessage: () => {},
+    setStatus: (key, text) => deps.onStatus?.(key, text),
+    setWorkingMessage: (message) => deps.onWorking?.(message),
     setWorkingVisible: () => {},
     setWorkingIndicator: () => {},
     setHiddenThinkingLabel: () => {},
-    setWidget: () => {},
+    setWidget: (key, lines) => {
+      if (Array.isArray(lines)) deps.onWidget?.(key, lines);
+    },
     setFooter: () => {},
     setHeader: () => {},
-    setTitle: () => {},
+    setTitle: (title) => deps.onTitle?.(title),
     custom: (async () => undefined) as ExtensionUIContext['custom'],
-    pasteToEditor: (text) => deps.onEditorText?.(text, source()),
+    pasteToEditor: (text) => deps.onEditorText?.(text, source(), true),
     setEditorText: (text) => deps.onEditorText?.(text, source()),
-    getEditorText: () => '',
+    getEditorText: () => deps.getEditorText?.() ?? '',
     addAutocompleteProvider: () => {},
     setEditorComponent: () => {},
     getEditorComponent: () => undefined,

@@ -473,6 +473,11 @@ export type AppInternalEvent =
     }
   /** 运行配置变更（模型/工作区/思考档位/目录重建）→ 配置域投影收敛。 */
   | { type: 'agent_status_changed'; status: AgentStatus }
+  | { type: 'editor_text'; text: string; source: string; paste?: boolean }
+  | { type: 'ui_status'; key: string; text?: string }
+  | { type: 'ui_widget'; key: string; lines?: string[] }
+  | { type: 'ui_working'; message?: string }
+  | { type: 'ui_title'; title: string }
   | { type: 'error'; message: string };
 
 /** pi 官方事件族（渲染层消费子集，delta-only 线格式）。 */

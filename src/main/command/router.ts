@@ -208,6 +208,55 @@ async function activateListItem(
   }
 }
 
+async function runListAction(
+  d: RouterDeps,
+  action: string,
+  p: Record<string, unknown>,
+): Promise<unknown> {
+  const item = p.item as ListItem;
+  if (action === 'open') return activateListItem(d, item);
+  if (action === 'close') {
+    const viewId = item?.meta?.['viewId'];
+    if (typeof viewId === 'string') {
+      d.viewHost.close(viewId);
+      return null;
+    }
+    if (item?.itemType === 'session') {
+      const path = String(item.meta?.['path'] ?? item.key);
+      await closeSessionTabs(d, [path]);
+      return null;
+    }
+    return null;
+  }
+  if (action === 'pin') {
+    const viewId = item?.meta?.['viewId'];
+    if (typeof viewId === 'string') {
+      d.viewHost.togglePin(viewId);
+      return null;
+    }
+    const group = p.group as { id?: string; pinned?: boolean } | undefined;
+    if (group?.id) {
+      const current = d.uiState.get().pinnedGroups;
+      d.uiState.set({
+        pinnedGroups: group.pinned
+          ? current.filter((id) => id !== group.id)
+          : [...current, group.id],
+      });
+    }
+    return null;
+  }
+  if (action === 'delete') {
+    if (item?.itemType === 'session') {
+      const path = String(item.meta?.['path'] ?? item.key);
+      await d.sessions.deleteSession(path);
+      await closeSessionTabs(d, [path]);
+      return null;
+    }
+    return null;
+  }
+  throw new Error(`Unknown list action: ${action}`);
+}
+
 // ─── ws:cmd 实现 ──────────────────────────────────────────
 
 export async function invoke(
@@ -849,9 +898,7 @@ export async function invoke(
       case 'lists.snapshot':
         return ok(await d.lists.snapshot(0));
       case 'list.action':
-        if (p.action === 'open')
-          return ok(await activateListItem(d, p.item as ListItem));
-        return err('unknown_action', `Unknown list action: ${p.action}`);
+        return ok(await runListAction(d, String(p.action ?? ''), p));
 
       default:
         return err('unknown_command', `Unknown command: ${command}`);

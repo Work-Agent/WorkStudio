@@ -14,6 +14,7 @@ import {
   GripHorizontal,
   Maximize2,
   MessageCirclePlus,
+  Info,
   Minimize2,
   MoveDiagonal2,
   PanelRight,
@@ -26,6 +27,7 @@ import type { ResizeDirection, ThinkingLevel } from '../../shared/types';
 import '../index.css';
 import { bridge, MENU_SOURCE } from './bridge';
 import { MessageRow, ResizeHandles } from './components';
+import { SessionInfoPanel } from './SessionInfoPanel';
 import { formatTokens, tabLabel } from './format';
 import { useMessages } from './messages';
 import { useAgent, useSessions, useShell } from './session';
@@ -61,6 +63,14 @@ function Assistant() {
   const activeTokens = sessions.find((s) => s.path === activePath)?.tokens;
 
   const [text, setText] = useState('');
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [extensionStatus, setExtensionStatus] = useState<
+    Record<string, string | undefined>
+  >({});
+  const [extensionWidgets, setExtensionWidgets] = useState<
+    Record<string, string[] | undefined>
+  >({});
+  const [workingMessage, setWorkingMessage] = useState<string | undefined>();
   const [models, setModels] = useState<
     Array<{ provider: string; modelId: string; label: string }>
   >([]);
@@ -68,6 +78,52 @@ function Assistant() {
   const [menu, setMenu] = useState<'model' | 'thinking' | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
+
+  useEffect(() => {
+    const openStats = (): void => setStatsOpen(true);
+    window.addEventListener('wa:open-session-info', openStats);
+    return () => window.removeEventListener('wa:open-session-info', openStats);
+  }, []);
+
+  useEffect(() => {
+    const onEditor = (event: Event): void => {
+      const detail = (event as CustomEvent<{ text: string; paste?: boolean }>)
+        .detail;
+      setText((previous) =>
+        detail.paste && previous ? previous + detail.text : detail.text,
+      );
+    };
+    const onUi = (event: Event): void => {
+      const detail = (
+        event as CustomEvent<{
+          type: 'status' | 'widget' | 'working';
+          key?: string;
+          text?: string;
+          lines?: string[];
+          message?: string;
+        }>
+      ).detail;
+      if (detail.type === 'working') {
+        setWorkingMessage(detail.message);
+      } else if (detail.type === 'status' && detail.key) {
+        setExtensionStatus((previous) => ({
+          ...previous,
+          [detail.key!]: detail.text,
+        }));
+      } else if (detail.type === 'widget' && detail.key) {
+        setExtensionWidgets((previous) => ({
+          ...previous,
+          [detail.key!]: detail.lines,
+        }));
+      }
+    };
+    window.addEventListener('wa:editor-text', onEditor);
+    window.addEventListener('wa:extension-ui', onUi);
+    return () => {
+      window.removeEventListener('wa:editor-text', onEditor);
+      window.removeEventListener('wa:extension-ui', onUi);
+    };
+  }, []);
 
   useEffect(() => {
     void bridge?.cmd('agent.models').then((r) => {
@@ -345,6 +401,14 @@ function Assistant() {
         >
           <MessageCirclePlus className="w-3.5 h-3.5" />
         </button>
+
+        <button
+          onClick={() => setStatsOpen(true)}
+          className="shrink-0 px-2.5 flex items-center border-l border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-300 hover:text-[#4F6BED] dark:hover:text-[#4F6BED] hover:bg-zinc-100 dark:hover:bg-[#252829]"
+          title="会话信息"
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* 消息流 */}
@@ -377,6 +441,24 @@ function Assistant() {
           </div>
         )}
       </div>
+
+      {(workingMessage ||
+        Object.values(extensionStatus).some(Boolean) ||
+        Object.values(extensionWidgets).some((lines) => lines?.length)) && (
+        <div className="shrink-0 px-3 pt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500 space-y-0.5">
+          {workingMessage && <div>{workingMessage}</div>}
+          {Object.entries(extensionStatus).map(([key, value]) =>
+            value ? <div key={key}>{value}</div> : null,
+          )}
+          {Object.entries(extensionWidgets).map(([key, lines]) =>
+            lines?.length ? (
+              <div key={key} className="font-mono whitespace-pre-wrap">
+                {lines.join('\n')}
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
 
       {/* token 状态行（会话 token 统计；与消息流同源） */}
       {activeTokens && (
@@ -562,6 +644,7 @@ function Assistant() {
       </div>
 
       {floating && <ResizeHandles onStart={startResize} />}
+      <SessionInfoPanel open={statsOpen} onClose={() => setStatsOpen(false)} />
     </div>
   );
 }
