@@ -78,18 +78,18 @@
 
 ### 1.5 实体
 
-| 实体     | 字段                                                                                 | 说明                            |
-| -------- | ------------------------------------------------------------------------------------ | ------------------------------- |
-| 工作区   | 路径 · 创建时间 · 最近打开                                                           | App 持有列表；当前 = 最近打开者 |
-| 列表定义 | id · section · label · icon · order · itemType · fields · actions · empty · grouping | App 级；内置 + 插件             |
-| 列表分组 | id · definitionId · section · label · count · state · items · empty · diagnostics    | Workspace 级；一次快照          |
-| 列表项   | key · itemType · title · subtitle · icon · badge · meta · actions · state            | 渲染层只读                      |
-| 视图实例 | 稳定键 · 类型 · 标题 · 逻辑地址 · 状态 · 激活 · 固定 · 脏态 · 临时                   | 工作区级                        |
-| 会话     | 路径 · 标题 · 预览 · 时间 · 消息 · token                                             | 真相在 pi                       |
-| 设置页   | id · label · desc · icon                                                             | App 清单投影                    |
-| 插件     | id · 名称 · 版本 · 图标 · 页面 · 来源 · hash                                         | App 清单投影                    |
-| 现场     | 主题 · 侧栏形态 / 收起 / 宽度 · 助手形态 · 打开集合                                  | 工作区级 UI                     |
-| 交互态   | 类型 · 目标 · 方向 · 锚点 · 预览几何                                                 | 仅指针按下期间存在              |
+| 实体     | 字段                                                                                                                             | 说明                            |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 工作区   | 路径 · 创建时间 · 最近打开                                                                                                       | App 持有列表；当前 = 最近打开者 |
+| 列表定义 | id · section · label · icon · tone · unit · countLabel · order · itemType · fields · actions · empty · grouping                  | App 级；内置 + 插件             |
+| 列表分组 | id · definitionId · section · label · icon · tone · unit · countLabel · updatedAt · pinned · count · state · items · diagnostics | Workspace 级；一次快照          |
+| 列表项   | key · itemType · title · subtitle · icon · badge · meta · actions · state                                                        | 渲染层只读                      |
+| 视图实例 | 稳定键 · 类型 · 标题 · 逻辑地址 · 状态 · 激活 · 固定 · 脏态 · 临时                                                               | 工作区级                        |
+| 会话     | 路径 · 标题 · 预览 · 时间 · 消息 · token                                                                                         | 真相在 pi                       |
+| 设置页   | id · label · desc · icon                                                                                                         | App 清单投影                    |
+| 插件     | id · 名称 · 版本 · 图标 · 页面 · 来源 · hash                                                                                     | App 清单投影                    |
+| 现场     | 主题 · 侧栏形态 / 收起 / 宽度 · 助手形态 · 打开集合                                                                              | 工作区级 UI                     |
+| 交互态   | 类型 · 目标 · 方向 · 锚点 · 预览几何                                                                                             | 仅指针按下期间存在              |
 
 ## 二、数据模型与契约
 
