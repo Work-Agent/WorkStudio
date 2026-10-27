@@ -26,15 +26,6 @@ const ICONS: Record<string, LucideIcon> = {
   sliders: Settings,
 };
 
-const GROUP_ICONS: Record<string, string> = {
-  docs: 'folder',
-  web: 'globe',
-  temp: 'hourglass',
-  sessions: 'messages',
-  plugins: 'package',
-  settings: 'sliders',
-};
-
 function iconFor(item: ListItem): LucideIcon {
   if (item.itemType === 'session') return MessagesSquare;
   if (item.itemType === 'plugin') return Package;
@@ -103,8 +94,7 @@ export function ListHost({ groups }: { groups: ListGroup[] }) {
   return (
     <div className="space-y-2">
       {visible.map((group) => {
-        const Icon =
-          ICONS[GROUP_ICONS[group.definitionId] ?? 'folder'] ?? FolderOpen;
+        const Icon = ICONS[group.icon ?? 'folder'] ?? FolderOpen;
         return (
           <section key={group.id}>
             {!collapsed && (
