@@ -708,11 +708,6 @@
           ],
           ['文本出口 sidecar', data.sidecars || [], (r) => outletKey(r.key)],
           [
-            '集合 collection',
-            data.collections || [],
-            (r) => r.id + ' · ' + r.label,
-          ],
-          [
             '动作 view action',
             data.actions || [],
             (r) =>

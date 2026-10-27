@@ -638,9 +638,12 @@ export async function invoke(
           diagnostics: d.skills.getDiagnostics(),
           active: [...d.uiState.get().selectedSkills],
         });
-      case 'skills.setActive':
-        d.skills.setActive(Array.isArray(p.names) ? (p.names as string[]) : []);
+      case 'skills.setActive': {
+        const names = Array.isArray(p.names) ? (p.names as string[]) : [];
+        d.uiState.set({ selectedSkills: names });
+        await d.sessions.activateSkills(names);
         return ok(null);
+      }
 
       // ═══ 视图集合 ═══
       case 'settings.list':

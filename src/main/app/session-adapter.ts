@@ -41,6 +41,12 @@ export class SessionAdapter {
     this.activeBySession.set(path ?? '', [...names]);
   }
 
+  async activateSkills(names: string[]): Promise<void> {
+    this.setActiveSkills(names);
+    await this.applySkills(names);
+    this.deps.onChanged();
+  }
+
   async switchSession(
     path: string,
   ): Promise<Awaited<ReturnType<AgentHost['switchSession']>>> {

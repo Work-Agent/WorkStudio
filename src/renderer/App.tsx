@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { PaneSplitter } from './components/PaneSplitter';
 import { ResourcePane } from './components/resource/ResourcePane';
 import { Sidebar } from './components/sidebar/Sidebar';
+import { ToastHost } from './components/ToastHost';
 import { TitleBar } from './components/titlebar/TitleBar';
 import { rectStyle, useWorkspaceStore } from './state/workspace';
 import { useUiStore } from './state/ui';
@@ -51,6 +52,7 @@ export function App() {
           <PaneSplitter side="right" />
         </>
       ) : null}
+      <ToastHost />
     </div>
   );
 }

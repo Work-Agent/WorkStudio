@@ -7,6 +7,7 @@
 
 import type { AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAppStore } from './app';
+import { useNotificationsStore } from './notifications';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
 
@@ -25,6 +26,15 @@ export async function initAppScope(): Promise<void> {
   bridge.onAppSnapshot((next) => {
     if (!isFresh(next)) return;
     applySnapshot(next);
+  });
+  bridge.onUi((request) => {
+    if (request.type !== 'notify') return;
+    useNotificationsStore.getState().push({
+      id: request.id,
+      message: request.message,
+      level: request.level,
+      ...(request.source ? { source: request.source } : {}),
+    });
   });
 }
 
