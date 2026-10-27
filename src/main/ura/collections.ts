@@ -20,18 +20,21 @@ export class Collections {
     private readonly workspace: () => string,
   ) {}
 
+  context(owner: string): CollectionContext {
+    return {
+      workspace: fileRef(this.workspace()),
+      tree: (ref, limit) => this.ura.tree(ref, limit),
+      find: (pattern, options) => this.ura.find(pattern, options ?? {}),
+      settings: {
+        get: (key, fallback) => this.host.getSetting(owner, key, fallback),
+      },
+    };
+  }
+
   async list(): Promise<CollectionView[]> {
-    const workspace = fileRef(this.workspace());
     const views: CollectionView[] = [];
     for (const { provider, owner } of uraRegistry.collectionProviders()) {
-      const ctx: CollectionContext = {
-        workspace,
-        tree: (ref, limit) => this.ura.tree(ref, limit),
-        find: (pattern, options) => this.ura.find(pattern, options ?? {}),
-        settings: {
-          get: (key, fallback) => this.host.getSetting(owner, key, fallback),
-        },
-      };
+      const ctx = this.context(owner);
       let groups: CollectionGroup[] = [];
       try {
         groups = await provider.list(ctx);

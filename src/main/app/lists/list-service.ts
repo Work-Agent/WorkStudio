@@ -15,7 +15,7 @@ import type { ViewHost } from '../../capabilities/webview/host';
 import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
 import type { Collections } from '../../ura/collections';
-import { ListRegistry } from './list-registry';
+import { listRegistry } from './list-registry';
 
 const DOC_FIELDS = [
   { key: 'title', type: 'text' as const },
@@ -38,11 +38,9 @@ export interface ListServiceDeps {
 }
 
 export class ListService {
-  private readonly registry = new ListRegistry();
-
   constructor(private readonly deps: ListServiceDeps) {
     for (const definition of builtinDefinitions()) {
-      this.registry.register(definition);
+      listRegistry.register(definition);
     }
   }
 
@@ -51,7 +49,7 @@ export class ListService {
     const views = await this.deps.collections.list();
     for (const view of views) {
       const definitionId = view.source === 'docs' ? 'docs' : 'web';
-      const definition = this.registry.get(definitionId);
+      const definition = listRegistry.get(definitionId);
       if (!definition) continue;
       for (const group of view.groups) {
         groups.push({
@@ -89,11 +87,39 @@ export class ListService {
     groups.push(this.pluginsGroup());
     groups.push(this.settingsGroup());
 
+    for (const entry of listRegistry.providers()) {
+      if (
+        ['docs', 'web', 'temp', 'sessions', 'plugins', 'settings'].includes(
+          entry.definition.id,
+        )
+      )
+        continue;
+      const ctx = this.deps.collections.context(entry.owner);
+      const custom = await entry.provider(ctx);
+      for (const group of custom) {
+        groups.push({
+          id: `${entry.definition.id}:${group.id}`,
+          definitionId: entry.definition.id,
+          label: group.label,
+          ...(group.icon ? { icon: group.icon } : {}),
+          order: group.order,
+          count: group.items.length,
+          state: 'ready',
+          fields: entry.definition.fields,
+          actions: entry.definition.actions,
+          ...(group.empty || entry.definition.empty
+            ? { empty: group.empty ?? entry.definition.empty }
+            : {}),
+          items: group.items,
+        });
+      }
+    }
+
     return { workspaceEpoch, groups };
   }
 
   private tempGroup(): ListGroup | null {
-    const definition = this.registry.get('temp');
+    const definition = listRegistry.get('temp');
     if (!definition) return null;
     const items: ListItem[] = this.deps.viewHost
       .list()
@@ -120,7 +146,7 @@ export class ListService {
   }
 
   private async sessionsGroup(): Promise<ListGroup> {
-    const definition = this.registry.get('sessions')!;
+    const definition = listRegistry.get('sessions')!;
     const activePath = this.deps.agent.getSnapshot().sessionFile;
     const sessions = await this.deps.agent.listSessions();
     const items: ListItem[] = sessions.map((session) => ({
@@ -149,7 +175,7 @@ export class ListService {
   }
 
   private pluginsGroup(): ListGroup {
-    const definition = this.registry.get('plugins')!;
+    const definition = listRegistry.get('plugins')!;
     const items: ListItem[] = this.deps.plugins
       .pluginInfoList()
       .map((plugin) => ({
@@ -178,7 +204,7 @@ export class ListService {
   }
 
   private settingsGroup(): ListGroup {
-    const definition = this.registry.get('settings')!;
+    const definition = listRegistry.get('settings')!;
     const items: ListItem[] = settingsPages().map((page) => ({
       key: page.id,
       itemType: definition.itemType,
