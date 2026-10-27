@@ -6,7 +6,7 @@
  */
 import type { CSSProperties } from 'react';
 import { create } from 'zustand';
-import type { ListGroup, ListSnapshot } from '../../shared/lists';
+import type { ListGroup } from '../../shared/lists';
 import type { LayoutSnapshot, Rect, ViewEntry } from '../../shared/types';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
@@ -18,36 +18,12 @@ interface WorkspaceState {
   views: ViewEntry[];
   /** 当前工作区列表快照。 */
   groups: ListGroup[];
-  loading: boolean;
-  init: () => Promise<void>;
-  refresh: () => Promise<void>;
 }
-
-let initialized = false;
 
 export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   layout: null,
   views: [],
   groups: [],
-  loading: false,
-
-  init: async () => {
-    if (initialized) return;
-    initialized = true;
-    // 常规路径由 appScope 的 AppSnapshot 水合；独立页面开发才需要自拉。
-    if (mainBridge) return;
-  },
-
-  refresh: async () => {
-    if (!mainBridge) return;
-    set({ loading: true });
-    try {
-      const response = await mainBridge.cmd<ListSnapshot>('lists.snapshot');
-      if (response.ok) set({ groups: response.data.groups });
-    } finally {
-      set({ loading: false });
-    }
-  },
 }));
 
 /** 视图命令唯一出口（失败静默：主进程广播会把事实收敛回来）。 */

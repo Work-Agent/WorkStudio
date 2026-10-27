@@ -1,15 +1,10 @@
 /**
- * AppHost 骨架（architecture.md §3）。
+ * AppHost（architecture.md §3）。
  *
- * Phase 1：统一快照 / 命令 / 事件出口；作用域与切换在后续阶段迁入。
+ * 统一快照 / 命令出口，并维护工作区与会话两级纪元。
  */
 
-import type {
-  AppCommand,
-  AppEvent,
-  AppSnapshot,
-  ScopeEpochs,
-} from '../../shared/app';
+import type { AppCommand, AppSnapshot, ScopeEpochs } from '../../shared/app';
 import type { CommandResponse } from '../../shared/types';
 
 export interface AppHostDeps {
@@ -48,10 +43,5 @@ export class AppHost {
   bumpSession(): ScopeEpochs {
     this.sessionEpoch += 1;
     return this.epochs;
-  }
-
-  /** 事件出口占位：Phase 6 由作用域事件桥注入。 */
-  event<T>(event: AppEvent<T>): AppEvent<T> {
-    return event;
   }
 }

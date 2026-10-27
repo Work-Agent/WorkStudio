@@ -5,7 +5,6 @@
  * 不再写死 docs / web / 临时网页分组。
  */
 
-import { useEffect } from 'react';
 import { useWorkspaceStore } from '../../state/workspace';
 import { useUiStore } from '../../state/ui';
 import { FindList } from './FindList';
@@ -15,12 +14,6 @@ import { SidebarNav } from './SidebarNav';
 export function Sidebar() {
   const view = useUiStore((s) => s.sidebarView);
   const groups = useWorkspaceStore((s) => s.groups);
-  const init = useWorkspaceStore((s) => s.init);
-
-  useEffect(() => {
-    void init();
-  }, [init]);
-
   const section =
     view === 'plugins'
       ? 'plugins'

@@ -1,11 +1,11 @@
 /**
- * AppSnapshot 投影入口（Phase 6）。
+ * AppSnapshot 投影入口。
  *
  * 渲染层启动 / 重连走 app.sync；后续快照按 epoch 收敛到各投影 store。
- * 会话事件仍在 Phase 6 后续迁移到 AppEvent。
+ * 主窗口只消费快照；会话事件由助手视图订阅。
  */
 
-import type { AppEvent, AppSnapshot } from '../../shared/app';
+import type { AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAppStore } from './app';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
@@ -26,16 +26,6 @@ export async function initAppScope(): Promise<void> {
     if (!isFresh(next)) return;
     applySnapshot(next);
   });
-  bridge.onAppEvent((event) => {
-    if (event.epoch < epochOf(event.scope)) return;
-    // Phase 6 后续：AppEvent 直接写入对应切片；当前由快照收敛。
-  });
-}
-
-function epochOf(scope: AppEvent['scope']): number {
-  if (scope === 'workspace' || scope === 'ui') return workspaceEpoch;
-  if (scope === 'session') return sessionEpoch;
-  return 0;
 }
 
 function isFresh(snapshot: AppSnapshot): boolean {
@@ -58,7 +48,6 @@ function applySnapshot(snapshot: AppSnapshot): void {
     layout: snapshot.layout,
     views: snapshot.workspace.views,
     groups: snapshot.workspace.lists.groups,
-    loading: false,
   });
   useAppStore.setState({
     status: snapshot.session.snapshot
