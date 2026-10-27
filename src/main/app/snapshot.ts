@@ -5,9 +5,11 @@
  */
 
 import { existsSync } from 'node:fs';
+import { basename } from 'node:path';
 import type {
   AppSnapshot,
   AppSlice,
+  ResourceSet,
   ScopeEpochs,
   SessionSlice,
   WorkspaceMeta,
@@ -41,12 +43,32 @@ export interface SnapshotDeps {
   layout: () => LayoutSnapshot | null;
 }
 
-function emptyResources() {
+function loadedResources(agent: AgentHost): ResourceSet {
+  const loaded = agent.getLoadedResources();
   return {
-    extensions: [],
-    skills: [],
+    extensions: loaded.extensions.map((extension, index) => ({
+      id: `loaded-${index}`,
+      name: basename(extension.path),
+      source: 'file' as const,
+      path: extension.path,
+      scope: 'app' as const,
+      enabled: !extension.hidden,
+      tools: extension.tools,
+      commands: extension.commands,
+    })),
+    skills: loaded.skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      source: 'app' as const,
+      path: skill.path,
+      manualOnly: false,
+    })),
     packages: [],
-    diagnostics: [],
+    diagnostics: loaded.errors.map((error) => ({
+      type: 'error' as const,
+      message: error.message,
+      path: error.path,
+    })),
   };
 }
 
@@ -73,11 +95,18 @@ export async function buildAppSnapshot(
     ? (sessions.find((s) => s.path === agentSnapshot.sessionFile) ?? null)
     : null;
 
+  const models = deps.agent.getModels();
+  const providerIds = [...new Set(models.map((model) => model.provider))];
+  const resources = loadedResources(deps.agent);
   const app: AppSlice = {
     models: {
-      providers: [],
-      models: deps.agent.getModels(),
-      defaultModel: null,
+      providers: providerIds.map((id) => ({
+        id,
+        label: id,
+        configured: true,
+      })),
+      models,
+      defaultModel: agentSnapshot.modelId ?? null,
     },
     credentials: [],
     plugins: deps.registry.pluginInfoList(),
@@ -86,7 +115,7 @@ export async function buildAppSnapshot(
       type: entry.type === 'local' ? 'local' : 'zip',
       ...(entry.name ? { label: entry.name } : {}),
     })),
-    resources: emptyResources(),
+    resources,
     settings: { values: settings.global as Record<string, unknown> },
   };
 
@@ -97,14 +126,18 @@ export async function buildAppSnapshot(
       effective: settings.effective as Record<string, unknown>,
     },
     resources: {
-      ...emptyResources(),
+      ...resources,
       resourceMap: {
         ref: deps.workspacePath,
         version: deps.resourceMapVersion(),
       },
       policy: {
-        enabledExtensions: [],
-        disabledExtensions: [],
+        enabledExtensions: resources.extensions
+          .filter((extension) => extension.enabled)
+          .map((extension) => extension.path),
+        disabledExtensions: resources.extensions
+          .filter((extension) => !extension.enabled)
+          .map((extension) => extension.path),
         defaultSkills: ui.selectedSkills,
       },
     },
