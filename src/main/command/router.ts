@@ -28,7 +28,7 @@ import type {
   StorageView,
   WorkspaceInfo,
 } from '../../shared/types';
-import { CH_CMD, CH_EXT, CH_INTERACTION } from '../../shared/channels';
+import { CH_EXT, CH_INTERACTION } from '../../shared/channels';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
 import type { SessionAdapter } from '../app/session-adapter';
@@ -102,32 +102,6 @@ export interface RouterDeps {
 type SenderType = 'workbench' | 'assistant' | 'overlay' | 'view' | 'unknown';
 
 export function registerRouter(deps: RouterDeps): void {
-  ipcMain.handle(
-    CH_CMD,
-    async (event: IpcMainInvokeEvent, command: string, params?: unknown) => {
-      const type = classifySender(event, deps);
-      if (type === 'unknown' || type === 'view') {
-        return err(
-          'forbidden',
-          `Command "${command}" is not allowed from this sender`,
-        );
-      }
-      if (type === 'assistant' && !isAssistantCommand(command)) {
-        return err(
-          'forbidden',
-          `Command "${command}" is not allowed for the assistant view`,
-        );
-      }
-      if (type === 'overlay' && command !== 'ui.respond') {
-        return err(
-          'forbidden',
-          `Command "${command}" is not allowed for the overlay view`,
-        );
-      }
-      return invoke(deps, command, (params ?? {}) as Record<string, unknown>);
-    },
-  );
-
   // 插件页数据面：app:* 前缀（复用同一实现，映射见 invokeExt）。
   ipcMain.handle(
     CH_EXT,
@@ -170,7 +144,7 @@ export function registerRouter(deps: RouterDeps): void {
   );
 }
 
-function classifySender(
+export function classifySender(
   event: IpcMainInvokeEvent,
   deps: RouterDeps,
 ): SenderType {
@@ -185,7 +159,7 @@ function classifySender(
 }
 
 /** 助手视图命令白名单（最小能力面）。 */
-function isAssistantCommand(command: string): boolean {
+export function isAssistantCommand(command: string): boolean {
   return (
     command.startsWith('session.') ||
     command.startsWith('agent.') ||

@@ -17,8 +17,6 @@ export const APP_EVENT = 'app:event';
 
 // ─── 命令 / 握手（invoke） ────────────────────────────────
 
-/** 唯一命令通道：域 × 命令，结构化信封。 */
-export const CH_CMD = 'ws:cmd';
 /** 插件页数据面（app:* 白名单命令；与 ws:cmd 共用命令目录）。 */
 export const CH_EXT = 'ws:ext';
 /** 原生能力：openPath / openExternal / 目录选择 / Menu.popup。 */

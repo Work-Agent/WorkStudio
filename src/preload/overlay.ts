@@ -2,7 +2,8 @@
  * 浮层视图 preload —— 对话框请求订阅 + 结构化应答（ui.respond）。
  */
 import { contextBridge, ipcRenderer } from 'electron';
-import { CH_CMD, CH_UI } from '../shared/channels';
+import { APP_CMD, CH_UI } from '../shared/channels';
+import type { AppCommand } from '../shared/app';
 import type {
   CommandResponse,
   UiDialogResponse,
@@ -16,7 +17,11 @@ const api = {
     return () => ipcRenderer.removeListener(CH_UI, listener);
   },
   respond: (response: UiDialogResponse): Promise<CommandResponse> =>
-    ipcRenderer.invoke(CH_CMD, 'ui.respond', { response }),
+    ipcRenderer.invoke(APP_CMD, {
+      scope: 'ui',
+      action: 'ui.respond',
+      payload: { response },
+    } satisfies AppCommand),
 };
 
 if (process.contextIsolated) {

@@ -65,7 +65,13 @@ import { SiteSnapshots } from './capabilities/browser/snapshots';
 import { containsSettingsPage } from './capabilities/settings/registry';
 import { UiStateService } from './state/ui-state';
 import { broadcastToWindows } from './state/broadcast';
-import { invoke, registerRouter, type RouterDeps } from './command/router';
+import {
+  classifySender,
+  invoke,
+  isAssistantCommand,
+  registerRouter,
+  type RouterDeps,
+} from './command/router';
 import { InteractionController } from './capabilities/webview/interaction';
 import { NativeFacilities } from './capabilities/webview/native-facilities';
 import { BrowserAutomation } from './capabilities/browser/views';
@@ -403,21 +409,44 @@ function registerShortcuts(): void {
 
 // ─── App 作用域 IPC（Phase 1） ─────────────────────────────
 
-function registerAppIpc(): void {
+function registerAppIpc(deps: RouterDeps): void {
   ipcMain.handle(APP_SYNC, (event) => {
-    if (winRef && event.sender !== winRef.webContents) {
+    const type = classifySender(event, deps);
+    if (type === 'unknown' || type === 'view') {
       return {
         ok: false,
-        error: { code: 'forbidden', message: 'App sync is workbench-only' },
+        error: { code: 'forbidden', message: 'App sync is not allowed' },
       };
     }
     return appHost!.snapshot();
   });
   ipcMain.handle(APP_CMD, (event, command: AppCommand) => {
-    if (winRef && event.sender !== winRef.webContents) {
+    const type = classifySender(event, deps);
+    if (type === 'unknown' || type === 'view') {
       return {
         ok: false,
-        error: { code: 'forbidden', message: 'App command is workbench-only' },
+        error: {
+          code: 'forbidden',
+          message: `Command "${command.action}" is not allowed from this sender`,
+        },
+      };
+    }
+    if (type === 'assistant' && !isAssistantCommand(command.action)) {
+      return {
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: `Command "${command.action}" is not allowed for the assistant view`,
+        },
+      };
+    }
+    if (type === 'overlay' && command.action !== 'ui.respond') {
+      return {
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: `Command "${command.action}" is not allowed for the overlay view`,
+        },
       };
     }
     return appHost!.dispatch(command);
@@ -774,7 +803,7 @@ app.whenReady().then(async () => {
         (command.payload ?? {}) as Record<string, unknown>,
       ),
   });
-  registerAppIpc();
+  registerAppIpc(routerDeps);
   publishAppSnapshot();
 
   nativeFacilities.registerShellIpc(() => winRef);

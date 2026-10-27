@@ -11,7 +11,6 @@ import {
   APP_SNAPSHOT,
   APP_SYNC,
   CH_BUS,
-  CH_CMD,
   CH_INTERACTION,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
@@ -21,7 +20,7 @@ import {
   CH_URA,
   CH_URA_WATCH,
 } from '../shared/channels';
-import type { AppCommand, AppEvent, AppSnapshot } from '../shared/app';
+import type { AppCommand, AppEvent, AppSnapshot, Scope } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
@@ -31,6 +30,20 @@ import type {
   UiRequest,
 } from '../shared/types';
 
+function scopeFor(action: string): Scope {
+  if (action.startsWith('session.')) return 'session';
+  if (action.startsWith('ui.')) return 'ui';
+  if (
+    action.startsWith('agent.') ||
+    action.startsWith('config.') ||
+    action.startsWith('plugins.') ||
+    action.startsWith('packages.') ||
+    action.startsWith('skills.')
+  )
+    return 'app';
+  return 'workspace';
+}
+
 const api = {
   platform: process.platform,
   versions: process.versions as unknown as Record<string, string>,
@@ -39,13 +52,16 @@ const api = {
       path: target,
     }) as Promise<string>,
 
-  /** 唯一命令通道。 */
+  /** 唯一命令通道（AppCommand）。 */
   cmd: <T = unknown>(
     command: string,
     params?: unknown,
-  ): Promise<CommandResponse<T>> => ipcRenderer.invoke(CH_CMD, command, params),
-
-  /** 启动 / 重连握手。 */
+  ): Promise<CommandResponse<T>> =>
+    ipcRenderer.invoke(APP_CMD, {
+      scope: scopeFor(command),
+      action: command,
+      payload: params,
+    } satisfies AppCommand),
 
   /** AppSnapshot 握手（新渲染层）。 */
   appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
@@ -121,7 +137,11 @@ const api = {
 
   ui: {
     respond: (response: UiDialogResponse): Promise<CommandResponse> =>
-      ipcRenderer.invoke(CH_CMD, 'ui.respond', { response }),
+      ipcRenderer.invoke(APP_CMD, {
+        scope: 'ui',
+        action: 'ui.respond',
+        payload: { response },
+      } satisfies AppCommand),
   },
 
   shell: {

@@ -3,28 +3,47 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  APP_CMD,
   APP_EVENT,
   APP_SNAPSHOT,
   APP_SYNC,
-  CH_CMD,
   CH_INTERACTION,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
   CH_SHELL,
 } from '../shared/channels';
-import type { AppEvent, AppSnapshot } from '../shared/app';
+import type { AppCommand, AppEvent, AppSnapshot, Scope } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
   UiDialogResponse,
 } from '../shared/types';
 
+function scopeFor(action: string): Scope {
+  if (action.startsWith('session.')) return 'session';
+  if (action.startsWith('ui.')) return 'ui';
+  if (
+    action.startsWith('agent.') ||
+    action.startsWith('config.') ||
+    action.startsWith('plugins.') ||
+    action.startsWith('packages.') ||
+    action.startsWith('skills.')
+  )
+    return 'app';
+  return 'workspace';
+}
+
 const api = {
   platform: process.platform,
   cmd: <T = unknown>(
     command: string,
     params?: unknown,
-  ): Promise<CommandResponse<T>> => ipcRenderer.invoke(CH_CMD, command, params),
+  ): Promise<CommandResponse<T>> =>
+    ipcRenderer.invoke(APP_CMD, {
+      scope: scopeFor(command),
+      action: command,
+      payload: params,
+    } satisfies AppCommand),
   appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void): (() => void) => {
     const listener = (_e: unknown, snapshot: AppSnapshot): void => cb(snapshot);
@@ -54,7 +73,11 @@ const api = {
   },
   ui: {
     respond: (response: UiDialogResponse): Promise<CommandResponse> =>
-      ipcRenderer.invoke(CH_CMD, 'ui.respond', { response }),
+      ipcRenderer.invoke(APP_CMD, {
+        scope: 'ui',
+        action: 'ui.respond',
+        payload: { response },
+      } satisfies AppCommand),
   },
   onPopupSelect: (
     cb: (event: { source: string; actionId: string }) => void,
