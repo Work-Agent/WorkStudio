@@ -75,6 +75,7 @@ import { AppHost } from './app/app-host';
 import { buildAppSnapshot } from './app/snapshot';
 import { WorkspaceManager } from './app/workspace-manager';
 import { WorkspaceScope } from './app/workspace-scope';
+import { SessionAdapter } from './app/session-adapter';
 import { computeLayout } from '../shared/layout-engine';
 import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
@@ -620,9 +621,20 @@ app.whenReady().then(async () => {
     });
   }
 
+  const sessionAdapter = new SessionAdapter({
+    agent: agent!,
+    skills,
+    defaultSkills: () => uiState.get().selectedSkills,
+    onChanged: () => {
+      appHost?.bumpSession();
+      broadcastState();
+    },
+  });
+
   // 7. 命令路由 / 原生设施
   const routerDeps: RouterDeps = {
     agent,
+    sessions: sessionAdapter,
     viewHost,
     uiState,
     ura: uraRuntime.ura,
@@ -716,6 +728,7 @@ app.whenReady().then(async () => {
       buildAppSnapshot(
         {
           agent: agent!,
+          sessions: sessionAdapter,
           viewHost: viewHost!,
           uiState,
           registry: uraRuntime!.host,

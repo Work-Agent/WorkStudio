@@ -21,12 +21,14 @@ import {
   workspaceLabel,
 } from '../agent/workspace';
 import type { ViewHost } from '../capabilities/webview/host';
+import type { SessionAdapter } from './session-adapter';
 import type { PluginService } from '../plugins/service';
 import type { PluginHost } from '../plugins/host';
 import type { UiStateService } from '../state/ui-state';
 
 export interface SnapshotDeps {
   agent: AgentHost;
+  sessions: SessionAdapter;
   viewHost: ViewHost;
   uiState: UiStateService;
   registry: PluginHost;
@@ -145,7 +147,7 @@ export async function buildAppSnapshot(
     },
     context: {
       resourceMapVersion: deps.resourceMapVersion(),
-      activeSkills: [...ui.selectedSkills],
+      activeSkills: deps.sessions.getActiveSkills(),
       agentsFileVersion: null,
     },
     snapshot: agentSnapshot,

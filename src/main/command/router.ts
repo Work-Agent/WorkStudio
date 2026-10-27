@@ -32,6 +32,7 @@ import type {
 import { CH_CMD, CH_EXT, CH_INTERACTION, CH_SYNC } from '../../shared/channels';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
+import type { SessionAdapter } from '../app/session-adapter';
 import type {
   ModelConfigStore,
   SettingsService,
@@ -62,6 +63,7 @@ const log = createLogger('command');
 
 export interface RouterDeps {
   agent: AgentHost;
+  sessions: SessionAdapter;
   viewHost: ViewHost;
   uiState: UiStateService;
   ura: Ura;
@@ -214,7 +216,7 @@ export async function invoke(
     switch (command) {
       // ═══ 会话域 ═══
       case 'session.prompt':
-        await d.agent.prompt({
+        await d.sessions.prompt({
           text: String(p.text ?? ''),
           newSession: p.newSession === true,
           activeSkills: Array.isArray(p.activeSkills)
@@ -237,7 +239,7 @@ export async function invoke(
       case 'session.new': {
         // 新任务态：集合不动，当前置空；pi 侧换一个空会话（首条消息才落盘）。
         d.uiState.set({ activePath: null });
-        await d.agent.newSession();
+        await d.sessions.newSession();
         return ok(null);
       }
       case 'session.openTab': {
@@ -247,7 +249,7 @@ export async function invoke(
           ? ui.openPaths
           : [...ui.openPaths, path];
         d.uiState.set({ openPaths, activePath: path });
-        return ok(await d.agent.switchSession(path));
+        return ok(await d.sessions.switchSession(path));
       }
       case 'session.closeTab':
         return ok(await closeSessionTabs(d, [String(p.path ?? '')]));
@@ -258,10 +260,10 @@ export async function invoke(
         return ok(await closeSessionTabs(d, paths));
       }
       case 'session.switch':
-        return ok(await d.agent.switchSession(String(p.path ?? '')));
+        return ok(await d.sessions.switchSession(String(p.path ?? '')));
       case 'session.fork':
         return ok(
-          await d.agent.fork(
+          await d.sessions.fork(
             String(p.entryId ?? ''),
             p.position === 'before' || p.position === 'at'
               ? p.position
@@ -479,9 +481,7 @@ export async function invoke(
       // ═══ URA（资源管道） ═══
       case 'ura.read': {
         const as = p.as === 'editor' || p.as === 'system' ? p.as : 'agent';
-        return ok(
-          await d.ura.read(String(p.ref ?? ''), { as }),
-        );
+        return ok(await d.ura.read(String(p.ref ?? ''), { as }));
       }
       case 'ura.write':
         return ok(
@@ -792,9 +792,9 @@ async function closeSessionTabs(d: RouterDeps, paths: string[]): Promise<null> {
   }
   d.uiState.set({ openPaths, activePath });
   if (activePath === null) {
-    await d.agent.newSession();
+    await d.sessions.newSession();
   } else if (activePath !== ui.activePath) {
-    await d.agent.switchSession(activePath);
+    await d.sessions.switchSession(activePath);
   }
   return null;
 }
