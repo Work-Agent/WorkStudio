@@ -5,14 +5,10 @@ import type {
   ElectronAPI,
   InteractionBeginInput,
   PiBridgeAPI,
-  PiEventFrame,
   PopupMenuAPI,
-  ShellSnapshot,
   UiDialogResponse,
   UiRequest,
-  ViewEntry,
   WorkAPI,
-  WorkSyncResult,
 } from './types';
 
 /** 工作台桥（preload/workbench.ts，window.workbench）。 */
@@ -24,14 +20,10 @@ export interface WorkbenchBridge {
     command: string,
     params?: unknown,
   ) => Promise<CommandResponse<T>>;
-  sync: () => Promise<WorkSyncResult>;
   appSync: () => Promise<AppSnapshot>;
   appCmd: <T = unknown>(command: AppCommand) => Promise<CommandResponse<T>>;
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
   onAppEvent: (cb: (event: AppEvent) => void) => () => void;
-  onEvent: (cb: (frame: PiEventFrame) => void) => () => void;
-  onState: (cb: (snapshot: ShellSnapshot) => void) => () => void;
-  onViews: (cb: (views: ViewEntry[]) => void) => () => void;
   onResources: (cb: (event: unknown) => void) => () => void;
   /** 订阅一个资源（传空取消）；变更经 onUra 推送。 */
   watchUra: (ref?: string) => Promise<{ ref: string } | null>;
@@ -72,12 +64,9 @@ export interface AssistantBridge {
     command: string,
     params?: unknown,
   ) => Promise<CommandResponse<T>>;
-  sync: () => Promise<WorkSyncResult>;
   appSync: () => Promise<AppSnapshot>;
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
   onAppEvent: (cb: (event: AppEvent) => void) => () => void;
-  onEvent: (cb: (frame: PiEventFrame) => void) => () => void;
-  onState: (cb: (snapshot: ShellSnapshot) => void) => () => void;
   onInteraction: (cb: (update: { preview: unknown }) => void) => () => void;
   interaction: {
     begin: (input: InteractionBeginInput) => Promise<{ ok: boolean }>;

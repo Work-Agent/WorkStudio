@@ -660,7 +660,7 @@ export interface ElectronAPI {
 
 // ─── Agent 快照与命令信封 ──────────────────────────────────
 
-/** AgentHost 快照（ws:sync 与 agent.status 共用）。 */
+/** AgentHost 快照（app.sync 的 session 切片与 agent.status 共用）。 */
 export interface AgentSnapshot {
   configured: boolean;
   provider?: string;
@@ -793,22 +793,13 @@ export interface InteractionBeginInput {
   anchor: { x: number; y: number };
 }
 
-/** Shell 快照（ws:state）。 */
+/** Shell 快照（主进程布局 / 助手几何的构建中间态）。 */
 export interface ShellSnapshot {
   ui: UiState;
   layout: LayoutSnapshot;
   /** 运行期浮动助手几何（null = 未设置 → 使用默认位置）。 */
   floating: Rect | null;
   preview: InteractionPreview | null;
-}
-
-/** ws:sync 握手结果。 */
-export interface WorkSyncResult {
-  agent: AgentSnapshot;
-  seq: number;
-  shell: ShellSnapshot;
-  views: ViewEntry[];
-  plugins: PluginInfo[];
 }
 
 // ─── 扩展 UI（ws:ui） ──────────────────────────────────────
@@ -852,4 +843,3 @@ export type UiRequest = UiDialogRequest | UiNotifyMessage;
 export interface InteractionUpdate {
   preview: InteractionPreview;
 }
-

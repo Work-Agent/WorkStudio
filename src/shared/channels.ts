@@ -19,8 +19,6 @@ export const APP_EVENT = 'app:event';
 
 /** 唯一命令通道：域 × 命令，结构化信封。 */
 export const CH_CMD = 'ws:cmd';
-/** 启动 / 重连握手：Agent 快照 + seq + Shell 快照 + 视图清单。 */
-export const CH_SYNC = 'ws:sync';
 /** 插件页数据面（app:* 白名单命令；与 ws:cmd 共用命令目录）。 */
 export const CH_EXT = 'ws:ext';
 /** 原生能力：openPath / openExternal / 目录选择 / Menu.popup。 */
@@ -28,12 +26,6 @@ export const CH_SHELL = 'ws:shell';
 
 // ─── 推送（send） ─────────────────────────────────────────
 
-/** Agent 事件帧（{ seq, event }）。 */
-export const CH_EVENT = 'ws:event';
-/** Shell 快照（UiState + 布局 + 交互预览）。 */
-export const CH_STATE = 'ws:state';
-/** 视图事实变化（集合快照 / 单视图状态 patch）。 */
-export const CH_VIEW = 'ws:view';
 /** 视图总线（主进程 ↔ 渲染层 ↔ 视图页）。 */
 export const CH_BUS = 'ws:bus';
 /** 资源变更（资源网关 onChange / 每轮结束收敛；工作台投影刷新）。 */

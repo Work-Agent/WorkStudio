@@ -2,7 +2,7 @@
  * 配置域 store（zustand）—— Agent 运行配置的渲染层投影。
  *
  * 真相源在主进程（默认 provider/model 解析；目录 = pi 组合目录）：status 快照经
- * `ws:sync` / `agent.status` 与 `agent_status_changed` 事件收敛；configure 增量提交
+ * `app.sync` / `agent.status` 与 `agent_status_changed` 事件收敛；configure 增量提交
  * 即时生效（模型/思考切换器与模型设置页同源）。
  *
  * 铁律：渲染层不伪造默认值——初始形态 = 「未配置」，真实状态由 init() 首拉注入。

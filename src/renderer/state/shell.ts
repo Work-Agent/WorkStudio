@@ -36,20 +36,8 @@ function localLayout(): LayoutSnapshot {
   });
 }
 
-/** 启动投影：主进程桥存在时订阅 ws:state / ws:view，否则本地计算（resize / UI 变化重算）。 */
+/** 无主进程桥（独立页面开发）时的本地布局。 */
 export async function initShellPresentation(): Promise<void> {
-  if (mainBridge) {
-    const result = await mainBridge.sync();
-    useShellStore.setState({
-      layout: result.shell.layout,
-      views: result.views,
-    });
-    mainBridge.onState((snapshot) => {
-      useShellStore.setState({ layout: snapshot.layout });
-    });
-    mainBridge.onViews((views) => useShellStore.setState({ views }));
-    return;
-  }
   const update = (): void => {
     useShellStore.setState({ layout: localLayout() });
   };

@@ -36,12 +36,9 @@ import {
   APP_SNAPSHOT,
   APP_SYNC,
   CH_BUS,
-  CH_EVENT,
   CH_RESOURCES,
-  CH_STATE,
   CH_URA,
   CH_URA_WATCH,
-  CH_VIEW,
 } from '../shared/channels';
 import { AgentHost } from './agent/agent-host';
 import { ModelConfigStore } from './agent/config-service';
@@ -239,14 +236,10 @@ function applyLayout(): void {
 
 /** Shell 快照唯一广播出口：主窗口 + 系统视图（助手 / overlay）。 */
 function broadcastState(): void {
-  const snapshot = buildShellSnapshot();
-  broadcastToWindows(CH_STATE, snapshot);
-  viewHost?.broadcastToSystemViews(CH_STATE, snapshot);
   publishAppSnapshot();
 }
 
 function broadcastViews(): void {
-  broadcastToWindows(CH_VIEW, viewHost?.list() ?? []);
   publishAppSnapshot();
 }
 
@@ -542,8 +535,6 @@ app.whenReady().then(async () => {
       registry: uraRuntime.host,
       getBrowserAutomation: () => browserAutomation,
       sendEvent: (frame) => {
-        broadcastToWindows(CH_EVENT, frame);
-        viewHost?.broadcastToSystemViews(CH_EVENT, frame);
         const appEvent = {
           scope: 'session' as const,
           epoch: appHost?.epochs.session ?? 0,

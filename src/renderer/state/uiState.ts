@@ -76,12 +76,6 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   init: async () => {
     if (get().hydrated) return;
-    if (mainBridge) {
-      const result = await mainBridge.sync();
-      set({ ...merge(result.shell.ui), hydrated: true });
-      mainBridge.onState((snapshot) => set(merge(snapshot.ui)));
-      return;
-    }
     const remote = await agentAPI.uiState.get();
     set({ ...merge(remote), hydrated: true });
     agentAPI.uiState.onChanged((state) => set(merge(state)));

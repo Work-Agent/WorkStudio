@@ -12,18 +12,14 @@ import {
   APP_SYNC,
   CH_BUS,
   CH_CMD,
-  CH_EVENT,
   CH_INTERACTION,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
   CH_RESOURCES,
   CH_SHELL,
-  CH_STATE,
-  CH_SYNC,
   CH_UI,
   CH_URA,
   CH_URA_WATCH,
-  CH_VIEW,
 } from '../shared/channels';
 import type { AppCommand, AppEvent, AppSnapshot } from '../shared/app';
 import type {
@@ -33,10 +29,6 @@ import type {
   PopupSelectEvent,
   UiDialogResponse,
   UiRequest,
-  ViewEntry,
-  ShellSnapshot,
-  WorkSyncResult,
-  PiEventFrame,
 } from '../shared/types';
 
 const api = {
@@ -54,7 +46,6 @@ const api = {
   ): Promise<CommandResponse<T>> => ipcRenderer.invoke(CH_CMD, command, params),
 
   /** 启动 / 重连握手。 */
-  sync: (): Promise<WorkSyncResult> => ipcRenderer.invoke(CH_SYNC),
 
   /** AppSnapshot 握手（新渲染层）。 */
   appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
@@ -72,22 +63,6 @@ const api = {
     return () => ipcRenderer.removeListener(APP_EVENT, listener);
   },
 
-  onEvent: (cb: (frame: PiEventFrame) => void): (() => void) => {
-    const listener = (_e: unknown, frame: PiEventFrame): void => cb(frame);
-    ipcRenderer.on(CH_EVENT, listener);
-    return () => ipcRenderer.removeListener(CH_EVENT, listener);
-  },
-  onState: (cb: (snapshot: ShellSnapshot) => void): (() => void) => {
-    const listener = (_e: unknown, snapshot: ShellSnapshot): void =>
-      cb(snapshot);
-    ipcRenderer.on(CH_STATE, listener);
-    return () => ipcRenderer.removeListener(CH_STATE, listener);
-  },
-  onViews: (cb: (views: ViewEntry[]) => void): (() => void) => {
-    const listener = (_e: unknown, views: ViewEntry[]): void => cb(views);
-    ipcRenderer.on(CH_VIEW, listener);
-    return () => ipcRenderer.removeListener(CH_VIEW, listener);
-  },
   /** 订阅一个资源（传空取消）；变更经 onUra 推送。 */
   watchUra: (ref?: string): Promise<{ ref: string } | null> =>
     ipcRenderer.invoke(CH_URA_WATCH, ref ?? ''),

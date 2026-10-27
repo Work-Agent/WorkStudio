@@ -3,7 +3,7 @@
  *
  * 存储：<agentDir>/ws/<wsId>/ui-state.json（按工作区隔离）。
  * 写策略：内存缓存 + 标脏 + 500ms 防抖 + 退出强制 flush；原子写（tmp → rename）。
- * 广播：ws:state 全量 Shell 快照（布局由 LayoutEngine 计算，见 views）。
+ * 广播：AppSnapshot 中的 ui / layout 切片。
  * 主题：本服务是主题真相源，启动 / 切换 / 工作区挂载时收敛 nativeTheme + WCO 覆盖层。
  */
 import { app, BrowserWindow, nativeTheme } from 'electron';
@@ -116,14 +116,8 @@ export class UiStateService {
     const snapshot = this.shellSnapshot
       ? this.shellSnapshot()
       : { ui: this.state };
-    // 统一出口：L3 注入的广播器覆盖「窗口 + 系统视图」；缺省仅主窗口。
-    if (this.stateBroadcaster) {
-      this.stateBroadcaster(snapshot);
-      return;
-    }
-    const win = this.getWin();
-    if (!win || win.isDestroyed()) return;
-    win.webContents.send('ws:state', snapshot);
+    // 统一出口：L3 注入的广播器覆盖「窗口 + 系统视图」。
+    this.stateBroadcaster?.(snapshot);
   }
 
   // ─── 主题收敛 ───────────────────────────────────────────

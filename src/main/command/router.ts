@@ -26,10 +26,9 @@ import type {
   CommandResponse,
   ShellSnapshot,
   StorageView,
-  WorkSyncResult,
   WorkspaceInfo,
 } from '../../shared/types';
-import { CH_CMD, CH_EXT, CH_INTERACTION, CH_SYNC } from '../../shared/channels';
+import { CH_CMD, CH_EXT, CH_INTERACTION } from '../../shared/channels';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
 import type { SessionAdapter } from '../app/session-adapter';
@@ -128,16 +127,6 @@ export function registerRouter(deps: RouterDeps): void {
       return invoke(deps, command, (params ?? {}) as Record<string, unknown>);
     },
   );
-
-  ipcMain.handle(CH_SYNC, (): WorkSyncResult => {
-    return {
-      agent: deps.agent.getSnapshot(),
-      seq: deps.agent.currentSeq,
-      shell: deps.shellSnapshot(),
-      views: deps.viewHost.list(),
-      plugins: deps.registry.pluginInfoList(),
-    };
-  });
 
   // 插件页数据面：app:* 前缀（复用同一实现，映射见 invokeExt）。
   ipcMain.handle(

@@ -2,7 +2,7 @@
  * AgentUIContext —— pi ExtensionUIContext 的桌面实现（architecture.md §6.2.3）。
  *
  * 对话框：DialogHost 请求/应答（pending 表 + timeout + abort，取消值诚实结算）；
- * 状态族：写入内存快照（ws:sync 重放），TUI 专属能力明确降级（no-op）；
+ * 状态族：写入内存快照（app.sync 重放），TUI 专属能力明确降级（no-op）；
  * 通知/编辑器镜像：注入回调 → AgentHost → ws:ui / 事件。
  */
 import type {

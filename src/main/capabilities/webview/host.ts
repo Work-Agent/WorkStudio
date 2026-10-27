@@ -100,7 +100,7 @@ export interface ViewHostDeps {
   getLayout: () => LayoutSnapshot;
   /** Shell 快照变更（布局 / 主题 / 助手形态）。 */
   broadcastState: () => void;
-  /** 视图集合快照变更（ws:view）。 */
+  /** 视图集合快照变更（app:snapshot）。 */
   broadcastView: () => void;
   /** 视图 → 工作台渲染层的总线转发。 */
   broadcastBus: (viewId: string, message: ViewBusMessageFromView) => void;
@@ -653,7 +653,7 @@ export class ViewHost {
   /**
    * 全局快照广播到系统视图（助手 / overlay）。
    * BrowserWindow 广播只覆盖窗口自身 webContents；系统视图是独立
-   * WebContentsView，必须单独投递（ws:state / ws:event）。
+   * WebContentsView，必须单独投递（app:snapshot / app:event）。
    */
   broadcastToSystemViews(channel: string, payload: unknown): void {
     for (const id of [ASSISTANT_ID, OVERLAY_ID]) {

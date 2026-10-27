@@ -7,22 +7,16 @@ import {
   APP_SNAPSHOT,
   APP_SYNC,
   CH_CMD,
-  CH_EVENT,
   CH_INTERACTION,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
   CH_SHELL,
-  CH_STATE,
-  CH_SYNC,
 } from '../shared/channels';
 import type { AppEvent, AppSnapshot } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
-  PiEventFrame,
-  ShellSnapshot,
   UiDialogResponse,
-  WorkSyncResult,
 } from '../shared/types';
 
 const api = {
@@ -31,7 +25,6 @@ const api = {
     command: string,
     params?: unknown,
   ): Promise<CommandResponse<T>> => ipcRenderer.invoke(CH_CMD, command, params),
-  sync: (): Promise<WorkSyncResult> => ipcRenderer.invoke(CH_SYNC),
   appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void): (() => void) => {
     const listener = (_e: unknown, snapshot: AppSnapshot): void => cb(snapshot);
@@ -42,17 +35,6 @@ const api = {
     const listener = (_e: unknown, event: AppEvent): void => cb(event);
     ipcRenderer.on(APP_EVENT, listener);
     return () => ipcRenderer.removeListener(APP_EVENT, listener);
-  },
-  onEvent: (cb: (frame: PiEventFrame) => void): (() => void) => {
-    const listener = (_e: unknown, frame: PiEventFrame): void => cb(frame);
-    ipcRenderer.on(CH_EVENT, listener);
-    return () => ipcRenderer.removeListener(CH_EVENT, listener);
-  },
-  onState: (cb: (snapshot: ShellSnapshot) => void): (() => void) => {
-    const listener = (_e: unknown, snapshot: ShellSnapshot): void =>
-      cb(snapshot);
-    ipcRenderer.on(CH_STATE, listener);
-    return () => ipcRenderer.removeListener(CH_STATE, listener);
   },
   onInteraction: (cb: (update: { preview: unknown }) => void): (() => void) => {
     const listener = (_e: unknown, update: { preview: unknown }): void =>

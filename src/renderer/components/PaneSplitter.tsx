@@ -8,7 +8,7 @@ const ASSISTANT_SURFACE = 'bg-zinc-50 dark:bg-[#202124]';
  *
  * 位置完全来自主进程 layout 矩形（两侧原生视图按 SPLITTER_GAP 让位），本组件不测量容器、
  * 不计算栏宽：按下 → `interaction.begin`，移动 → `interaction.move`（主进程算几何并经
- * ws:state 广播预览），松手 → `interaction.end`（主进程提交 paneWidths）。
+ * app:snapshot 广播预览），松手 → `interaction.end`（主进程提交 paneWidths）。
  *
  * 让位带两侧各取邻栏表面色（中点分开）+ 居中 1px 线：等价于「分隔条压在栏交界上」，
  * 两侧表面各自连续，只剩一条边界线。

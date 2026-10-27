@@ -61,7 +61,7 @@ export interface AgentHostDeps {
   skills: SkillsManager;
   registry: PluginHost;
   getBrowserAutomation: () => BrowserAutomationContract | null;
-  /** 事件帧出口（L3 → ws:event 广播）。 */
+  /** 事件帧出口（L3 → app:event 广播）。 */
   sendEvent: (frame: PiEventFrame) => void;
   /** 每轮结束（L3 广播 documents:changed 等）。 */
   onTurnFinished: () => void;

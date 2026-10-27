@@ -1,7 +1,7 @@
 /**
  * 事件广播（主进程 → 全部渲染窗口）。
  *
- * 通道：ws:event / ws:state / ws:view / ws:ui / ws:interaction:update（见 shared/channels.ts）。
+ * 通道：app:snapshot / app:event / ws:ui / ws:interaction:update（见 shared/channels.ts）。
  */
 import { BrowserWindow } from 'electron';
 

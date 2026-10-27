@@ -1,11 +1,11 @@
 /**
- * EventBridge —— session 事件 → 线格式 → 合帧 → ws:event（architecture.md §5.2）。
+ * EventBridge —— session 事件 → 线格式 → 合帧 → app:event（architecture.md §5.2）。
  *
  * 线格式：pi 事件直接结构化克隆回渲染层，唯一瘦身点是 message_update 的累积快照
  * （partial / message）：delta-only 后帧体积恒定，避免平方放大。
  * 合帧：16ms 冲刷窗口；可合并事件（message_update / tool_execution_update /
  * bash_execution_update）窗口内只保留最新帧；定序事件不合并。
- * 序号：每帧单调递增 seq；渲染层检测缺口 → ws:sync 快照重建。
+ * 序号：每帧单调递增 seq；渲染层检测缺口 → app.sync 快照重建。
  */
 import type {
   AgentSession,
