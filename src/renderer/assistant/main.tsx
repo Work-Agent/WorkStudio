@@ -17,7 +17,7 @@ import {
   Maximize2,
   MessageCirclePlus,
   Info,
-  Command,
+  Terminal,
   Minimize2,
   MoveDiagonal2,
   PanelRight,
@@ -671,7 +671,7 @@ function Assistant() {
               className="p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
               title="命令（/）"
             >
-              <Command className="w-3 h-3" />
+              <Terminal className="w-3 h-3" />
             </button>
 
             {/* 思考档位 */}
