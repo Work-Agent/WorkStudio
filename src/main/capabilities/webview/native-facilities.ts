@@ -13,11 +13,7 @@ import {
   type MenuItemConstructorOptions,
   type WebContents,
 } from 'electron';
-import {
-  CH_POPUP_SELECT,
-  CH_SHELL,
-  CH_LEGACY_SHELL_OPEN_PATH,
-} from '../../../shared/channels';
+import { CH_POPUP_SELECT, CH_SHELL } from '../../../shared/channels';
 import type { PopupMenuItem } from '../../../shared/types';
 import { createLogger } from '../../log';
 
@@ -67,10 +63,6 @@ export class NativeFacilities {
           throw new Error(`Unknown shell command: ${command}`);
       }
     });
-    // 过渡期：旧渲染层的 openPath 通道（新代码一律走 ws:shell）。
-    ipcMain.handle(CH_LEGACY_SHELL_OPEN_PATH, (_e, path: string) =>
-      shell.openPath(path),
-    );
   }
 
   private show(

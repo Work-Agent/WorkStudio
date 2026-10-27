@@ -45,8 +45,3 @@ export const CH_INTERACTION = 'ws:interaction';
 export const CH_CAPTURE = 'ws:capture';
 /** Menu.popup 选中回执（主进程 → 发起窗口）。 */
 export const CH_POPUP_SELECT = 'ws:popup:select';
-
-// ─── 兼容通道（旧渲染层过渡期） ────────────────────────────
-
-/** 旧渲染层 shell 能力（过渡期保留；新代码走 CH_SHELL）。 */
-export const CH_LEGACY_SHELL_OPEN_PATH = 'shell:openPath';
