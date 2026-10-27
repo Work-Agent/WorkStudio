@@ -1,5 +1,5 @@
 /**
- * 工作区管理器（Phase 2）：当前工作区作用域的切换事务。
+ * 工作区管理器：当前工作区作用域的切换事务。
  */
 
 import type { WorkspaceScope } from './workspace-scope';

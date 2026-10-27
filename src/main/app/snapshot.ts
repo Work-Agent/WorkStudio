@@ -1,7 +1,7 @@
 /**
- * AppSnapshot 构建（Phase 1 适配层）。
+ * AppSnapshot 构建。
  *
- * 从现有服务拼出目标快照；后续阶段由 AppScope / WorkspaceScope 直接提供切片。
+ * 从各作用域服务拼出快照。
  */
 
 import { existsSync } from 'node:fs';

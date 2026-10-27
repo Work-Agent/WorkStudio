@@ -1,5 +1,5 @@
 /**
- * ListHost —— 按 ListSnapshot 渲染分组、行与状态（Phase 4）。
+ * ListHost —— 按 ListSnapshot 渲染分组、行与状态。
  *
  * 行模板只消费 ListItem；未知 itemType 回落通用行。
  */

@@ -1,5 +1,5 @@
 /**
- * S2 左栏 Sidebar（Phase 4）—— 列表宿主。
+ * S2 左栏 Sidebar —— 列表宿主。
  *
  * 结构由主进程 ListService 给出；渲染层只按 sidebarView 过滤 ListSnapshot，
  * 不再写死 docs / web / 临时网页分组。

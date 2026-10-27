@@ -393,7 +393,7 @@ function registerShortcuts(): void {
   });
 }
 
-// ─── App 作用域 IPC（Phase 1） ─────────────────────────────
+// ─── App 作用域 IPC ───────────────────────────────────────
 
 function registerAppIpc(deps: RouterDeps): void {
   ipcMain.handle(APP_SYNC, (event) => {
@@ -588,6 +588,7 @@ app.whenReady().then(async () => {
             }),
           );
           appHost?.bumpWorkspace();
+          appHost?.bumpSession();
           broadcastState();
           broadcastViews();
         } else {

@@ -665,13 +665,6 @@ export class ViewHost {
   broadcastToSystemViews(channel: string, payload: unknown): void {
     for (const id of [ASSISTANT_ID, OVERLAY_ID]) {
       const wc = this.records.get(id)?.view?.webContents;
-      console.log(
-        '[views] sys-broadcast',
-        channel,
-        id,
-        Boolean(wc),
-        wc ? wc.isDestroyed() : 'n/a',
-      );
       if (wc && !wc.isDestroyed()) wc.send(channel, payload);
     }
   }

@@ -41,7 +41,7 @@ export function registerViewAction(action: ViewAction): void {
   uraRegistry.registerViewAction(action);
 }
 
-/** 侧栏列表：定义 + 工作区 provider（Phase 4 扩展面）。 */
+/** 侧栏列表：定义 + 工作区 provider。 */
 export function registerList(input: {
   definition: ListDefinition;
   provider: ListProvider;

@@ -398,6 +398,8 @@ interface ListDefinition {
   grouping?: 'flat' | 'domain' | 'custom';
 }
 
+type ListSection = 'resources' | 'plugins' | 'settings';
+
 interface ListFieldSpec {
   key: string; // title / subtitle / time / badge / meta.<key>
   label?: string;
@@ -433,6 +435,7 @@ interface ListItem {
 interface ListGroup {
   id: string;
   definitionId: string;
+  section: ListSection;
   label: string;
   icon?: string;
   order?: number;
@@ -585,7 +588,7 @@ AppHost.switchWorkspace(next)
   3. 注册并加载 next workspace
   4. 创建 WorkspaceScope
   5. 重建 pi runtime（workspace cwd / 工作区私有资源根）
-  6. workspaceEpoch++ → 广播 AppSnapshot
+  6. workspaceEpoch++ / sessionEpoch++ → 广播 AppSnapshot
 ```
 
 - 工作区列表留在 AppScope；只换 `activeWorkspace` 与 `workspace` 切片。
@@ -1098,7 +1101,7 @@ harness 是自持能力层，也是内置的 Pi Extension：提示、技能、�
 
 Sidebar 只做三件事：
 
-1. 按 `sidebarView` 选择列表 id；
+1. 按 `sidebarView` 选择列表 `section`；
 2. 把 `ListSnapshot` 交给 `ListHost`；
 3. 把行点击 / 动作转成 `AppCommand`。
 
