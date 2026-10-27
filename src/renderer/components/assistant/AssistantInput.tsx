@@ -18,7 +18,7 @@ import {
   Trash,
   TriangleAlert,
 } from 'lucide-react';
-import { useAgentConfigStore } from '../../state/agentConfig';
+import { useAppStore } from '../../state/app';
 import { commandStore } from '../../state/commands';
 import { useConversationStore, type QueueMode } from '../../state/conversation';
 import { useInputStore } from '../../state/input';
@@ -55,7 +55,7 @@ export function AssistantInput() {
   const submit = useInputStore((s) => s.submit);
 
   // ── 派生（会话域 / 配置域 store）────────────────────────────
-  const status = useAgentConfigStore((s) => s.status);
+  const status = useAppStore((s) => s.status);
   const activePath = useUiStore((s) => s.activePath);
   const expanded = useUiStore((s) => s.inputExpanded);
   const streaming = useConversationStore((s) =>

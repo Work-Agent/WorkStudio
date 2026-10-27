@@ -6,7 +6,7 @@
  */
 
 import type { AppEvent, AppSnapshot } from '../../shared/app';
-import { toAgentStatus, useAgentConfigStore } from './agentConfig';
+import { toAgentStatus, useAppStore } from './app';
 import { useUiStore } from './uiState';
 import { useWorkspaceStore } from './workspace';
 
@@ -60,7 +60,7 @@ function applySnapshot(snapshot: AppSnapshot): void {
     groups: snapshot.workspace.lists.groups,
     loading: false,
   });
-  useAgentConfigStore.setState({
+  useAppStore.setState({
     status: snapshot.session.snapshot
       ? toAgentStatus(snapshot.session.snapshot)
       : { configured: false },

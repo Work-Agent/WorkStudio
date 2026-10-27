@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageCirclePlus, PictureInPicture2, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { popupMenu } from '../../api/runtime';
-import { useAgentConfigStore } from '../../state/agentConfig';
+import { useAppStore } from '../../state/app';
 import { useConversationStore } from '../../state/conversation';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { AssistantInput } from './AssistantInput';
@@ -30,7 +30,7 @@ export function AssistantPanel() {
   const messages = useConversationStore(
     (s) => s.messagesBySession[activePath ?? '__new__'] ?? [],
   );
-  const configured = useAgentConfigStore((s) => s.status.configured);
+  const configured = useAppStore((s) => s.status.configured);
 
   // 消息变化自动滚动（距底时）
   const prevLenRef = useRef(0);

@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { useAgentConfigStore } from '../../state/agentConfig';
+import { useAppStore } from '../../state/app';
 import { OPEN_MODEL_SWITCHER_EVT } from '../../state/commands';
 import { FloatingPanel, useDropdownPosition } from '../FloatingMenu';
 
@@ -14,8 +14,8 @@ export function ModelSwitcher() {
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const floatRef = useRef<HTMLDivElement | null>(null);
 
-  const status = useAgentConfigStore((s) => s.status);
-  const models = useAgentConfigStore((s) => s.models);
+  const status = useAppStore((s) => s.status);
+  const models = useAppStore((s) => s.models);
 
   useEffect(() => {
     const onCmdOpen = (): void => setOpen(true);
@@ -67,7 +67,7 @@ export function ModelSwitcher() {
               key={`${m.provider}/${m.modelId}`}
               onClick={() => {
                 setOpen(false);
-                void useAgentConfigStore
+                void useAppStore
                   .getState()
                   .configure({ provider: m.provider, modelId: m.modelId });
               }}

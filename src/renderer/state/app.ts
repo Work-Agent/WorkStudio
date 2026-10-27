@@ -44,7 +44,7 @@ interface AgentConfigState {
   configure: (input: AgentConfigureInput) => Promise<void>;
 }
 
-export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
+export const useAppStore = create<AgentConfigState>()((set, get) => ({
   /** 未配置态（不携带任何伪造的 provider/model 值）。 */
   status: { configured: false },
   models: [],

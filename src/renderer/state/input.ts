@@ -9,7 +9,7 @@
  *  状态归属：草稿跨组件投影（输入区 / 编辑器镜像 / 主进程扩展写回），面板关闭重开不丢。
  */
 import { create } from 'zustand';
-import { useAgentConfigStore } from './agentConfig';
+import { useAppStore } from './app';
 import { commandStore, matchCommands } from './commands';
 import { useConversationStore } from './conversation';
 import { useUiStore } from './uiState';
@@ -122,7 +122,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
    */
   submit: (modifier) => {
     const full = get().text.trim();
-    if (!full || !useAgentConfigStore.getState().status.configured) return;
+    if (!full || !useAppStore.getState().status.configured) return;
     // 先求值再清空（同步；镜像立即推空——提交即推语义）
     set({ text: '', completionOpen: false, acIdx: 0, acItems: EMPTY_AC });
 

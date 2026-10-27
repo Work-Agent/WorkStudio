@@ -9,15 +9,15 @@ import { useEffect } from 'react';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { electronAPI, popupMenu } from '../../api/runtime';
-import { useAgentConfigStore } from '../../state/agentConfig';
+import { useAppStore } from '../../state/app';
 import { runViewCommand } from '../../state/workspace';
 
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
 const MENU_SOURCE = 'workspace';
 
 export function WorkspaceSelect() {
-  const workspacePath = useAgentConfigStore((s) => s.status.workspacePath);
-  const workspaces = useAgentConfigStore((s) => s.workspaces);
+  const workspacePath = useAppStore((s) => s.status.workspacePath);
+  const workspaces = useAppStore((s) => s.workspaces);
   const workspaceName = workspacePath
     ? (workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? workspacePath)
     : '选择工作区';
@@ -30,12 +30,12 @@ export function WorkspaceSelect() {
           .then((r) => (r.ok ? r.data : null))
       : null;
     if (dir) {
-      await useAgentConfigStore.getState().switchWorkspace(dir);
+      await useAppStore.getState().switchWorkspace(dir);
     }
   };
 
   const openMenu = (): void => {
-    void useAgentConfigStore.getState().refreshWorkspaces();
+    void useAppStore.getState().refreshWorkspaces();
     const items: PopupMenuItem[] = [];
     const current = workspacePath;
     for (const ws of workspaces.slice(0, 8)) {
@@ -62,16 +62,14 @@ export function WorkspaceSelect() {
       if (e.source !== MENU_SOURCE) return;
       if (e.actionId === 'pick') void pickWorkspace();
       else if (e.actionId === 'reveal') {
-        const path = useAgentConfigStore.getState().status.workspacePath;
+        const path = useAppStore.getState().status.workspacePath;
         if (path) void electronAPI.openPath(path);
       } else if (e.actionId === 'manage') {
         runViewCommand('views.open', {
           input: { type: 'settings', pageId: 'workspaces' },
         });
       } else if (e.actionId.startsWith('ws:')) {
-        void useAgentConfigStore
-          .getState()
-          .switchWorkspace(e.actionId.slice(3));
+        void useAppStore.getState().switchWorkspace(e.actionId.slice(3));
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

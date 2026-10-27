@@ -5,7 +5,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { bindTitlebarInsets } from './components/titlebar/windowControls';
-import { useAgentConfigStore } from './state/agentConfig';
+import { useAppStore } from './state/app';
 import { initAppScope } from './state/appScope';
 import { bindPiEvents, useConversationStore } from './state/conversation';
 import './index.css';
@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
     bindPiEvents();
     await Promise.all([
       useConversationStore.getState().init(),
-      useAgentConfigStore.getState().init(),
+      useAppStore.getState().init(),
     ]);
     bindTitlebarInsets();
     createRoot(document.getElementById('root')!).render(

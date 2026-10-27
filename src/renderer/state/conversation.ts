@@ -12,7 +12,7 @@
  */
 import { create } from 'zustand';
 import type { PiEventFrame, SessionMeta } from '../../shared/types';
-import { useAgentConfigStore } from './agentConfig';
+import { useAppStore } from './app';
 import { eventBus } from './eventBus';
 import { createMachine, type Machine } from './machine';
 import {
@@ -723,7 +723,7 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
     // ── workbench 内部事件族 ──
     if (ev.type === 'agent_status_changed') {
-      useAgentConfigStore.getState().applyStatus(ev.status);
+      useAppStore.getState().applyStatus(ev.status);
       return;
     }
     if (ev.type === 'session_created') {

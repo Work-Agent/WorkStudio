@@ -1,13 +1,13 @@
 /** 技能选择器：激活技能注入系统提示（随 prompt 提交）。 */
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Zap } from 'lucide-react';
-import { useAgentConfigStore } from '../../state/agentConfig';
+import { useAppStore } from '../../state/app';
 import { setUiState, useUiStore } from '../../state/uiState';
 
 export function SkillSelector() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const skills = useAgentConfigStore((s) => s.skills);
+  const skills = useAppStore((s) => s.skills);
   const selected = useUiStore((s) => s.selectedSkills);
 
   useEffect(() => {
