@@ -76,6 +76,7 @@ import { buildAppSnapshot } from './app/snapshot';
 import { WorkspaceManager } from './app/workspace-manager';
 import { WorkspaceScope } from './app/workspace-scope';
 import { SessionAdapter } from './app/session-adapter';
+import { ListService } from './app/lists/list-service';
 import { computeLayout } from '../shared/layout-engine';
 import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
@@ -621,6 +622,13 @@ app.whenReady().then(async () => {
     });
   }
 
+  const listService = new ListService({
+    collections: uraRuntime!.collections,
+    agent: agent!,
+    plugins: uraRuntime!.host,
+    viewHost: viewHost!,
+  });
+
   const sessionAdapter = new SessionAdapter({
     agent: agent!,
     skills,
@@ -635,6 +643,7 @@ app.whenReady().then(async () => {
   const routerDeps: RouterDeps = {
     agent,
     sessions: sessionAdapter,
+    lists: listService,
     viewHost,
     uiState,
     ura: uraRuntime.ura,
@@ -729,6 +738,7 @@ app.whenReady().then(async () => {
         {
           agent: agent!,
           sessions: sessionAdapter,
+          lists: listService,
           viewHost: viewHost!,
           uiState,
           registry: uraRuntime!.host,

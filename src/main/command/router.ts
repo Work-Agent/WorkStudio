@@ -33,6 +33,7 @@ import { CH_CMD, CH_EXT, CH_INTERACTION, CH_SYNC } from '../../shared/channels';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
 import type { SessionAdapter } from '../app/session-adapter';
+import type { ListService } from '../app/lists/list-service';
 import type {
   ModelConfigStore,
   SettingsService,
@@ -64,6 +65,7 @@ const log = createLogger('command');
 export interface RouterDeps {
   agent: AgentHost;
   sessions: SessionAdapter;
+  lists: ListService;
   viewHost: ViewHost;
   uiState: UiStateService;
   ura: Ura;
@@ -769,6 +771,9 @@ export async function invoke(
       case 'ui.respond':
         d.agent.handleDialogResponse(p.response as never);
         return ok(null);
+
+      case 'lists.snapshot':
+        return ok(await d.lists.snapshot(0));
 
       default:
         return err('unknown_command', `Unknown command: ${command}`);

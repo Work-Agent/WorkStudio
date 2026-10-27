@@ -22,6 +22,7 @@ import {
 } from '../agent/workspace';
 import type { ViewHost } from '../capabilities/webview/host';
 import type { SessionAdapter } from './session-adapter';
+import type { ListService } from './lists/list-service';
 import type { PluginService } from '../plugins/service';
 import type { PluginHost } from '../plugins/host';
 import type { UiStateService } from '../state/ui-state';
@@ -29,6 +30,7 @@ import type { UiStateService } from '../state/ui-state';
 export interface SnapshotDeps {
   agent: AgentHost;
   sessions: SessionAdapter;
+  lists: ListService;
   viewHost: ViewHost;
   uiState: UiStateService;
   registry: PluginHost;
@@ -104,7 +106,7 @@ export async function buildAppSnapshot(
         defaultSkills: ui.selectedSkills,
       },
     },
-    lists: { workspaceEpoch: epochs.workspace, groups: [] },
+    lists: await deps.lists.snapshot(epochs.workspace),
     views: deps.viewHost.list(),
     sessions,
   };
