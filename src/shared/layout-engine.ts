@@ -87,7 +87,7 @@ export function computeLayout(input: LayoutInput): LayoutSnapshot {
     y: workbench.y,
     width: Math.max(
       0,
-      workbench.width - leftWidth - rightDockWidth - SPLITTER_GAP - rightGap,
+      workbench.width - leftWidth - rightDockWidth - SPLITTER_GAP,
     ),
     height: workbench.height,
   };

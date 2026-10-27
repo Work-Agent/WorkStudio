@@ -168,7 +168,12 @@ export class ViewHost {
       this.materialize(activeRecord);
       this.applyLayout();
     }
-    if (this.entries().length === 0) this.openWelcome();
+    if (this.entries().length === 0) {
+      this.openWelcome();
+    } else {
+      this.ensureActive();
+      this.applyLayout();
+    }
   }
 
   /** 欢迎页：新增按钮与空集合的默认页。 */
@@ -419,17 +424,19 @@ export class ViewHost {
     const record = this.records.get(id);
     if (!record || record.role !== 'tab') return;
     const wasActive = this.activeKey === record.tabKey;
+    // 邻居必须在删除前计算：删除后 neighborOf 找不到锚点。
+    const next = wasActive ? this.neighborOf(record.tabKey) : null;
     this.destroyView(record);
     this.records.delete(id);
     this.order = this.order.filter((k) => k !== record.tabKey);
     if (wasActive) {
-      const next = this.neighborOf(record.tabKey);
       this.activeKey = next;
       if (next) {
         const nextRecord = this.recordByKey(next);
         if (nextRecord && !nextRecord.view) this.materialize(nextRecord);
       }
     }
+    if (this.entries().length > 0) this.ensureActive();
     this.persistCollection();
     this.applyLayout();
     this.broadcastViews();
@@ -443,6 +450,7 @@ export class ViewHost {
       if (entry.tabKey === anchor.tabKey || entry.pinned) continue;
       this.close(entry.id);
     }
+    this.ensureActive();
   }
 
   closeToLeft(anchorId: string): void {
@@ -452,6 +460,7 @@ export class ViewHost {
     for (const entry of list.slice(0, idx)) {
       if (!entry.pinned) this.close(entry.id);
     }
+    this.ensureActive();
   }
 
   closeToRight(anchorId: string): void {
@@ -461,12 +470,14 @@ export class ViewHost {
     for (const entry of list.slice(idx + 1)) {
       if (!entry.pinned) this.close(entry.id);
     }
+    this.ensureActive();
   }
 
   closeAll(): void {
     for (const entry of this.entries()) {
       if (!entry.pinned) this.close(entry.id);
     }
+    this.ensureActive();
   }
 
   /** 工作区切换：销毁全部标签视图，保留系统视图（助手 / 浮层 / 捕获层）。 */
@@ -1319,6 +1330,19 @@ export class ViewHost {
 
   private keyToId(tabKey: string): string | null {
     return this.recordByKey(tabKey)?.id ?? null;
+  }
+
+  /** 任何集合变化后都保证有一个可用激活项（没有则回退到首个 / 欢迎页）。 */
+  private ensureActive(): void {
+    if (this.activeKey && this.recordByKey(this.activeKey)) return;
+    const entries = this.entries();
+    const next = entries.find((entry) => entry.pinned) ?? entries[0];
+    if (!next) {
+      this.activeKey = null;
+      return;
+    }
+    this.activeKey = next.tabKey;
+    if (!next.view) this.materialize(next);
   }
 
   private neighborOf(tabKey: string): string | null {
