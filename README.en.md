@@ -6,9 +6,9 @@
 
 [简体中文](./README.md) | **English**
 
-> This document follows one complete line of thought: why working material scatters across tools, how three claims respond, how the domain model, product shape and overall architecture follow, and finally the extension surfaces, state and communication, and development workflow. It answers why WorkStudio is what it is; implementation details live in the code.
+> This document covers the requirements and key modules: why working material scatters across tools, how three claims respond, how the domain model, product shape and overall architecture follow, and finally the extension surfaces, state and communication, and development workflow. It answers why WorkStudio is what it is and how its key modules are designed; implementation details live in the code.
 >
-> The detailed design is in [`docs/architecture.md`](./docs/architecture.md), layer by layer: renderer · contract bridge · assembly · domain services · capability layer · extension surfaces. This document argues the thinking and trade-offs; that one specifies structure, contracts and invariants; the two do not overlap.
+> The systematic design is in [`docs/architecture.md`](./docs/architecture.md): scopes · data models · contracts · AppHost · lists / views / resources / capabilities · extensions · acceptance. This document covers requirements and key modules; that one is the systematic design; the two do not overlap.
 
 ## 1. Where we are
 
@@ -133,43 +133,34 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 ## 4. Overall architecture
 
 ```
-┌─ Renderer ────────────────────────────────────────────────────┐
-│ Shell DOM: title bar · sidebar · tab bar · empty state         │
-│ System pages: assistant · overlay · pointer capture layer      │
-└───────────────────────┬───────────────────────────────────────┘
-                        │ preload contract bridge: whitelisted commands / snapshots / events
-┌─ Main process ─────────▼──────────────────────────────────────┐
-│ Assembly: lifecycle · windows · protocols · command router · domain wiring │
-├───────────────────────────────────────────────────────────────┤
-│ Domain services: view host · state tree · event bridge · interaction control │
-├───────────────────────────────────────────────────────────────┤
-│ Capability layer                                              │
-│ Surfaces                       │  Agent sidecar                │
-│ ├─ Plugins   installable:      │  ├─ Runtime   turns·sessions·  │
-│ │            segments + pages  │  │            events           │
-│ ├─ Settings  in-version:       │  ├─ Wrapping  system prompt·   │
-│ │            page outlet only  │  │            AGENTS·map·      │
-│ └─ Browser   built in:         │  │            skills           │
-│              live view + auto  │  └─ Tools     resource + action│
-├───────────────────────────────┴───────────────────────────────┤
-│ Resource pipeline URA  transport → codec → store → consumer    │
-│ bindings · write sessions · page sessions · collections ·      │
-│ actions · derived data                                         │
-└──────────────────────────┬────────────────────────────────────┘
-                           │ official extension points
-┌─ pi SDK ─────────────────▼────────────────────────────────────┐
-│ Model API · turn loop · session persistence · resource loading · extension runner │
-└───────────────────────────────────────────────────────────────┘
+┌─ Renderer ──────────────────────────────────────────────────────┐
+│ Shell DOM · ListHost · system pages (assistant / overlay / capture) │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ AppSnapshot / AppCommand / AppEvent
+┌─ Main AppHost ────────────▼─────────────────────────────────────┐
+│ AppScope (app level)                                            │
+│ models · credentials · plugins · Pi packages · global settings   │
+│ system views · workspace list · active workspace                 │
+├─────────────────────────────────────────────────────────────────┤
+│ WorkspaceManager → WorkspaceScope (workspace level)              │
+│ URA · lists · tab views · UI scene · page/write sessions · index │
+├─────────────────────────────────────────────────────────────────┤
+│ SessionAdapter (session level)                                  │
+│ current pi session · event bridge · extension UI context         │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ official extension points
+                         pi SDK
 ```
 
-- **Views only consume contracts**: page resolution, page sessions, change subscriptions, commands; they never touch formats, versions or write queues.
-- **Main is layered**: assembly is the composition root; domain services hold the state and ports shared by several blocks; the capability layer holds two blocks and one pipeline.
-- **The capability layer is two blocks**: surfaces are listed by delivery (plugins · settings · browser); the sidecar is organised vertically by session (runtime · wrapping · tools). The blocks do not depend on each other; they share only domain services and the pipeline.
-- **The sidecar is a secondary view**: a rail attached to the right of the workspace, not a second primary surface; closing the sidecar changes neither surfaces nor pipeline, and surfaces do not change because the sidecar exists.
-- **Sessions belong to the sidecar**: the session host is the sidecar's outward port; regenerating a session replaces the sidecar as a whole and does not touch surfaces or the pipeline.
-- **Surfaces only deliver, the sidecar only consumes**: plugins register pipeline segments and pages, settings only yield pages, the browser yields a live view plus automation; the only channel through which surfaces inject capability into the sidecar is the action-tool contract (plugins cannot register tools).
-- **There is one kind of extension**: plugins are the only installable surface; settings and browser are the other two framework built-ins and take no part in installation or versioning.
-- **Dependencies are one-way**: the renderer depends only on the contract bridge; the assembly layer depends on domain services and the capability layer; the capability layer depends on domain services and the pi SDK; extensions only fill capability-layer registration points, and the pi SDK knows nothing about WorkStudio.
+- **App owns two levels**: AppScope holds app-level state and system views; the workspace list and switching also live in App. WorkspaceScope is all data of the active workspace and is replaced wholesale on switch.
+- **Session is delegated to pi**: switching a session calls pi; WorkStudio only rebinds the event bridge and UI context, with no second session state machine.
+- **List structure lives in App**: groups, row templates, fields and actions are defined by App; data is resolved in the workspace; the renderer uses ListHost against the spec.
+- **Switch granularity**: extensions are installed globally and enabled per workspace; skills are installed globally, defaulted per workspace, and activated per session.
+- **Resources / pages / skills load by level**: App loads global resources and plugins, the workspace loads workspace resources, the session only activates; all resource directories live under the app-private data directory.
+- **Independent from the pi CLI**: pi runs only as a library; neither `~/.pi` nor the real workspace `.pi` is read.
+- **One channel**: the renderer only consumes AppSnapshot and only sends AppCommand; events carry scope / epoch.
+- **One-way dependencies**: the renderer depends only on the contract bridge; plugins go through the registration surface; the pi SDK knows nothing about WorkStudio.
+- **The capability layer keeps two blocks**: surfaces (plugins · settings · browser) sit side by side by delivery; the sidecar is organised vertically by session. Both share domain services and the pipeline.
 
 ## 5. Extension surfaces
 
@@ -344,31 +335,40 @@ Key decisions:
 - **Reading and writing share one facade**: AI tools, pages and commands all go through the same implementation; writes pass draft → commit → sharded queue, with later writes overwriting earlier ones.
 - **Failure degrades to raw**: a missing link returns the raw content plus a fallback page, and the degradation point is recorded.
 
-#### Packages, sources and the install catalog
+#### Plugin packages, zip, and the install catalog
 
-A plugin is an npm package: the `workstudio` field in `package.json` declares id / label / icon / page, and `exports["./ura"]` points to the ESM registration entry; on load the entry is imported, module evaluation registers, and no extra manifest is needed to describe contributions.
+A plugin is a self-contained directory: the `workstudio` field in `package.json` declares id / label / icon / page / settings / apiVersion, and `exports["./ura"]` points to the ESM registration entry; on load the entry is imported, module evaluation registers. Plugins ship as zip files, one plugin per zip.
 
-| Source | Syntax                        | Where it lands         |
-| ------ | ----------------------------- | ---------------------- |
-| npm    | `npm:@scope/pkg@1.2.3`        | App-owned plugin install dir |
-| git    | `git:github.com/user/repo@v1` | Same (fetched by npm)  |
-| Local  | Absolute path / `./plugins/csv` | Loaded in place, not copied |
+```text
+plugin-docx.zip
+├── package.json
+├── dist/ura.js
+├── dist/page/...
+└── node_modules/        # optional; the plugin bundles its own dependencies
+```
+
+| Source | Syntax                              | Where it lands                      |
+| ------ | ----------------------------------- | ----------------------------------- |
+| zip    | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
+| Local  | Absolute path / `./plugins/csv`     | Loaded in place, not copied         |
 
 **The install catalog is a Markdown file**, one source per line; the “Installable” section of Settings → Plugins renders this file directly:
 
-```text
+```markdown
 # Installable plugins
 
-- npm:@workstudio/plugin-docx@0.3.1   Word documents
-- npm:@workstudio/plugin-xlsx@0.2.0   Spreadsheets
-- git:github.com/acme/plugin-mail@v1  Mail sources
-- ./plugins/csv                       Local development
+- [Word documents](https://github.com/acme/plugin-docx/releases/download/v0.3.1/plugin-docx.zip#sha256=9f2c...)
+- [Spreadsheets](https://github.com/acme/plugin-xlsx/releases/download/v0.2.0/plugin-xlsx.zip#sha256=41ab...)
+- ./plugins/csv
 ```
 
-- **The catalog is the single source of truth**: the page keeps no second list; “add source” means appending a line, and editing the file by hand has the same effect.
-- **The catalog sits next to the app**: both the catalog and the install directory live in the application data directory, independent of the workspace; the file is generated on first launch and maintained by the user afterwards.
-- **Installed state is tracked apart**: installed = found in the install directory and registered successfully; uninstalling only removes the install directory content, the catalog entry remains and can be reinstalled.
-- **One assembly pass**: at startup read the catalog → scan → import `./ura` → register → build pages; install / uninstall take effect on restart, with identity deduped by package name or local absolute path.
+- **The catalog is the single source of truth**: the page keeps no second list; adding or removing a source means editing this file.
+- **One plugin directory**: `<appData>/plugins/` holds `registry.md`, `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
+- **Installed state is tracked apart**: installed = found under `installed/` and registered successfully; uninstalling only deletes `installed/<id>`, the catalog entry remains.
+- **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `apiVersion` → atomically replace `installed/<id>`.
+- **Zip is self-contained**: dependencies are bundled into `dist` or shipped inside the zip as `node_modules`; nothing runs npm at install time.
+- **No auto-update**: change the catalog URL / hash and reinstall; updates are never silent.
+- **One assembly pass**: at startup scan local paths and `installed/` → import `./ura` → register → build pages; install / uninstall take effect on restart.
 - **Local sources are not copied**: loaded in place during development, effective after a restart.
 
 ### 5.4 Settings: endpoint only
@@ -385,47 +385,34 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 
 ## 6. State and communication
 
-### 6.1 State tree and scene
+### 6.1 Three levels of state
 
-```
-workspace (aggregate root)
-├─ files / groups          persistent: source is truth, indexes rebuildable
-├─ sessions/<id>           isolated: context · tools · messages · runtime
-├─ scene                   persistent: theme / widths / open-set key / assistant form
-└─ ui                      viewCollection · sidebar / layout · overlays
+| Level | Owns | Lifetime | Persistence |
+| --- | --- | --- | --- |
+| **App** | model catalog, credentials, plugin installs, Pi packages, global settings, system views, workspace list, active workspace | process | `agentDir` / official credential chain |
+| **Workspace** | project settings, URA, lists, tab views, UI scene, page/write sessions, session index, browser policy, derived data | open workspace | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
+| **Session** | pi runtime, messages, turns, queue, context (resource-map version, AGENTS, skill activation) | session | `sessions/*.jsonl` |
 
-Derived: resourceMap · AGENTS projection · structured data · page cache
-External: pi sessions · resource content · plugin catalog
-```
-
-- **One channel**: command → transaction → snapshot / event.
-- **Derived is rebuildable**: deleting the derived layer does not affect the truth, and reads go straight through during rebuild; web snapshots are the exception — they are the product of the moment they were captured, and deleting them means going back to the site.
-- **Sessions are isolated**: session subtrees do not reference each other; regenerating replaces only that subtree.
-- **Context is a projection**: AGENTS.md, the resource map and the tool set are all generated from URA / pi loading, never reading files around the side.
-- **The resource map is the sidecar's data plane**: as a product the sidecar is studio's attached rail; as data it is “the resource map (site → page, groups, schema) + the text outlet”; when the map version changes, the next turn sees it.
+- **Workspace-level data lists are managed by AppHost**: AppHost creates, replaces and disposes them through WorkspaceManager; WorkspaceScope is only the active instance.
+- **Session truth lives in pi**: switching delegates to pi; WorkStudio keeps only the projection, and skill activation is resolved per session context.
+- **Resources, pages and skills are loading modes**: App loads global resources, the workspace loads workspace resources, the session activates; all directories live under the app-private data directory, never `~/.pi` or the real workspace `.pi`.
+- **Switch granularity**: extensions inherit the workspace enable policy when a session is created and are not hot-switched mid-session; skills are activated per session.
+- **Switch semantics**: workspace switch = dispose the old scope + load the new one; session switch = pi switch + event-bridge rebind.
 
 ### 6.2 Communication
 
-| Channel        | Direction          | Semantics                                       |
-| -------------- | ------------------ | ----------------------------------------------- |
-| Commands       | renderer → main    | The only write path: `domain.action` + envelope → `ok/data` or an error |
-| Handshake      | renderer → main    | Subscribe → snapshot → overwrite the local projection |
-| Events         | main → renderer    | Monotonic sequence event frames; high-frequency deltas are coalesced |
-| State / views  | main → renderer    | Shell and view-collection snapshots             |
-| Page data plane | page → main       | Whitelisted commands forwarded to the same implementation |
-| View bus       | bidirectional      | Deliver / ready / dirty / commit / actions / theme |
-| Interaction    | renderer → main    | Drag signals and previews; geometry decided by main |
-| Native facilities | renderer → main | Open path / external link / menu / directory picker |
+| Channel | Direction | Semantics |
+| --- | --- | --- |
+| AppCommand | renderer → main | `scope + domain.action` → `ok/data` or error |
+| AppSnapshot | main → renderer | `app` / `workspaces` / `workspace` / `ui` / `session` + epochs |
+| AppEvent | main → renderer | scope + epoch + seq; high-frequency deltas coalesced |
+| Page data plane | page → main | whitelisted commands forwarded to the same implementation |
+| View bus | bidirectional | deliver / ready / dirty / commit / actions / theme |
 
-```
-commands ──────────────────────────► main
-snapshots / events / state ◄──────── main
-pages ◄── deliver / theme ── main ── ready / dirty / commit ──► pages
-```
-
-- The handshake guarantees “subscribe before snapshot”; gaps are recovered by a fresh handshake, with no incremental replay.
-- Pages hold only a semantic bridge: whitelisted commands + view bus; no Node, no raw IPC.
-- Session-domain commands are bounded by the session; file and view commands belong to the workspace.
+- **Handshake**: `app.sync` returns the full AppSnapshot; subscription precedes the snapshot.
+- **Gaps**: run `app.sync` again; no incremental replay.
+- **Epochs**: workspace / session switches bump epochs; stale events are dropped.
+- **Single writer**: the renderer never mutates main-process state directly; pages have no Node and no raw IPC.
 
 ## 7. Development
 
@@ -474,7 +461,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # renderer (React + Tailwind)
 │   ├── plugins/              # built-in plugins (shipped with the app)
 │   └── shared/               # types and styles shared by main / renderer
-├── docs/                     # architecture design (by layer)
+├── docs/                     # systematic design (architecture)
 ├── index.html                # renderer page template
 ├── electron.vite.config.ts   # build config for the three targets (main / preload / renderer)
 ├── electron-builder.yml      # packaging config (targets, fuses, signing)
