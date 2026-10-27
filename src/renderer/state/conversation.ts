@@ -12,7 +12,6 @@
  */
 import { create } from 'zustand';
 import type { PiEventFrame, SessionMeta } from '../../shared/types';
-import { piAPI } from '../api/bridge';
 import { useAgentConfigStore } from './agentConfig';
 import { eventBus } from './eventBus';
 import { createMachine, type Machine } from './machine';
@@ -25,27 +24,21 @@ import {
 } from './message';
 import { useUiStore, setUiState } from './uiState';
 
-/** 主进程桥（新架构）；存在时全线走 `session.*` 命令，mock 路径仅供独立页面开发。 */
+/** 主进程桥：全线走 `session.*` 命令。 */
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
 type CmdResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-/** 命令调用（新桥 `session.*` / 旧 mock 命令名双轨）。 */
+/** 命令调用。 */
 async function run<T>(
   bridgeCommand: string,
-  legacyCommand: string,
+  _legacyCommand: string,
   params?: unknown,
 ): Promise<CmdResult<T>> {
-  if (mainBridge) {
-    const r = await mainBridge.cmd<T>(bridgeCommand, params);
-    return r.ok
-      ? { ok: true, data: r.data }
-      : { ok: false, error: r.error.message };
-  }
-  const r = await piAPI.cmd.invoke<T>(legacyCommand, params);
+  const r = await mainBridge!.cmd<T>(bridgeCommand, params);
   return r.ok
     ? { ok: true, data: r.data }
-    : { ok: false, error: String(r.error) };
+    : { ok: false, error: r.error.message };
 }
 
 export type Tokens = { input: number; output: number };
@@ -566,60 +559,36 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   },
 
   refreshSessions: async () => {
-    if (mainBridge) {
-      const res = await run<SessionMeta[]>('session.list', 'list_sessions');
-      if (res.ok) set({ sessions: res.data, sessionDomains: {} });
-      return;
-    }
-    const [res, domains] = await Promise.all([
-      piAPI.cmd.invoke<SessionMeta[]>('list_sessions'),
-      piAPI.cmd.invoke<Record<string, string>>('session_domains'),
-    ]);
-    if (res.ok) set({ sessions: res.data });
-    if (domains.ok) set({ sessionDomains: domains.data });
+    const res = await run<SessionMeta[]>('session.list', 'list_sessions');
+    if (res.ok) set({ sessions: res.data, sessionDomains: {} });
   },
 
   loadSession: async (path) => {
     if (loaded.has(path)) return;
     loaded.add(path);
     try {
-      if (mainBridge) {
-        const res = await run<import('../../shared/types').ParsedMessage[]>(
-          'session.getMessages',
-          'switch_session',
-          { path },
-        );
-        if (!res.ok) throw new Error(res.error);
-        const messages = Array.isArray(res.data)
-          ? res.data
-          : ((
-              res.data as unknown as {
-                messages: import('../../shared/types').ParsedMessage[];
-              }
-            ).messages ?? []);
-        set((s) => ({
-          messagesBySession: {
-            ...s.messagesBySession,
-            [path]: parseParsedMessages(messages),
-          },
-          tokensBySession: {
-            ...s.tokensBySession,
-            [path]: s.tokensBySession[path] ?? ZERO_TOKENS,
-          },
-        }));
-        return;
-      }
-      const res = await piAPI.cmd.invoke<{
-        messages: import('../../shared/types').ParsedMessage[];
-        tokens: Tokens;
-      }>('switch_session', { path });
+      const res = await run<import('../../shared/types').ParsedMessage[]>(
+        'session.getMessages',
+        'switch_session',
+        { path },
+      );
       if (!res.ok) throw new Error(res.error);
+      const messages = Array.isArray(res.data)
+        ? res.data
+        : ((
+            res.data as unknown as {
+              messages: import('../../shared/types').ParsedMessage[];
+            }
+          ).messages ?? []);
       set((s) => ({
         messagesBySession: {
           ...s.messagesBySession,
-          [path]: parseParsedMessages(res.data.messages),
+          [path]: parseParsedMessages(messages),
         },
-        tokensBySession: { ...s.tokensBySession, [path]: res.data.tokens },
+        tokensBySession: {
+          ...s.tokensBySession,
+          [path]: s.tokensBySession[path] ?? ZERO_TOKENS,
+        },
       }));
     } catch (e) {
       loaded.delete(path);
@@ -799,11 +768,9 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
     if (ev.type === 'session_rebound') {
       set({ piSessionFile: ev.sessionFile || null });
-      const sync = mainBridge
-        ? mainBridge
-            .appSync()
-            .then((s) => s.session.snapshot?.thinkingLevel ?? null)
-        : piAPI.sync().then((s) => s.state.thinkingLevel);
+      const sync = mainBridge!
+        .appSync()
+        .then((s) => s.session.snapshot?.thinkingLevel ?? null);
       void sync
         .then((level) => set({ piThinkingLevel: level }))
         .catch(() => {
@@ -920,22 +887,6 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
         fsm?.send('DONE');
         flashSettled(targetPath);
         void get().refreshSessions();
-        if (!mainBridge) {
-          void piAPI.cmd
-            .invoke<{ tokens: Tokens }>('get_session_stats')
-            .then((res) => {
-              if (res.ok)
-                set((s) => ({
-                  tokensBySession: {
-                    ...s.tokensBySession,
-                    [targetPath]: res.data.tokens,
-                  },
-                }));
-            })
-            .catch(() => {
-              /* ignore */
-            });
-        }
         break;
       }
       default:
@@ -945,26 +896,16 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
   /** 启动初始化：握手 + 会话列表 + 恢复上次现场。 */
   init: async () => {
-    if (mainBridge) {
-      const sync = await mainBridge.appSync();
-      const agent = sync.session.snapshot;
-      lastSeq = sync.seq;
-      set({
-        piThinkingLevel: agent?.thinkingLevel ?? null,
-        piSessionFile: agent?.sessionFile ?? null,
-      });
-      if (agent?.isStreaming) {
-        streamingKeys.add(agent.sessionFile ?? '__new__');
-        set({ streamingSessions: new Set(streamingKeys) });
-      }
-    } else {
-      const sync = await piAPI.sync();
-      lastSeq = sync.seq;
-      set({ piThinkingLevel: sync.state.thinkingLevel });
-      if (sync.state.isStreaming) {
-        streamingKeys.add(get().piSessionFile ?? '__new__');
-        set({ streamingSessions: new Set(streamingKeys) });
-      }
+    const sync = await mainBridge!.appSync();
+    const agent = sync.session.snapshot;
+    lastSeq = sync.seq;
+    set({
+      piThinkingLevel: agent?.thinkingLevel ?? null,
+      piSessionFile: agent?.sessionFile ?? null,
+    });
+    if (agent?.isStreaming) {
+      streamingKeys.add(agent.sessionFile ?? '__new__');
+      set({ streamingSessions: new Set(streamingKeys) });
     }
     await get().refreshSessions();
     const list = get().sessions;
@@ -992,17 +933,11 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
 // 全局事件监听（main.tsx init 时挂一次）
 export function bindPiEvents(): void {
-  if (mainBridge) {
-    mainBridge.onAppEvent((event) => {
-      if (event.scope !== 'session') return;
-      useConversationStore.getState().handlePiFrame({
-        seq: event.seq,
-        event: event.event as never,
-      });
+  mainBridge!.onAppEvent((event) => {
+    if (event.scope !== 'session') return;
+    useConversationStore.getState().handlePiFrame({
+      seq: event.seq,
+      event: event.event as never,
     });
-    return;
-  }
-  piAPI.onEvent((frame) =>
-    useConversationStore.getState().handlePiFrame(frame),
-  );
+  });
 }

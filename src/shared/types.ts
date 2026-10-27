@@ -442,90 +442,7 @@ export interface UiState {
   };
 }
 
-// ─── IPC 接口（preload 暴露给渲染层） ───────────────────────
-
-export interface WorkAPI {
-  // ── uiState:* —— 用户操作状态 ──
-  uiState: {
-    get(): Promise<UiState>;
-    set(patch: Partial<UiState>): Promise<UiState>;
-    onChanged(cb: (state: UiState) => void): () => void;
-  };
-
-  // ── agent:* —— AI 运行配置 ──
-  status: () => Promise<AgentStatus>;
-  models: () => Promise<ModelOption[]>;
-  configure: (input: AgentConfigureInput) => Promise<AgentStatus>;
-  setWorkspace: (path: string) => Promise<AgentStatus>;
-  pickWorkspace: () => Promise<string | null>;
-
-  // ── documents:* —— URA 资源 ──
-  documents: {
-    list: () => Promise<DocumentMeta[]>;
-    groups: () => Promise<UraGroupInfo[]>;
-    open: (
-      docId: string,
-    ) => Promise<{ content: DocumentContent; meta: DocumentMeta } | null>;
-    update: (docId: string, content: string) => Promise<DocumentMeta | null>;
-    search: (query: string) => Promise<UraSearchResult[]>;
-    onRefresh: (cb: () => void) => () => void;
-  };
-
-  // ── plugins:* / skills:* —— 插件与技能清单 ──
-  plugins: {
-    list: () => Promise<PluginInfo[]>;
-  };
-  skills: {
-    list: () => Promise<SkillInfo[]>;
-  };
-
-  // ── ext:* —— 视图总线（ExtensionViewHost 桥接） ──
-  extensions: {
-    definitions: () => Promise<ExtensionDef[]>;
-    getOrCreate: (
-      extensionId: string,
-      opts?: {
-        documentId?: string;
-        theme?: string;
-        label?: string;
-        url?: string;
-        raw?: boolean;
-      },
-    ) => Promise<string>;
-    destroy: (instanceId: string) => Promise<void>;
-    setActive: (instanceId: string | null) => Promise<void>;
-    /** 重载视图（真实 reload：webContents.reload + 就绪态复位 + 内容重发链）。 */
-    reload: (instanceId: string) => Promise<void>;
-    list: () => Promise<ExtensionInstance[]>;
-    syncBounds: (
-      instanceId: string,
-      bounds: { x: number; y: number; width: number; height: number },
-    ) => Promise<void>;
-    sendToView: (
-      instanceId: string,
-      channel: string,
-      payload: unknown,
-    ) => Promise<void>;
-    broadcast: (channel: string, payload: unknown) => Promise<void>;
-    /** raw 网页视图导航。 */
-    navigate: (instanceId: string, url: string) => Promise<void>;
-    goBack: (instanceId: string) => Promise<void>;
-    goForward: (instanceId: string) => Promise<void>;
-    /** 可交互元素（ref 标记 + overlay）显隐；返回生效后的状态。 */
-    setInteractiveElements: (
-      instanceId: string,
-      on: boolean,
-    ) => Promise<boolean>;
-  };
-
-  // ── browser:* —— 浏览器自动化反馈通道 ──
-  browser: {
-    /** overlay 标签点击回填：订阅后用户点页面内 ref 标签 → 输入框追加 @ref。 */
-    onRefClick: (cb: (ref: string) => void) => () => void;
-  };
-}
-
-// ── 弹窗菜单（原生 Menu.popup；mock 阶段以 DOM 浮层等价物实现同协议） ──
+// ── 弹窗菜单（原生 Menu.popup） ──
 
 export interface PopupMenuItem {
   id: string;
@@ -537,13 +454,6 @@ export interface PopupSelectEvent {
   /** 调用方标识（多菜单源共存时路由，如 'tabs'）。 */
   source: string;
   actionId: string;
-}
-
-export interface PopupMenuAPI {
-  show: (input: { source: string; items: PopupMenuItem[] }) => Promise<void>;
-  onSelect: (cb: (e: PopupSelectEvent) => void) => () => void;
-  close: () => Promise<void>;
-  count: () => Promise<number>;
 }
 
 // ─── pi 事件流（渲染层消费子集） ───────────────────────────
@@ -593,65 +503,12 @@ export interface PiEventFrame {
 }
 
 /** pi:cmd:invoke 响应（结构化）。 */
-export type PiCommandResponse<T = unknown> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
-
-/** get_state 返回（渲染层消费子集）。 */
-export interface PiSessionState {
-  model: { provider: string; id: string; name: string } | null;
-  thinkingLevel: ThinkingLevel | null;
-  isStreaming: boolean;
-  isCompacting: boolean;
-  steeringMode: 'all' | 'one-at-a-time';
-  followUpMode: 'all' | 'one-at-a-time';
-  sessionFile: string | null;
-  sessionId: string | null;
-  sessionName: string | null;
-  autoCompactionEnabled: boolean;
-  messageCount: number;
-  pendingMessageCount: number;
-  cwd: string;
-}
-
-/** pi:sync 握手结果。 */
-export interface PiSyncResult {
-  state: PiSessionState;
-  seq: number;
-}
-
-/** preload piBridge 面向渲染层的类型（window.piAPI）。 */
-export interface PiBridgeAPI {
-  cmd: {
-    invoke: <T = unknown>(
-      command: string,
-      params?: unknown,
-    ) => Promise<PiCommandResponse<T>>;
-  };
-  onEvent: (cb: (frame: PiEventFrame) => void) => () => void;
-  sync: () => Promise<PiSyncResult>;
-  onUIRequest: (cb: (req: Record<string, unknown>) => void) => () => void;
-  uiRespond: (resp: {
-    id: string;
-    ok: boolean;
-    value?: unknown;
-    reason?: string;
-  }) => Promise<boolean>;
-  pushEditorState: (text: string) => void;
-}
-
 // ─── 视图总线消息（主窗口监听 webview 上报） ─────────────────
 
 export interface BusMessage {
   channel: string;
   payload: unknown;
   fromInstanceId: string | null;
-}
-
-export interface ElectronAPI {
-  platform: string;
-  versions?: Record<string, string>;
-  openPath: (path: string) => Promise<string | null>;
 }
 
 // ═══════════════════════════════════════════════════════════

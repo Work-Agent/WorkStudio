@@ -14,7 +14,7 @@ import {
   TITLEBAR_HEIGHT,
   type TitlebarPlatform,
 } from '../../../shared/titlebar';
-import { electronAPI } from '../../api/bridge';
+import { electronAPI } from '../../api/runtime';
 
 export interface TitlebarAreaRect {
   x: number;

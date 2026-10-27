@@ -8,7 +8,7 @@
  * 编辑器镜像（D7）：AssistantInput 防抖推送 → piBridge.pushEditorState。
  */
 import { create } from 'zustand';
-import { piAPI } from '../api/bridge';
+import { runtimeCmd } from '../api/runtime';
 
 export interface PiDialog {
   dialogType: 'select' | 'confirm' | 'input' | 'editor';
@@ -77,7 +77,7 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
   /** 对话框应答（DialogHost 提交时调用；结构化回传）。 */
   respond: (resp) => {
     if (get().pendingDialog?.id === resp.id) set({ pendingDialog: null });
-    void piAPI.uiRespond(resp);
+    void runtimeCmd('ui.respond', { response: resp });
   },
 
   /** 取消当前对话框（Esc/遮罩点击）。 */
@@ -186,7 +186,10 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
   /** 编辑器镜像推送（防抖 150ms；AssistantInput 变化时调用）。 */
   pushEditorMirror: (text, immediate = false) => {
     if (editorPushTimer) clearTimeout(editorPushTimer);
-    const push = (): void => piAPI.pushEditorState(text);
+    const push = (): void => {
+      // 扩展编辑器镜像由主进程 UI 上下文承载；当前版本不再推送。
+      void text;
+    };
     if (immediate) push();
     else editorPushTimer = setTimeout(push, 150);
   },
@@ -194,5 +197,5 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
 
 /** 全局订阅（main.tsx 挂一次）。 */
 export function bindPiUIRequests(): void {
-  piAPI.onUIRequest((req) => usePiUIStore.getState().handleRequest(req));
+  // UI 请求经主进程浮层投递，工作台渲染层不再订阅旧通道。
 }

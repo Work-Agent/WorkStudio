@@ -6,7 +6,8 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { piAPI } from '../../api/bridge';
+import { runtimeCmd } from '../../api/runtime';
+import type { AgentSnapshot } from '../../../shared/types';
 import { OPEN_SESSION_INFO_EVT } from '../../state/commands';
 
 interface SessionStatsData {
@@ -63,19 +64,29 @@ export function SessionInfoPanel() {
 
   const load = (): void => {
     setErr(null);
-    void piAPI.cmd
-      .invoke('get_session_stats')
-      .then((r) => {
-        const res = r as {
-          ok: boolean;
-          data?: SessionStatsData;
-          error?: string;
-        };
-        if (res.ok && res.data) {
-          setStats(res.data);
+    void runtimeCmd<AgentSnapshot>('agent.status')
+      .then((res) => {
+        if (res.ok) {
+          setStats({
+            sessionFile: res.data.sessionFile ?? undefined,
+            sessionId: res.data.sessionId ?? '',
+            userMessages: 0,
+            assistantMessages: 0,
+            toolCalls: 0,
+            toolResults: 0,
+            totalMessages: res.data.messageCount,
+            tokens: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+            cost: 0,
+          });
           setOpen(true);
         } else {
-          setErr(res.error ?? '获取会话统计失败');
+          setErr('获取会话统计失败');
         }
       })
       .catch((e) => setErr(String(e)));

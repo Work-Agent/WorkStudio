@@ -6,7 +6,6 @@
  * 即时生效（模型/思考切换器与模型设置页同源）。
  *
  * 铁律：渲染层不伪造默认值——初始形态 = 「未配置」，真实状态由 init() 首拉注入。
- * 无 workbench 桥时（独立页面开发）回退 mock 数据面。
  */
 import { create } from 'zustand';
 import type {
@@ -17,7 +16,6 @@ import type {
   SkillInfo,
   WorkspaceInfo,
 } from '../../shared/types';
-import { agentAPI } from '../api/bridge';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
@@ -54,54 +52,35 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
   workspaces: [],
 
   refresh: async () => {
-    if (mainBridge) {
-      const r = await mainBridge.cmd<AgentSnapshot>('agent.status');
-      if (r.ok) set({ status: toAgentStatus(r.data) });
-      return;
-    }
-    set({ status: await agentAPI.status() });
+    const r = await mainBridge!.cmd<AgentSnapshot>('agent.status');
+    if (r.ok) set({ status: toAgentStatus(r.data) });
   },
 
   refreshSkills: async () => {
     try {
-      if (mainBridge) {
-        const r = await mainBridge.cmd<SkillInfo[]>('skills.list');
-        set({ skills: r.ok ? r.data : [] });
-        return;
-      }
-      set({ skills: await agentAPI.skills.list() });
+      const r = await mainBridge!.cmd<SkillInfo[]>('skills.list');
+      set({ skills: r.ok ? r.data : [] });
     } catch (e) {
       console.error('Failed to load skills:', e);
     }
   },
 
   refreshWorkspaces: async () => {
-    if (!mainBridge) return;
-    const r = await mainBridge.cmd<WorkspaceInfo[]>('agent.workspaces');
+    const r = await mainBridge!.cmd<WorkspaceInfo[]>('agent.workspaces');
     if (r.ok) set({ workspaces: r.data });
   },
 
   init: async () => {
-    if (mainBridge) {
-      const [models, status] = await Promise.all([
-        mainBridge.cmd<ModelOption[]>('agent.models'),
-        mainBridge.cmd<AgentSnapshot>('agent.status'),
-      ]);
-      set({
-        models: models.ok ? models.data : [],
-        status: status.ok ? toAgentStatus(status.data) : { configured: false },
-      });
-      void get().refreshSkills();
-      void get().refreshWorkspaces();
-      return;
-    }
-    const [modelOptions] = await Promise.all([
-      agentAPI.models(),
-      get().refresh(),
-      get().refreshSkills(),
+    const [models, status] = await Promise.all([
+      mainBridge!.cmd<ModelOption[]>('agent.models'),
+      mainBridge!.cmd<AgentSnapshot>('agent.status'),
     ]);
-    set({ models: modelOptions });
-    // 投影失效：窗口重新聚焦时重拉快照，保证镜像收敛
+    set({
+      models: models.ok ? models.data : [],
+      status: status.ok ? toAgentStatus(status.data) : { configured: false },
+    });
+    void get().refreshSkills();
+    void get().refreshWorkspaces();
     window.addEventListener('focus', () => {
       void get().refresh();
     });
@@ -109,15 +88,11 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
 
   /** 工作区切换（独立通道，不经模型配置）：重绑资源域/会话域/技能。 */
   switchWorkspace: async (path) => {
-    if (mainBridge) {
-      const r = await mainBridge.cmd<AgentSnapshot>('agent.setWorkspace', {
-        path,
-      });
-      if (!r.ok) throw new Error(r.error.message);
-      set({ status: toAgentStatus(r.data) });
-    } else {
-      set({ status: await agentAPI.setWorkspace(path) });
-    }
+    const r = await mainBridge!.cmd<AgentSnapshot>('agent.setWorkspace', {
+      path,
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    set({ status: toAgentStatus(r.data) });
     await get().refreshSkills();
     await get().refreshWorkspaces();
   },
@@ -137,23 +112,13 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
         '尚未配置模型：请在「设置 → 模型配置」中登录供应商并选择模型',
       );
     }
-    if (mainBridge) {
-      const r = await mainBridge.cmd<AgentSnapshot>('agent.configure', {
-        provider,
-        modelId,
-        thinkingLevel: input.thinkingLevel ?? s.thinkingLevel,
-        ...input,
-      });
-      if (!r.ok) throw new Error(r.error.message);
-      set({ status: toAgentStatus(r.data) });
-      return;
-    }
-    const next = await agentAPI.configure({
+    const r = await mainBridge!.cmd<AgentSnapshot>('agent.configure', {
       provider,
       modelId,
       thinkingLevel: input.thinkingLevel ?? s.thinkingLevel,
       ...input,
     });
-    set({ status: next });
+    if (!r.ok) throw new Error(r.error.message);
+    set({ status: toAgentStatus(r.data) });
   },
 }));

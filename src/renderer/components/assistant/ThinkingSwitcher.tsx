@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Brain, ChevronDown } from 'lucide-react';
-import { piAPI } from '../../api/bridge';
+import { runtimeCmd } from '../../api/runtime';
 import { OPEN_THINKING_SWITCHER_EVT } from '../../state/commands';
 import { useConversationStore } from '../../state/conversation';
 
@@ -40,7 +40,7 @@ export function ThinkingSwitcher() {
   /** 切档：pi 原生 set_thinking_level（秒切 + per-model 记忆持久化）。 */
   const select = (lv: string): void => {
     setOpen(false);
-    void piAPI.cmd.invoke('set_thinking_level', { level: lv }).then(() => {
+    void runtimeCmd('agent.setThinking', { level: lv }).then(() => {
       // thinking_level_changed 事件会更新实况；此处乐观更新（钳制后实际档位以事件为准）
       useConversationStore.getState().setThinkingLevelOptimistic(lv);
     });

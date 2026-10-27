@@ -2,7 +2,7 @@
  * S3 资源面板（DOM 部分）—— docs/architecture.md §2.4 / §2.5。
  *
  * DOM 只承载 chrome：标签栏与空态；全部视图内容一律由原生视图（WebContentsView）承载。
- * 矩形全部取主进程 layout（`tabbar` / `resourceContent`）；本组件不渲染 mock 内容、不丈量容器、
+ * 矩形全部取主进程 layout（`tabbar` / `resourceContent`）；本组件不渲染内容、不丈量容器、
  * 不做分栏——文档与网页内容由主进程的原生视图承载（`layout.resourceContent`）。
  */
 import { FileText } from 'lucide-react';

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { ChevronLeft, ChevronRight, Pin, Plus, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
-import { popupMenu } from '../../api/bridge';
+import { popupMenu } from '../../api/runtime';
 
 export interface TabsBarItem {
   id: string;

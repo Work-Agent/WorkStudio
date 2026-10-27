@@ -1,8 +1,7 @@
 /**
  * 工作台 preload（contextBridge 白名单桥；不暴露 ipcRenderer）。
  *
- * 语义化 API：cmd / sync / 订阅（event / state / view / bus / ui / interaction）。
- * 兼容：保留 electronAPI（旧渲染层过渡期使用）。
+ * 语义化 API：cmd / appSync / 订阅（app snapshot / app event / bus / ui / interaction）。
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import {
@@ -24,8 +23,6 @@ import type { AppCommand, AppEvent, AppSnapshot, Scope } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
-  PopupMenuItem,
-  PopupSelectEvent,
   UiDialogResponse,
   UiRequest,
 } from '../shared/types';
@@ -160,40 +157,9 @@ const api = {
   },
 };
 
-/** 旧渲染层兼容桥（过渡期；新代码一律 window.workbench）。 */
-const legacy = {
-  platform: process.platform,
-  versions: process.versions as unknown as Record<string, string>,
-  openPath: (target: string) =>
-    ipcRenderer.invoke(CH_SHELL, 'openPath', { path: target }),
-};
-
-/** 原生菜单（弹出层唯一通道）：渲染层不绘制跨内容面的 DOM 菜单（必被原生视图遮挡）。 */
-const popupMenu = {
-  show: (input: { source: string; items: PopupMenuItem[] }): Promise<void> =>
-    ipcRenderer.invoke(CH_SHELL, 'popup.show', input) as Promise<void>,
-  close: (): Promise<void> =>
-    ipcRenderer.invoke(CH_SHELL, 'popup.close') as Promise<void>,
-  count: (): Promise<number> =>
-    ipcRenderer.invoke(CH_SHELL, 'popup.count') as Promise<number>,
-  onSelect: (cb: (e: PopupSelectEvent) => void): (() => void) => {
-    const listener = (_e: unknown, event: PopupSelectEvent): void => cb(event);
-    ipcRenderer.on(CH_POPUP_SELECT, listener);
-    return () => ipcRenderer.removeListener(CH_POPUP_SELECT, listener);
-  },
-};
-
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('workbench', api);
-  contextBridge.exposeInMainWorld('electronAPI', legacy);
-  contextBridge.exposeInMainWorld('popupMenu', popupMenu);
 } else {
-  const w = window as unknown as {
-    workbench: unknown;
-    electronAPI: unknown;
-    popupMenu: unknown;
-  };
+  const w = window as unknown as { workbench: unknown };
   w.workbench = api;
-  w.electronAPI = legacy;
-  w.popupMenu = popupMenu;
 }

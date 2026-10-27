@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCirclePlus, PictureInPicture2, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
-import { popupMenu } from '../../api/bridge';
+import { popupMenu } from '../../api/runtime';
 import { useAgentConfigStore } from '../../state/agentConfig';
 import { useConversationStore } from '../../state/conversation';
 import { usePiUIStore } from '../../state/piUI';

@@ -2,13 +2,9 @@ import type { AppCommand, AppEvent, AppSnapshot } from './app';
 import type {
   AgentStatus,
   CommandResponse,
-  ElectronAPI,
   InteractionBeginInput,
-  PiBridgeAPI,
-  PopupMenuAPI,
   UiDialogResponse,
   UiRequest,
-  WorkAPI,
 } from './types';
 
 /** 工作台桥（preload/workbench.ts，window.workbench）。 */
@@ -103,11 +99,6 @@ declare global {
     assistant?: AssistantBridge;
     /** 浮层视图桥。 */
     overlay?: OverlayBridge;
-    /** 旧渲染层兼容桥（过渡期；缺失时渲染层走 mock）。 */
-    electronAPI?: ElectronAPI;
-    agentAPI?: WorkAPI;
-    piAPI?: PiBridgeAPI;
-    popupMenu?: PopupMenuAPI;
   }
 }
 

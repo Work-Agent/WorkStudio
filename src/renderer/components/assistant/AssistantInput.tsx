@@ -18,7 +18,6 @@ import {
   Trash,
   TriangleAlert,
 } from 'lucide-react';
-import { agentAPI } from '../../api/bridge';
 import { useAgentConfigStore } from '../../state/agentConfig';
 import { commandStore } from '../../state/commands';
 import { useConversationStore, type QueueMode } from '../../state/conversation';
@@ -87,9 +86,12 @@ export function AssistantInput() {
   // ── 装配与回灌 ─────────────────────────────────────────────
   useEffect(() => {
     commandStore.load(); // slash 目录（builtin + get_commands 合流）
-    const offRefClick = agentAPI.browser.onRefClick((ref) =>
-      useInputStore.getState().appendToken(`@${ref}`),
-    );
+    const offRefClick = window.workbench?.onBus(({ message }) => {
+      const event = message as { type?: string; ref?: string };
+      if (event.type === 'refClick' && event.ref) {
+        useInputStore.getState().appendToken(`@${event.ref}`);
+      }
+    });
     return offRefClick;
   }, []);
 

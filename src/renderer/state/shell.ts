@@ -8,8 +8,6 @@
 import type { CSSProperties } from 'react';
 import { create } from 'zustand';
 import type { LayoutSnapshot, Rect, ViewEntry } from '../../shared/types';
-import { computeLayout } from '../../shared/layout-engine';
-import { useUiStore } from './uiState';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
@@ -24,27 +22,6 @@ export const useShellStore = create<ShellPresentation>()(() => ({
   layout: null,
   views: [],
 }));
-
-/** 无桥（mock）时的本地布局：与主进程共用同一纯函数。 */
-function localLayout(): LayoutSnapshot {
-  return computeLayout({
-    windowWidth: window.innerWidth,
-    windowHeight: window.innerHeight,
-    ui: useUiStore.getState(),
-    floating: null,
-    preview: null,
-  });
-}
-
-/** 无主进程桥（独立页面开发）时的本地布局。 */
-export async function initShellPresentation(): Promise<void> {
-  const update = (): void => {
-    useShellStore.setState({ layout: localLayout() });
-  };
-  update();
-  window.addEventListener('resize', update);
-  useUiStore.subscribe(update);
-}
 
 /** 视图命令唯一出口（失败静默：主进程广播会把事实收敛回来）。 */
 export function runViewCommand(command: string, params?: unknown): void {

@@ -8,7 +8,7 @@
 import { useEffect } from 'react';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
-import { electronAPI, popupMenu } from '../../api/bridge';
+import { electronAPI, popupMenu } from '../../api/runtime';
 import { useAgentConfigStore } from '../../state/agentConfig';
 import { runViewCommand } from '../../state/shell';
 
@@ -28,7 +28,7 @@ export function WorkspaceSelect() {
       ? await bridge
           .cmd<string | null>('agent.pickWorkspace')
           .then((r) => (r.ok ? r.data : null))
-      : await window.agentAPI?.pickWorkspace().then((p) => p ?? null);
+      : null;
     if (dir) {
       await useAgentConfigStore.getState().switchWorkspace(dir);
     }

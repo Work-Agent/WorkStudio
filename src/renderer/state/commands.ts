@@ -7,7 +7,7 @@
  *  浮层事件：DOM 事件（组件 chunk 热替换时分裂，DOM 事件天然跨实例广播）。
  */
 import { create } from 'zustand';
-import { piAPI } from '../api/bridge';
+import { runtimeCmd } from '../api/runtime';
 import { useConversationStore } from './conversation';
 import { EMPTY_MESSAGES } from './message';
 
@@ -41,10 +41,9 @@ export const useCommandStore = create<CommandsState>()((set) => ({
 
   /** 目录装载（输入区挂载时调一次；扩展命令与 builtin 运行时合流）。 */
   load: () => {
-    void piAPI.cmd
-      .invoke<{ commands: CommandInfo[] }>('get_commands')
+    void runtimeCmd<CommandInfo[]>('session.getCommands')
       .then((r) => {
-        if (r.ok) set({ catalog: r.data.commands });
+        if (r.ok) set({ catalog: r.data });
       })
       .catch(() => {
         /* 目录缺失不阻断输入（builtin 仍在） */
@@ -84,13 +83,10 @@ export const commandStore = {
     const arg = sp === -1 ? '' : full.slice(sp + 1).trim();
     switch (cmd) {
       case 'new':
-        void piAPI.cmd.invoke('new_session', {});
+        void runtimeCmd('session.new');
         return true;
       case 'compact':
-        void piAPI.cmd.invoke(
-          'compact',
-          arg ? { customInstructions: arg } : {},
-        );
+        void runtimeCmd('session.compact', arg ? { instructions: arg } : {});
         return true;
       case 'model':
         document.dispatchEvent(new CustomEvent(OPEN_MODEL_SWITCHER_EVT));
@@ -101,7 +97,7 @@ export const commandStore = {
       case 'name': {
         if (!arg) return false; // 无参不拦截（透传保持一致）
         const path = useConversationStore.getState().piSessionFile;
-        if (path) void piAPI.cmd.invoke('rename_session', { path, name: arg });
+        if (path) void runtimeCmd('session.rename', { path, name: arg });
         return true;
       }
       case 'session':

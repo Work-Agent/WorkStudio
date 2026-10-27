@@ -9,7 +9,6 @@ import { create } from 'zustand';
 import type { AppEvent, AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAgentConfigStore } from './agentConfig';
 import { useListsStore } from './lists';
-import { usePluginsStore } from './plugins';
 import { useShellStore } from './shell';
 import { useUiStore } from './uiState';
 
@@ -69,10 +68,6 @@ function applySnapshot(snapshot: AppSnapshot): void {
   useListsStore.setState({
     groups: snapshot.workspace.lists.groups,
     loading: false,
-  });
-  usePluginsStore.setState({
-    plugins: snapshot.app.plugins,
-    loaded: true,
   });
   useAgentConfigStore.setState({
     status: snapshot.session.snapshot

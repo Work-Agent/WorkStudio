@@ -7,8 +7,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import type { ListEntry } from '../../../shared/ura';
-import { agentAPI } from '../../api/bridge';
-import { useTabServiceStore } from '../../state/tabService';
 import { setUiState } from '../../state/uiState';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
@@ -94,16 +92,7 @@ export function FindList() {
         : { id: 'docs', title: '本地文档' },
       createdAt: 0,
     };
-    if (mainBridge) {
-      void mainBridge.cmd('views.openResource', { ref, document: meta });
-      return;
-    }
-    void agentAPI.documents.open(ref).then((result) => {
-      if (!result) return;
-      void useTabServiceStore
-        .getState()
-        .openDocument(result.meta, result.content);
-    });
+    void mainBridge?.cmd('views.openResource', { ref, document: meta });
   };
 
   return (
