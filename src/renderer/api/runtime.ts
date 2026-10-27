@@ -4,24 +4,10 @@
  * 工作台与助手各自有 preload 桥；共享组件按可用桥调用。
  */
 
-import type { CommandResponse, PopupMenuItem } from '../../shared/types';
+import type { PopupMenuItem } from '../../shared/types';
 
 function bridge() {
   return window.workbench ?? window.assistant;
-}
-
-export function runtimeCmd<T = unknown>(
-  command: string,
-  params?: unknown,
-): Promise<CommandResponse<T>> {
-  const target = bridge();
-  if (!target) {
-    return Promise.resolve({
-      ok: false,
-      error: { code: 'no_bridge', message: 'preload bridge is unavailable' },
-    });
-  }
-  return target.cmd<T>(command, params);
 }
 
 export const popupMenu = {
@@ -40,5 +26,3 @@ export const electronAPI = {
   openPath: (path: string): Promise<string> =>
     window.workbench?.openPath(path) ?? Promise.resolve(path),
 };
-
-export type { PopupMenuItem };

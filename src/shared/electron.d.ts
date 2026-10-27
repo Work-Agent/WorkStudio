@@ -1,4 +1,4 @@
-import type { AppCommand, AppEvent, AppSnapshot } from './app';
+import type { AppEvent, AppSnapshot } from './app';
 import type {
   AgentStatus,
   CommandResponse,
@@ -17,7 +17,6 @@ export interface WorkbenchBridge {
     params?: unknown,
   ) => Promise<CommandResponse<T>>;
   appSync: () => Promise<AppSnapshot>;
-  appCmd: <T = unknown>(command: AppCommand) => Promise<CommandResponse<T>>;
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
   onAppEvent: (cb: (event: AppEvent) => void) => () => void;
   onResources: (cb: (event: unknown) => void) => () => void;

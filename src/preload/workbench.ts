@@ -62,9 +62,6 @@ const api = {
 
   /** AppSnapshot 握手（新渲染层）。 */
   appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
-  /** 统一 AppCommand 通道（新渲染层）。 */
-  appCmd: <T = unknown>(command: AppCommand): Promise<CommandResponse<T>> =>
-    ipcRenderer.invoke(APP_CMD, command),
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void): (() => void) => {
     const listener = (_e: unknown, snapshot: AppSnapshot): void => cb(snapshot);
     ipcRenderer.on(APP_SNAPSHOT, listener);
