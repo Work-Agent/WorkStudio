@@ -127,6 +127,8 @@ interface AppSnapshot {
   workspace: WorkspaceSlice;
   ui: WorkspaceUiSlice;
   session: SessionSlice;
+  /** 壳层几何（主进程计算，DOM 与原生视图共用）。 */
+  layout: LayoutSnapshot | null;
   seq: number;
   workspaceEpoch: number;
   sessionEpoch: number;
