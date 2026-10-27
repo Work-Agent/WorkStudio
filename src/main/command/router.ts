@@ -40,7 +40,7 @@ import type {
 } from '../agent/config-service';
 import type { PiPackageService } from '../agent/package-service';
 import type { Ura } from '../ura/facade';
-import type { Collections } from '../ura/collections';
+import type { CollectionContexts } from '../ura/contexts';
 import { uraRegistry } from '../ura/registry';
 import { WriteSessionRegistry } from '../ura/sessions';
 import type { PageSessions } from '../ura/page-sessions';
@@ -69,7 +69,6 @@ export interface RouterDeps {
   viewHost: ViewHost;
   uiState: UiStateService;
   ura: Ura;
-  collections: Collections;
   writeSessions: WriteSessionRegistry;
   pageSessions: PageSessions;
   skills: SkillsManager;
@@ -580,9 +579,6 @@ export async function invoke(
       case 'ura.workspace':
         return ok({ root: fileRef(getCurrentWorkspace()) });
 
-      case 'ura.collections':
-        return ok(await d.collections.list());
-
       case 'ura.tree': {
         const root =
           typeof p.ref === 'string' && p.ref
@@ -958,7 +954,6 @@ async function invokeExt(
     'app:ura.bindings.set': 'ura.bindings.set',
     'app:ura.bindings.remove': 'ura.bindings.remove',
     'app:ura.workspace': 'ura.workspace',
-    'app:ura.collections': 'ura.collections',
     'app:ura.tree': 'ura.tree',
     'app:plugin.settings.get': 'plugin.settings.get',
     'app:plugin.settings.set': 'plugin.settings.set',

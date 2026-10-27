@@ -7,7 +7,7 @@ import { registerBrowserFeatures } from '../capabilities/browser/features';
 import { BindingStore } from './bindings';
 import { PluginHost } from '../plugins/host';
 import { BUILTIN_PLUGINS } from '../plugins/builtin';
-import { Collections } from './collections';
+import { CollectionContexts } from './contexts';
 import { listRegistry } from '../app/lists/list-registry';
 import { docsDefinition, docsProvider } from '../app/lists/builtins/docs';
 import { Ura } from './facade';
@@ -22,7 +22,7 @@ export interface UraRuntime {
   pipeline: ResourcePipeline;
   ura: Ura;
   host: PluginHost;
-  collections: Collections;
+  contexts: CollectionContexts;
   map: ResourceMap;
 }
 
@@ -64,20 +64,28 @@ export async function createUraRuntime(options: {
     (surface, owner) => host.pageFor(surface, owner),
     bindingStore,
   );
-  const collections = new Collections(ura, host, options.workspace);
+  const contexts = new CollectionContexts(ura, host, options.workspace);
   const map = new ResourceMap(ura, uraRegistry, options.workspace);
   map.setSource(async () => {
-    const views = await collections.list();
-    return views.flatMap((view) =>
-      view.groups.map((group) => ({
-        label: `${view.label} · ${group.title}`,
-        items: group.items.map((item) => ({
-          ref: item.ref,
-          title: item.title,
-        })),
-      })),
-    );
+    const groups = [];
+    for (const entry of listRegistry.providers()) {
+      try {
+        const provided = await entry.provider(contexts.context(entry.owner));
+        groups.push(
+          ...provided.map((group) => ({
+            label: `${entry.definition.label} · ${group.label}`,
+            items: group.items.map((item) => ({
+              ref: item.key,
+              title: item.title,
+            })),
+          })),
+        );
+      } catch {
+        continue;
+      }
+    }
+    return groups;
   });
   await map.start();
-  return { registry: uraRegistry, pipeline, ura, host, collections, map };
+  return { registry: uraRegistry, pipeline, ura, host, contexts, map };
 }

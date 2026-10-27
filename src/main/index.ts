@@ -655,7 +655,7 @@ app.whenReady().then(async () => {
   }
 
   const listService = new ListService({
-    collections: uraRuntime!.collections,
+    contexts: uraRuntime!.contexts,
     agent: agent!,
     plugins: uraRuntime!.host,
     viewHost: viewHost!,
@@ -695,7 +695,6 @@ app.whenReady().then(async () => {
     viewHost,
     uiState,
     ura: uraRuntime.ura,
-    collections: uraRuntime.collections,
     writeSessions,
     pageSessions,
     skills,

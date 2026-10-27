@@ -14,12 +14,12 @@ import type { AgentHost } from '../../agent/agent-host';
 import type { ViewHost } from '../../capabilities/webview/host';
 import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
-import type { Collections } from '../../ura/collections';
+import type { CollectionContexts } from '../../ura/contexts';
 import { listRegistry } from './list-registry';
 import { OPEN_ACTION } from './builtins/common';
 
 export interface ListServiceDeps {
-  collections: Collections;
+  contexts: CollectionContexts;
   agent: AgentHost;
   plugins: PluginHost;
   viewHost: ViewHost;
@@ -35,7 +35,7 @@ export class ListService {
   async snapshot(workspaceEpoch: number): Promise<ListSnapshot> {
     const groups: ListGroup[] = [];
     for (const entry of listRegistry.providers()) {
-      const ctx = this.deps.collections.context(entry.owner);
+      const ctx = this.deps.contexts.context(entry.owner);
       const custom = await entry.provider(ctx);
       for (const group of custom) {
         groups.push({

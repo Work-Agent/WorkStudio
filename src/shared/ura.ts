@@ -436,21 +436,7 @@ export interface ViewActionView {
   active: boolean;
 }
 
-// ─── 集合（侧栏分组贡献） ────────────────────────────────────────────
-
-export interface CollectionItem {
-  ref: string;
-  title: string;
-}
-
-export interface CollectionGroup {
-  id: string;
-  title: string;
-  /** 分组图标：URL（favicon）或空（由 provider 图标兜底）。 */
-  icon?: string;
-  order?: number;
-  items: CollectionItem[];
-}
+// ─── 列表上下文 ──────────────────────────────────────────────────────
 
 export interface CollectionContext {
   /** 工作区根（file:// 标识）。 */
@@ -464,14 +450,6 @@ export interface CollectionContext {
   settings: {
     get<T>(key: string, fallback: T): Promise<T>;
   };
-}
-
-export interface CollectionView {
-  source: string;
-  owner: string;
-  label: string;
-  icon?: string;
-  groups: CollectionGroup[];
 }
 
 // ─── 注册载荷 ────────────────────────────────────────────────────────
