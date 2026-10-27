@@ -7,7 +7,6 @@
 import type {
   Binding,
   Codec,
-  CollectionProvider,
   Mime,
   OutletKey,
   Presenter,
@@ -42,7 +41,6 @@ export class UraRegistry {
   private readonly stores: Entry<Store>[] = [];
   private readonly presenters: Entry<Presenter>[] = [];
   private readonly sidecars: Entry<SidecarProvider>[] = [];
-  private readonly collections = new Map<string, Entry<CollectionProvider>>();
   private readonly actions = new Map<string, Entry<ViewAction>>();
   private bindings: Binding[] = [];
   private readonly logs: Diagnostic[] = [];
@@ -319,21 +317,6 @@ export class UraRegistry {
     this.info('action.registered', `视图动作注册：${action.id}`);
   }
 
-  registerCollection(provider: CollectionProvider): void {
-    if (!provider.id || typeof provider.list !== 'function') {
-      this.reject(
-        'collection.incomplete',
-        `集合实现缺少 id/list：${String(provider.id)}`,
-      );
-      return;
-    }
-    if (this.collections.has(provider.id)) {
-      this.warn('collection.override', `集合被覆盖：${provider.id}`);
-    }
-    this.collections.set(provider.id, this.entry(provider));
-    this.info('collection.registered', `集合注册：${provider.id}`);
-  }
-
   viewActions(): Array<{ action: ViewAction; owner: string }> {
     return [...this.actions.values()].map((entry) => ({
       action: entry.impl,
@@ -344,16 +327,6 @@ export class UraRegistry {
   viewAction(id: string): { action: ViewAction; owner: string } | undefined {
     const entry = this.actions.get(id);
     return entry ? { action: entry.impl, owner: entry.owner } : undefined;
-  }
-
-  collectionProviders(): Array<{
-    provider: CollectionProvider;
-    owner: string;
-  }> {
-    return [...this.collections.values()].map((entry) => ({
-      provider: entry.impl,
-      owner: entry.owner,
-    }));
   }
 
   // ─── 绑定 ──────────────────────────────────────────────────────
@@ -419,11 +392,6 @@ export class UraRegistry {
         owner: entry.owner,
       })),
       bindings: [...this.bindings],
-      collections: [...this.collections.entries()].map(([id, entry]) => ({
-        id,
-        label: entry.impl.label,
-        owner: entry.owner,
-      })),
       actions: [...this.actions.entries()].map(([id, entry]) => ({
         id,
         label: entry.impl.label,

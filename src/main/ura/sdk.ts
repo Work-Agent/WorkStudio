@@ -5,7 +5,6 @@
 
 import type {
   Codec,
-  CollectionProvider,
   Presenter,
   SidecarProvider,
   Store,
@@ -38,18 +37,18 @@ export function registerSidecar(provider: SidecarProvider): void {
   uraRegistry.registerSidecar(provider);
 }
 
-export function registerCollection(provider: CollectionProvider): void {
-  uraRegistry.registerCollection(provider);
-}
-
 export function registerViewAction(action: ViewAction): void {
   uraRegistry.registerViewAction(action);
 }
 
 /** 侧栏列表：定义 + 工作区 provider（Phase 4 扩展面）。 */
-export function registerList(
-  definition: ListDefinition,
-  provider: ListProvider,
-): void {
-  listRegistry.register(definition, provider, 'plugin');
+export function registerList(input: {
+  definition: ListDefinition;
+  provider: ListProvider;
+}): void {
+  listRegistry.register(
+    input.definition,
+    input.provider,
+    uraRegistry.currentOwner(),
+  );
 }

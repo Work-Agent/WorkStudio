@@ -474,15 +474,6 @@ export interface CollectionView {
   groups: CollectionGroup[];
 }
 
-export interface CollectionProvider {
-  /** 集合 id（也是侧栏 source id）。 */
-  readonly id: string;
-  readonly label: string;
-  /** provider 级图标（分组未给 icon 时使用）。 */
-  readonly icon?: string;
-  list(ctx: CollectionContext): CollectionGroup[] | Promise<CollectionGroup[]>;
-}
-
 // ─── 注册载荷 ────────────────────────────────────────────────────────
 
 export interface TransportRegistration {

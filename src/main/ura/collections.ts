@@ -11,7 +11,7 @@ import {
 } from '../../shared/ura';
 import type { PluginHost } from '../plugins/host';
 import type { Ura } from './facade';
-import { uraRegistry } from './registry';
+import { listRegistry } from '../app/lists/list-registry';
 
 export class Collections {
   constructor(
@@ -33,23 +33,30 @@ export class Collections {
 
   async list(): Promise<CollectionView[]> {
     const views: CollectionView[] = [];
-    for (const { provider, owner } of uraRegistry.collectionProviders()) {
-      const ctx = this.context(owner);
+    for (const entry of listRegistry.providers()) {
+      const ctx = this.context(entry.owner);
       let groups: CollectionGroup[] = [];
       try {
-        groups = await provider.list(ctx);
+        const provided = await entry.provider(ctx);
+        groups = provided.map((group) => ({
+          id: group.id,
+          title: group.label,
+          ...(group.icon ? { icon: group.icon } : {}),
+          ...(group.order !== undefined ? { order: group.order } : {}),
+          items: group.items.map((item) => ({
+            ref: item.key,
+            title: item.title,
+          })),
+        }));
       } catch {
         continue;
       }
       views.push({
-        source: provider.id,
-        owner,
-        label: provider.label,
-        ...(provider.icon ? { icon: provider.icon } : {}),
-        groups: groups.map((group) => ({
-          ...group,
-          items: [...group.items],
-        })),
+        source: entry.definition.id,
+        owner: entry.owner,
+        label: entry.definition.label,
+        ...(entry.definition.icon ? { icon: entry.definition.icon } : {}),
+        groups,
       });
     }
     return views;

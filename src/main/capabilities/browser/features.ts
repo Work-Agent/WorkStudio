@@ -4,12 +4,14 @@
 // 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
 
 import {
-  registerCollection,
+  registerList,
   registerPresenter,
   registerViewAction,
 } from '../../ura/sdk';
 import { MIME } from '../../../shared/ura';
-import type { CollectionGroup, CollectionProvider } from '../../../shared/ura';
+import type { ListDefinition } from '../../../shared/lists';
+import type { ListProvider } from '../../app/lists/list-registry';
+import { DOC_FIELDS, OPEN_ACTION } from '../../app/lists/builtins/common';
 
 const SITES_DIR = 'sites';
 
@@ -17,30 +19,49 @@ function titleOf(ref: string): string {
   return ref.slice(ref.lastIndexOf('/') + 1);
 }
 
-const webCollection: CollectionProvider = {
+const webDefinition: ListDefinition = {
   id: 'web',
   label: '网站资料',
   icon: 'globe',
+  order: 20,
+  sourceScope: 'workspace',
+  itemType: 'document',
+  fields: DOC_FIELDS,
+  actions: [OPEN_ACTION],
+  empty: { icon: 'globe', text: '暂无网站资料' },
+  grouping: 'domain',
+};
 
-  async list(ctx) {
-    const allowlist = await ctx.settings.get<string[]>('allowlist', []);
-    const groups: CollectionGroup[] = [];
-    for (const domain of allowlist) {
-      const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`;
-      const entries = await ctx
-        .find('*.md', { scope, limit: 200 })
-        .catch(() => []);
-      groups.push({
-        id: domain,
-        title: domain,
-        icon: `https://${domain}/favicon.ico`,
-        items: entries
-          .filter((entry) => entry.type === 'file')
-          .map((entry) => ({ ref: entry.ref, title: titleOf(entry.ref) })),
-      });
-    }
-    return groups;
-  },
+const webProvider: ListProvider = async (ctx) => {
+  const allowlist = await ctx.settings.get<string[]>('allowlist', []);
+  const groups = [];
+  for (const domain of allowlist) {
+    const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`;
+    const entries = await ctx
+      .find('*.md', { scope, limit: 200 })
+      .catch(() => []);
+    groups.push({
+      id: domain,
+      label: domain,
+      icon: `https://${domain}/favicon.ico`,
+      items: entries
+        .filter((entry: { type: string }) => entry.type === 'file')
+        .map((entry: { ref: string }) => ({
+          key: entry.ref,
+          itemType: 'document',
+          title: titleOf(entry.ref),
+          subtitle: '网站资料',
+          meta: {
+            ref: entry.ref,
+            source: 'web',
+            sourceLabel: '网站资料',
+            groupId: domain,
+            groupTitle: domain,
+          },
+        })),
+    });
+  }
+  return groups;
 };
 
 // ─── 地址栏动作：可访问性元素标记 ────────────────────────────────────
@@ -147,7 +168,7 @@ const MARKS_SCRIPT = `(() => {
 })()`;
 
 export function registerBrowserFeatures(): void {
-  registerCollection(webCollection);
+  registerList({ definition: webDefinition, provider: webProvider });
   registerPresenter({
     key: { transport: 'https', mime: MIME.html, codec: '' },
     type: 'browser',

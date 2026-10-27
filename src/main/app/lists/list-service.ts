@@ -16,19 +16,7 @@ import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
 import type { Collections } from '../../ura/collections';
 import { listRegistry } from './list-registry';
-
-const DOC_FIELDS = [
-  { key: 'title', type: 'text' as const },
-  { key: 'subtitle', type: 'text' as const },
-  { key: 'time', type: 'time' as const },
-];
-
-const OPEN_ACTION = {
-  id: 'open',
-  label: '打开',
-  scope: 'workspace' as const,
-  action: 'lists.activate',
-};
+import { DOC_FIELDS, OPEN_ACTION } from './builtins/common';
 
 export interface ListServiceDeps {
   collections: Collections;
@@ -46,54 +34,7 @@ export class ListService {
 
   async snapshot(workspaceEpoch: number): Promise<ListSnapshot> {
     const groups: ListGroup[] = [];
-    const views = await this.deps.collections.list();
-    for (const view of views) {
-      const definitionId = view.source === 'docs' ? 'docs' : 'web';
-      const definition = listRegistry.get(definitionId);
-      if (!definition) continue;
-      for (const group of view.groups) {
-        groups.push({
-          id: `${view.source}:${group.id}`,
-          definitionId,
-          label: group.title,
-          ...(group.icon ? { icon: group.icon } : {}),
-          order: group.order,
-          count: group.items.length,
-          state: 'ready',
-          fields: definition.fields,
-          actions: definition.actions,
-          ...(definition.empty ? { empty: definition.empty } : {}),
-          items: group.items.map((item) => ({
-            key: item.ref,
-            itemType: definition.itemType,
-            title: item.title,
-            subtitle: view.label,
-            meta: {
-              ref: item.ref,
-              source: view.source,
-              sourceLabel: view.label,
-              groupId: group.id,
-              groupTitle: group.title,
-            },
-          })),
-        });
-      }
-    }
-
-    const temp = this.tempGroup();
-    if (temp) groups.push(temp);
-
-    groups.push(await this.sessionsGroup());
-    groups.push(this.pluginsGroup());
-    groups.push(this.settingsGroup());
-
     for (const entry of listRegistry.providers()) {
-      if (
-        ['docs', 'web', 'temp', 'sessions', 'plugins', 'settings'].includes(
-          entry.definition.id,
-        )
-      )
-        continue;
       const ctx = this.deps.collections.context(entry.owner);
       const custom = await entry.provider(ctx);
       for (const group of custom) {
@@ -114,6 +55,19 @@ export class ListService {
         });
       }
     }
+
+    const temp = this.tempGroup();
+    if (temp) groups.push(temp);
+
+    groups.push(await this.sessionsGroup());
+    groups.push(this.pluginsGroup());
+    groups.push(this.settingsGroup());
+
+    groups.sort(
+      (a, b) =>
+        (listRegistry.get(a.definitionId)?.order ?? 0) -
+        (listRegistry.get(b.definitionId)?.order ?? 0),
+    );
 
     return { workspaceEpoch, groups };
   }
@@ -229,30 +183,6 @@ export class ListService {
 
 function builtinDefinitions(): ListDefinition[] {
   return [
-    {
-      id: 'docs',
-      label: '本地文档',
-      icon: 'folder',
-      order: 10,
-      sourceScope: 'workspace',
-      itemType: 'document',
-      fields: DOC_FIELDS,
-      actions: [OPEN_ACTION],
-      empty: { icon: 'folder', text: '暂无本地文档' },
-      grouping: 'flat',
-    },
-    {
-      id: 'web',
-      label: '网站资料',
-      icon: 'globe',
-      order: 20,
-      sourceScope: 'workspace',
-      itemType: 'document',
-      fields: DOC_FIELDS,
-      actions: [OPEN_ACTION],
-      empty: { icon: 'globe', text: '暂无网站资料' },
-      grouping: 'domain',
-    },
     {
       id: 'temp',
       label: '临时网页',
