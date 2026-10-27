@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from 'react';
-import { useListsStore } from '../../state/lists';
+import { useWorkspaceStore } from '../../state/workspace';
 import { useUiStore } from '../../state/uiState';
 import { FindList } from './FindList';
 import { ListHost } from './ListHost';
@@ -16,8 +16,8 @@ const RESOURCE_LISTS = new Set(['docs', 'web', 'temp']);
 
 export function Sidebar() {
   const view = useUiStore((s) => s.sidebarView);
-  const groups = useListsStore((s) => s.groups);
-  const init = useListsStore((s) => s.init);
+  const groups = useWorkspaceStore((s) => s.groups);
+  const init = useWorkspaceStore((s) => s.init);
 
   useEffect(() => {
     void init();

@@ -10,11 +10,11 @@ import { PaneSplitter } from './components/PaneSplitter';
 import { ResourcePane } from './components/resource/ResourcePane';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { TitleBar } from './components/titlebar/TitleBar';
-import { rectStyle, useShellStore } from './state/shell';
+import { rectStyle, useWorkspaceStore } from './state/workspace';
 import { useUiStore } from './state/uiState';
 
 export function App() {
-  const layout = useShellStore((s) => s.layout);
+  const layout = useWorkspaceStore((s) => s.layout);
   const theme = useUiStore((s) => s.theme);
 
   // 主题 → html.dark class（驱动 Tailwind dark: 变体与 CSS 变量）

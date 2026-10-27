@@ -16,7 +16,7 @@ const ASSISTANT_SURFACE = 'bg-zinc-50 dark:bg-[#202124]';
 import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutSnapshot } from '../../shared/types';
 import { TABBAR_HEIGHT } from '../../shared/layout';
-import { useShellStore } from '../state/shell';
+import { useWorkspaceStore } from '../state/workspace';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
@@ -35,7 +35,7 @@ function bandRect(
 }
 
 export function PaneSplitter({ side }: { side: 'left' | 'right' }) {
-  const layout = useShellStore((s) => s.layout);
+  const layout = useWorkspaceStore((s) => s.layout);
   const [active, setActive] = useState(false);
   if (!layout) return null;
   const band = bandRect(side, layout);

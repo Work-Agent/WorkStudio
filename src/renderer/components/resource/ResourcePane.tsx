@@ -6,13 +6,17 @@
  * 不做分栏——文档与网页内容由主进程的原生视图承载（`layout.resourceContent`）。
  */
 import { FileText } from 'lucide-react';
-import { rectStyle, runViewCommand, useShellStore } from '../../state/shell';
+import {
+  rectStyle,
+  runViewCommand,
+  useWorkspaceStore,
+} from '../../state/workspace';
 import { typeIcon } from './typeIcon';
 import { TabsBar } from './TabsBar';
 
 export function ResourcePane() {
-  const layout = useShellStore((s) => s.layout);
-  const views = useShellStore((s) => s.views);
+  const layout = useWorkspaceStore((s) => s.layout);
+  const views = useWorkspaceStore((s) => s.views);
   if (!layout) return null;
 
   const active = views.find((v) => v.active) ?? null;

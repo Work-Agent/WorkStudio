@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { typeIcon } from '../resource/typeIcon';
-import { runViewCommand, useShellStore } from '../../state/shell';
+import { runViewCommand, useWorkspaceStore } from '../../state/workspace';
 import { FALLBACK_ACTION, TITLEBAR_ACTIONS } from './actions';
 import { rendererIcon } from './icons';
 
@@ -35,7 +35,7 @@ interface ToolbarAction {
 }
 
 export function ResourceToolbar() {
-  const views = useShellStore((s) => s.views);
+  const views = useWorkspaceStore((s) => s.views);
   const active = views.find((v) => v.active) ?? null;
 
   if (!active) return null;

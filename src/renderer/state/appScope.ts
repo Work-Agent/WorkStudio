@@ -7,9 +7,8 @@
 
 import type { AppEvent, AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAgentConfigStore } from './agentConfig';
-import { useListsStore } from './lists';
-import { useShellStore } from './shell';
 import { useUiStore } from './uiState';
+import { useWorkspaceStore } from './workspace';
 
 let initialized = false;
 let workspaceEpoch = -1;
@@ -55,11 +54,9 @@ function applySnapshot(snapshot: AppSnapshot): void {
   workspaceEpoch = snapshot.workspaceEpoch;
   sessionEpoch = snapshot.sessionEpoch;
 
-  useShellStore.setState({
+  useWorkspaceStore.setState({
     layout: snapshot.layout,
     views: snapshot.workspace.views,
-  });
-  useListsStore.setState({
     groups: snapshot.workspace.lists.groups,
     loading: false,
   });

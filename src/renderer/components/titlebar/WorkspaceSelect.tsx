@@ -10,7 +10,7 @@ import { ChevronDown, FolderOpen } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { electronAPI, popupMenu } from '../../api/runtime';
 import { useAgentConfigStore } from '../../state/agentConfig';
-import { runViewCommand } from '../../state/shell';
+import { runViewCommand } from '../../state/workspace';
 
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
 const MENU_SOURCE = 'workspace';
