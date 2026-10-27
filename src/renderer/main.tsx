@@ -7,17 +7,12 @@ import { App } from './App';
 import { bindTitlebarInsets } from './components/titlebar/windowControls';
 import { useAppStore } from './state/app';
 import { initAppScope } from './state/appScope';
-import { bindPiEvents, useConversationStore } from './state/conversation';
 import './index.css';
 
 async function bootstrap(): Promise<void> {
   try {
     await initAppScope();
-    bindPiEvents();
-    await Promise.all([
-      useConversationStore.getState().init(),
-      useAppStore.getState().init(),
-    ]);
+    await useAppStore.getState().init();
     bindTitlebarInsets();
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
