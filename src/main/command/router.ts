@@ -40,7 +40,7 @@ import type {
 } from '../agent/config-service';
 import type { PiPackageService } from '../agent/package-service';
 import type { Ura } from '../ura/facade';
-import type { CollectionContexts } from '../ura/contexts';
+import type { ListContexts } from '../ura/contexts';
 import { uraRegistry } from '../ura/registry';
 import { WriteSessionRegistry } from '../ura/sessions';
 import type { PageSessions } from '../ura/page-sessions';

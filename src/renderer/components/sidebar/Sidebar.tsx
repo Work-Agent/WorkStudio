@@ -12,8 +12,6 @@ import { FindList } from './FindList';
 import { ListHost } from './ListHost';
 import { SidebarNav } from './SidebarNav';
 
-const RESOURCE_LISTS = new Set(['docs', 'web', 'temp']);
-
 export function Sidebar() {
   const view = useUiStore((s) => s.sidebarView);
   const groups = useWorkspaceStore((s) => s.groups);
@@ -23,12 +21,13 @@ export function Sidebar() {
     void init();
   }, [init]);
 
-  const visible =
+  const section =
     view === 'plugins'
-      ? groups.filter((group) => group.definitionId === 'plugins')
+      ? 'plugins'
       : view === 'settings'
-        ? groups.filter((group) => group.definitionId === 'settings')
-        : groups.filter((group) => RESOURCE_LISTS.has(group.definitionId));
+        ? 'settings'
+        : 'resources';
+  const visible = groups.filter((group) => group.section === section);
 
   return (
     <div className="flex h-full w-full" data-testid="sidebar">

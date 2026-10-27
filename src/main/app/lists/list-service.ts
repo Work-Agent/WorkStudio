@@ -14,12 +14,12 @@ import type { AgentHost } from '../../agent/agent-host';
 import type { ViewHost } from '../../capabilities/webview/host';
 import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
-import type { CollectionContexts } from '../../ura/contexts';
+import type { ListContexts } from '../../ura/contexts';
 import { listRegistry } from './list-registry';
 import { OPEN_ACTION } from './builtins/common';
 
 export interface ListServiceDeps {
-  contexts: CollectionContexts;
+  contexts: ListContexts;
   agent: AgentHost;
   plugins: PluginHost;
   viewHost: ViewHost;
@@ -41,6 +41,7 @@ export class ListService {
         groups.push({
           id: `${entry.definition.id}:${group.id}`,
           definitionId: entry.definition.id,
+          section: entry.definition.section ?? 'resources',
           label: group.label,
           ...(group.icon ? { icon: group.icon } : {}),
           order: group.order,
@@ -90,6 +91,7 @@ export class ListService {
     return {
       id: 'temp',
       definitionId: definition.id,
+      section: definition.section ?? 'resources',
       label: definition.label,
       count: items.length,
       state: 'ready',
@@ -118,6 +120,7 @@ export class ListService {
     return {
       id: 'sessions',
       definitionId: definition.id,
+      section: definition.section ?? 'resources',
       label: definition.label,
       count: items.length,
       state: 'ready',
@@ -147,6 +150,7 @@ export class ListService {
     return {
       id: 'plugins',
       definitionId: definition.id,
+      section: definition.section ?? 'resources',
       label: definition.label,
       count: items.length,
       state: 'ready',
@@ -170,6 +174,7 @@ export class ListService {
     return {
       id: 'settings',
       definitionId: definition.id,
+      section: definition.section ?? 'resources',
       label: definition.label,
       count: items.length,
       state: 'ready',
@@ -211,6 +216,7 @@ function builtinDefinitions(): ListDefinition[] {
     },
     {
       id: 'plugins',
+      section: 'plugins',
       label: '插件',
       icon: 'package',
       order: 50,
@@ -225,6 +231,7 @@ function builtinDefinitions(): ListDefinition[] {
     },
     {
       id: 'settings',
+      section: 'settings',
       label: '设置',
       icon: 'sliders',
       order: 60,

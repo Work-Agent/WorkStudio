@@ -5,7 +5,7 @@
  */
 
 import type { ListDefinition, ListItem } from '../../../shared/lists';
-import type { CollectionContext } from '../../../shared/ura';
+import type { ListContext } from '../../../shared/ura';
 
 export interface ListProviderGroup {
   id: string;
@@ -17,7 +17,7 @@ export interface ListProviderGroup {
 }
 
 export type ListProvider = (
-  ctx: CollectionContext,
+  ctx: ListContext,
 ) => Promise<ListProviderGroup[]> | ListProviderGroup[];
 
 interface ListEntry {

@@ -5,6 +5,7 @@
  */
 
 export type ListSourceScope = 'app' | 'workspace';
+export type ListSection = 'resources' | 'plugins' | 'settings';
 
 export interface ListFieldSpec {
   /** title / subtitle / time / badge / meta.<key> */
@@ -29,6 +30,8 @@ export interface ListDefinition {
   icon?: string;
   order?: number;
   sourceScope: ListSourceScope;
+  /** 侧栏主形态；缺省 = resources。 */
+  section?: ListSection;
   itemType: string;
   fields: ListFieldSpec[];
   actions: ListActionSpec[];
@@ -56,6 +59,7 @@ export interface ListItem {
 export interface ListGroup {
   id: string;
   definitionId: string;
+  section: ListSection;
   label: string;
   icon?: string;
   order?: number;

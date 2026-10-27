@@ -438,7 +438,7 @@ export interface ViewActionView {
 
 // ─── 列表上下文 ──────────────────────────────────────────────────────
 
-export interface CollectionContext {
+export interface ListContext {
   /** 工作区根（file:// 标识）。 */
   workspace: string;
   /** 资源发现（不持句柄，只用统一标识）。 */

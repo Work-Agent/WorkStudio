@@ -7,7 +7,7 @@ import { registerBrowserFeatures } from '../capabilities/browser/features';
 import { BindingStore } from './bindings';
 import { PluginHost } from '../plugins/host';
 import { BUILTIN_PLUGINS } from '../plugins/builtin';
-import { CollectionContexts } from './contexts';
+import { ListContexts } from './contexts';
 import { listRegistry } from '../app/lists/list-registry';
 import { docsDefinition, docsProvider } from '../app/lists/builtins/docs';
 import { Ura } from './facade';
@@ -22,7 +22,7 @@ export interface UraRuntime {
   pipeline: ResourcePipeline;
   ura: Ura;
   host: PluginHost;
-  contexts: CollectionContexts;
+  contexts: ListContexts;
   map: ResourceMap;
 }
 
@@ -64,7 +64,7 @@ export async function createUraRuntime(options: {
     (surface, owner) => host.pageFor(surface, owner),
     bindingStore,
   );
-  const contexts = new CollectionContexts(ura, host, options.workspace);
+  const contexts = new ListContexts(ura, host, options.workspace);
   const map = new ResourceMap(ura, uraRegistry, options.workspace);
   map.setSource(async () => {
     const groups = [];
