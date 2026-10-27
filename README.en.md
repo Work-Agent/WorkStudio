@@ -96,7 +96,7 @@ Workspace (aggregate root)
 └─ View collection: tab order · active slot · pinned slots
 
 Cross-cutting capability
-├─ Plugins: resource implementations + pages + collections + actions
+├─ Plugins: resource implementations + pages + lists + actions
 ├─ Settings: built-in page list
 └─ Browser: online pages + automation
 ```
@@ -291,7 +291,7 @@ table  "Quarterly compare" table:nth-of-type(1)
 
 ### 5.3 Plugins: fill the segments
 
-A plugin is whatever can fill the three segments of 5.1: it registers transport / codec / store / consumer / presenter / sidecar, plus collections and actions. The framework core builds in only `file` / `http` / `https` and a few built-in codecs (which are themselves plugins); all other sources and formats are filled by plugins. This pipeline is URA; online pages do not enter it (see 5.2).
+A plugin is whatever can fill the three segments of 5.1: it registers transport / codec / store / consumer / presenter / sidecar, plus lists and actions. The framework core builds in only `file` / `http` / `https` and a few built-in codecs (which are themselves plugins); all other sources and formats are filled by plugins. This pipeline is URA; online pages do not enter it (see 5.2).
 
 ```
 Read:
@@ -313,14 +313,14 @@ Write:
 change ─► locate ─► encode (minimal patch) ─► commit to source ─► data update ─► broadcast
 ```
 
-| Segment    | Responsibility                                                             |
-| ---------- | -------------------------------------------------------------------------- |
-| transport  | Protocol → RawContent (mime, bytes); capabilities declared at registration |
-| codec      | Declares `(transport, mime)` → document                                    |
-| store      | Bound to a codec: document → structured query (derived)                    |
-| consumer   | Declares `(transport, mime, codec)` → page (render / edit) · text outlet   |
-| collection | Sidebar group                                                              |
-| action     | Address-bar action                                                         |
+| Segment   | Responsibility                                                             |
+| --------- | -------------------------------------------------------------------------- |
+| transport | Protocol → RawContent (mime, bytes); capabilities declared at registration |
+| codec     | Declares `(transport, mime)` → document                                    |
+| store     | Bound to a codec: document → structured query (derived)                    |
+| consumer  | Declares `(transport, mime, codec)` → page (render / edit) · text outlet   |
+| list      | Sidebar list definition + workspace data provider                          |
+| action    | Address-bar action                                                         |
 
 - **Segments can be filled separately**: a plugin may fill one segment (add a single codec) or the whole chain (source + format + page); which segment is filled is decided by the registration API, with no requirement to own everything.
 - **Two kinds of page, two owners**: `page` is a resource page whose entry and key belong to URA; `settings` is a plugin configuration / detail page — the page comes from the plugin, but its list, entry and ref belong to settings (Settings → Plugins, install details). Both share the same page loading and whitelist bridge.

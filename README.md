@@ -96,7 +96,7 @@ Workspace（聚合根）
 └─ View collection 打开集合：标签顺序 · 激活位 · 固定位
 
 横向能力
-├─ 插件：资源实现 + 页面 + 集合 + 动作
+├─ 插件：资源实现 + 页面 + 列表 + 动作
 ├─ 设置：内置页面清单
 └─ 浏览器：在线网页 + 自动化
 ```
@@ -290,7 +290,7 @@ table  "季度对比"   table:nth-of-type(1)
 
 ### 5.3 插件：填段
 
-插件就是能把 5.1 的三段填上的东西：它注册 transport / codec / store / consumer / presenter / sidecar，外加集合与动作。框架核心只内建 `file` / `http` / `https` 与少数内置 codec（它们本质上也是插件），其余来源与格式都由插件填。这条管道即 URA；在线网页不进它（见 5.2）。
+插件就是能把 5.1 的三段填上的东西：它注册 transport / codec / store / consumer / presenter / sidecar，外加列表与动作。框架核心只内建 `file` / `http` / `https` 与少数内置 codec（它们本质上也是插件），其余来源与格式都由插件填。这条管道即 URA；在线网页不进它（见 5.2）。
 
 ```
 读：
@@ -312,14 +312,14 @@ presenter   page / settings / sidecar 都由插件注册；未注册时回退 ra
 变更 ─► 定位 ─► 编码（最小补丁） ─► 来源提交 ─► 数据更新 ─► 广播
 ```
 
-| 段         | 职责                                                            |
-| ---------- | --------------------------------------------------------------- |
-| transport  | 协议 → RawContent（mime、bytes）；能力在注册时声明              |
-| codec      | 声明 `(transport, mime)` → 文档                                 |
-| store      | 绑在 codec 上：文档 → 结构化查询（派生）                        |
-| consumer   | 声明 `(transport, mime, codec)` → 页面（渲染 / 编辑）· 文本出口 |
-| collection | 侧栏分组                                                        |
-| action     | 地址栏动作                                                      |
+| 段        | 职责                                                            |
+| --------- | --------------------------------------------------------------- |
+| transport | 协议 → RawContent（mime、bytes）；能力在注册时声明              |
+| codec     | 声明 `(transport, mime)` → 文档                                 |
+| store     | 绑在 codec 上：文档 → 结构化查询（派生）                        |
+| consumer  | 声明 `(transport, mime, codec)` → 页面（渲染 / 编辑）· 文本出口 |
+| list      | 侧栏列表定义 + 工作区数据 provider                              |
+| action    | 地址栏动作                                                      |
 
 - **段可以拆开填**：一个插件能只填一段（只加一种 codec），也能填整条（来源 + 格式 + 页面）；填哪段由注册接口决定，不要求包办全链。
 - **两类页面归属不同**：`page` 是资源页，入口与键都归 URA；`settings` 是插件配置 / 详情页，页面由插件提供，但清单、入口与 ref 归设置面（设置 → 插件、安装时详情）。两者共用同一套页面装载与白名单桥。

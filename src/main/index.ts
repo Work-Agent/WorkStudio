@@ -665,6 +665,7 @@ app.whenReady().then(async () => {
   uraRuntime!.map.setSource(async () => {
     const snapshot = await listService.snapshot(0);
     return snapshot.groups
+      .filter((group) => group.section === 'resources')
       .map((group) => ({
         label: group.label,
         items: group.items
