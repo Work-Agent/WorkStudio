@@ -89,7 +89,6 @@ export class AgentHost {
   private workspacePath!: string;
   private settingsStorage!: AppSpaceSettingsStorage;
   private dialogHost: DialogHost | null = null;
-  private editorText = '';
   private pendingReason = 'replace';
 
   private constructor(
@@ -251,9 +250,6 @@ export class AgentHost {
         dialogs: this.dialogHost,
         onNotify: (message, level, source) =>
           this.deps.ui.onNotify(message, level, source),
-        onEditorText: (text) => {
-          this.editorText = text;
-        },
       }),
       mode: 'rpc' as never,
       onError: (err) => log.error('extension error', err),
@@ -873,14 +869,6 @@ export class AgentHost {
 
   handleDialogResponse(response: UiDialogResponse): void {
     this.dialogHost?.respond(response);
-  }
-
-  updateEditorMirror(text: string): void {
-    this.editorText = text;
-  }
-
-  getEditorMirror(): string {
-    return this.editorText;
   }
 
   pushInternal(event: AppInternalEvent): void {

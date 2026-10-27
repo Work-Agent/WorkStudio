@@ -22,7 +22,6 @@ import { useAgentConfigStore } from '../../state/agentConfig';
 import { commandStore } from '../../state/commands';
 import { useConversationStore, type QueueMode } from '../../state/conversation';
 import { useInputStore } from '../../state/input';
-import { usePiUIStore } from '../../state/piUI';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { ModelSwitcher } from './ModelSwitcher';
 import { SkillSelector } from './SkillSelector';
@@ -94,16 +93,6 @@ export function AssistantInput() {
     });
     return offRefClick;
   }, []);
-
-  // main 侧 setEditorText/pasteToEditor 消费（扩展改输入框 → 镜像写入）
-  const editorTextFromMain = usePiUIStore((s) => s.editorTextFromMain);
-  useEffect(() => {
-    if (editorTextFromMain) {
-      useInputStore
-        .getState()
-        .setFromMain(editorTextFromMain.text, editorTextFromMain.paste);
-    }
-  }, [editorTextFromMain]);
 
   /** 快捷键路径（⌘Enter=steer / ⇧⌘Enter=followUp，streaming 中）。 */
   const queueSendHotkey = (mode: QueueMode): void => {

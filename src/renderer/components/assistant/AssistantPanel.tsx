@@ -10,10 +10,8 @@ import type { PopupMenuItem } from '../../../shared/types';
 import { popupMenu } from '../../api/runtime';
 import { useAgentConfigStore } from '../../state/agentConfig';
 import { useConversationStore } from '../../state/conversation';
-import { usePiUIStore } from '../../state/piUI';
 import { setUiState, useUiStore } from '../../state/uiState';
 import { AssistantInput } from './AssistantInput';
-import { DialogHost } from './DialogHost';
 import { MessageBubble } from './MessageBubble';
 import { SessionInfoPanel } from './SessionInfoPanel';
 
@@ -33,7 +31,6 @@ export function AssistantPanel() {
     (s) => s.messagesBySession[activePath ?? '__new__'] ?? [],
   );
   const configured = useAgentConfigStore((s) => s.status.configured);
-  const toasts = usePiUIStore((s) => s.toasts);
 
   // 消息变化自动滚动（距底时）
   const prevLenRef = useRef(0);
@@ -227,27 +224,8 @@ export function AssistantPanel() {
         })}
       </div>
 
-      {/* 扩展 toast（notify） */}
-      <div className="fixed bottom-24 right-5 z-[90] flex flex-col gap-2 items-end pointer-events-none">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`px-3.5 py-2 rounded-lg shadow-lg text-[12px] max-w-80 ${
-              t.level === 'error'
-                ? 'bg-red-500/95 text-white'
-                : t.level === 'warning'
-                  ? 'bg-amber-500/95 text-white'
-                  : 'bg-zinc-800/95 text-white dark:bg-zinc-700/95'
-            }`}
-          >
-            {t.message}
-          </div>
-        ))}
-      </div>
-
       <AssistantInput />
       <SessionInfoPanel />
-      <DialogHost />
     </div>
   );
 }

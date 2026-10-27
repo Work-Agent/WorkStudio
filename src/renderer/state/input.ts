@@ -12,7 +12,6 @@ import { create } from 'zustand';
 import { useAgentConfigStore } from './agentConfig';
 import { commandStore, matchCommands } from './commands';
 import { useConversationStore } from './conversation';
-import { usePiUIStore } from './piUI';
 import { useUiStore } from './uiState';
 
 /** Enter 提交修饰（快捷键路径）：enter=默认 / steer=⌘Enter / followUp=⇧⌘Enter。 */
@@ -57,11 +56,6 @@ function computeAcItems(
   }));
 }
 
-/** 编辑器镜像推送（D7：草稿回灌 pi 编辑器状态）。 */
-function mirror(text: string, immediate = false): void {
-  usePiUIStore.getState().pushEditorMirror(text, immediate);
-}
-
 const EMPTY_AC: CompletionItem[] = [];
 
 export const useInputStore = create<InputState>()((set, get) => ({
@@ -79,7 +73,6 @@ export const useInputStore = create<InputState>()((set, get) => ({
       acIdx: 0,
       acItems: computeAcItems(raw, completionOpen),
     });
-    mirror(raw);
   },
 
   /** 追加片段（浏览器 ref 标签回填 @ref）。 */
@@ -108,7 +101,6 @@ export const useInputStore = create<InputState>()((set, get) => ({
       acIdx: 0,
       acItems: EMPTY_AC,
     });
-    mirror('/' + name + ' ');
   },
 
   /** 关闭补全（Esc / 选中后）——文本保留（再输入字符可重开）。 */
@@ -133,7 +125,6 @@ export const useInputStore = create<InputState>()((set, get) => ({
     if (!full || !useAgentConfigStore.getState().status.configured) return;
     // 先求值再清空（同步；镜像立即推空——提交即推语义）
     set({ text: '', completionOpen: false, acIdx: 0, acItems: EMPTY_AC });
-    mirror('', true);
 
     const conversation = useConversationStore.getState();
     if (full.startsWith('/')) {
