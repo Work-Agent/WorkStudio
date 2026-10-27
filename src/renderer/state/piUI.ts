@@ -196,6 +196,3 @@ export const usePiUIStore = create<PiUIState>()((set, get) => ({
 }));
 
 /** 全局订阅（main.tsx 挂一次）。 */
-export function bindPiUIRequests(): void {
-  // UI 请求经主进程浮层投递，工作台渲染层不再订阅旧通道。
-}
