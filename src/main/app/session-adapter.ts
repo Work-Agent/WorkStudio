@@ -66,6 +66,62 @@ export class SessionAdapter {
     return result;
   }
 
+  steer(text: string): Promise<void> {
+    return this.deps.agent.steer(text);
+  }
+
+  followUp(text: string): Promise<void> {
+    return this.deps.agent.followUp(text);
+  }
+
+  abort(): Promise<void> {
+    return this.deps.agent.abort();
+  }
+
+  clearQueue(): void {
+    this.deps.agent.clearQueue();
+  }
+
+  compact(instructions?: string): Promise<void> {
+    return this.deps.agent.compact(instructions);
+  }
+
+  listSessions(): ReturnType<AgentHost['listSessions']> {
+    return this.deps.agent.listSessions();
+  }
+
+  deleteSession(path: string): Promise<void> {
+    return this.deps.agent.deleteSession(path);
+  }
+
+  renameSession(path: string, name: string): void {
+    this.deps.agent.renameSession(path, name);
+  }
+
+  getMessages(path?: string): ReturnType<AgentHost['getMessages']> {
+    return this.deps.agent.getMessages(path);
+  }
+
+  getCommands(): ReturnType<AgentHost['getCommands']> {
+    return this.deps.agent.getCommands();
+  }
+
+  getStats(): ReturnType<AgentHost['getSessionStats']> {
+    return this.deps.agent.getSessionStats();
+  }
+
+  setSteeringMode(mode: 'all' | 'one-at-a-time'): void {
+    this.deps.agent.setSteeringMode(mode);
+  }
+
+  setFollowUpMode(mode: 'all' | 'one-at-a-time'): void {
+    this.deps.agent.setFollowUpMode(mode);
+  }
+
+  setAutoCompaction(enabled: boolean): void {
+    this.deps.agent.setAutoCompaction(enabled);
+  }
+
   async prompt(params: {
     text: string;
     newSession?: boolean;

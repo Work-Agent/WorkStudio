@@ -35,9 +35,6 @@ interface UiStoreState extends UiState {
   init: () => Promise<void>;
   patch: (patch: UiPatch) => void;
   toggleTheme: () => void;
-  openSessionTab: (path: string) => void;
-  closeSessionTab: (path: string) => void;
-  removeSessionFromTabs: (path: string, nextActive: string | null) => void;
 }
 
 export const useUiStore = create<UiStoreState>()((set, get) => ({
@@ -56,24 +53,6 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   toggleTheme: () =>
     get().patch({ theme: get().theme === 'dark' ? 'light' : 'dark' }),
-
-  /** 会话标签打开语义：加入 openPaths（若未在）+ 激活。 */
-  openSessionTab: (path) => {
-    void mainBridge?.cmd('session.openTab', { path });
-  },
-
-  /** 关闭标签 ≠ 删除：openPaths 移除；关的是活跃则切相邻，无剩余回新任务态。 */
-  closeSessionTab: (path) => {
-    void mainBridge?.cmd('session.closeTabs', { paths: [path] });
-  },
-
-  /** 删除会话时同步清理 openPaths / activePath（真删除路径，配合会话 store）。 */
-  removeSessionFromTabs: (path, nextActive) => {
-    set((state) => ({
-      openPaths: state.openPaths.filter((p) => p !== path),
-      activePath: nextActive,
-    }));
-  },
 }));
 
 /** 写：乐观更新 + IPC 直通（主进程合并落盘并广播回收敛）。 */

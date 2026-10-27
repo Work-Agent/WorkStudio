@@ -230,16 +230,16 @@ export async function invoke(
         });
         return ok(null);
       case 'session.steer':
-        await d.agent.steer(String(p.text ?? ''));
+        await d.sessions.steer(String(p.text ?? ''));
         return ok(null);
       case 'session.followUp':
-        await d.agent.followUp(String(p.text ?? ''));
+        await d.sessions.followUp(String(p.text ?? ''));
         return ok(null);
       case 'session.abort':
-        await d.agent.abort();
+        await d.sessions.abort();
         return ok(null);
       case 'session.clearQueue':
-        d.agent.clearQueue();
+        d.sessions.clearQueue();
         return ok(null);
       case 'session.new': {
         // 新任务态：集合不动，当前置空；pi 侧换一个空会话（首条消息才落盘）。
@@ -276,43 +276,43 @@ export async function invoke(
           ),
         );
       case 'session.list':
-        return ok(await d.agent.listSessions());
+        return ok(await d.sessions.listSessions());
       case 'session.delete': {
         const path = String(p.path ?? '');
-        await d.agent.deleteSession(path);
+        await d.sessions.deleteSession(path);
         // 删除后同步收缩打开集合（否则留下指向已删文件的幽灵标签）
         await closeSessionTabs(d, [path]);
         return ok(null);
       }
       case 'session.rename':
-        d.agent.renameSession(String(p.path ?? ''), String(p.name ?? ''));
+        d.sessions.renameSession(String(p.path ?? ''), String(p.name ?? ''));
         return ok(null);
       case 'session.getMessages':
         return ok(
-          await d.agent.getMessages(p.path ? String(p.path) : undefined),
+          await d.sessions.getMessages(p.path ? String(p.path) : undefined),
         );
       case 'session.compact':
-        await d.agent.compact(
+        await d.sessions.compact(
           p.instructions ? String(p.instructions) : undefined,
         );
         return ok(null);
       case 'session.setSteeringMode':
-        d.agent.setSteeringMode(
+        d.sessions.setSteeringMode(
           p.mode === 'one-at-a-time' ? 'one-at-a-time' : 'all',
         );
         return ok(null);
       case 'session.setFollowUpMode':
-        d.agent.setFollowUpMode(
+        d.sessions.setFollowUpMode(
           p.mode === 'one-at-a-time' ? 'one-at-a-time' : 'all',
         );
         return ok(null);
       case 'session.setAutoCompaction':
-        d.agent.setAutoCompaction(p.enabled === true);
+        d.sessions.setAutoCompaction(p.enabled === true);
         return ok(null);
       case 'session.stats':
-        return ok(d.agent.getSessionStats());
+        return ok(d.sessions.getStats());
       case 'session.getCommands':
-        return ok(d.agent.getCommands());
+        return ok(d.sessions.getCommands());
 
       // ═══ Agent 配置域 ═══
       case 'agent.status':
