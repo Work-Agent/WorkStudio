@@ -31,20 +31,12 @@ const DEFAULTS: UiState = {
 type UiPatch = Partial<Omit<UiState, '__version__'>>;
 
 interface UiStoreState extends UiState {
-  hydrated: boolean;
-  init: () => Promise<void>;
   patch: (patch: UiPatch) => void;
   toggleTheme: () => void;
 }
 
 export const useUiStore = create<UiStoreState>()((set, get) => ({
   ...DEFAULTS,
-  hydrated: false,
-
-  init: async () => {
-    if (get().hydrated) return;
-    set({ hydrated: true });
-  },
 
   patch: (patch) => {
     set(patch as Partial<UiStoreState>);

@@ -68,7 +68,6 @@ function applySnapshot(snapshot: AppSnapshot): void {
 
   const ui = snapshot.ui;
   useUiStore.setState({
-    hydrated: true,
     theme: ui.theme,
     aiOpen: ui.assistant.open,
     aiFloating: ui.assistant.floating,
