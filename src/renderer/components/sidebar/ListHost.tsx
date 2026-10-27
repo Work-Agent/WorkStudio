@@ -43,10 +43,18 @@ function Row({ item, collapsed }: { item: ListItem; collapsed: boolean }) {
   const semantic = item.icon && !/^(data:|https?:|app:)/.test(item.icon);
   const Icon = semantic ? (ICONS[item.icon!] ?? iconFor(item)) : iconFor(item);
   const active = item.state?.active === true;
+  const disabled = item.state?.disabled === true;
   return (
     <div
-      onClick={() => void activate(item)}
-      className="group relative flex items-center px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200 dark:hover:bg-[#2a2c2d] transition-colors min-h-[42px]"
+      onClick={() => {
+        if (!disabled) void activate(item);
+      }}
+      aria-disabled={disabled || undefined}
+      className={`group relative flex items-center px-2 py-1.5 rounded-lg transition-colors min-h-[42px] ${
+        disabled
+          ? 'opacity-40 cursor-not-allowed'
+          : 'cursor-pointer hover:bg-zinc-200 dark:hover:bg-[#2a2c2d]'
+      }`}
       title={item.title}
     >
       {active && (
@@ -107,7 +115,10 @@ export function ListHost({ groups }: { groups: ListGroup[] }) {
               </div>
             )}
             {group.state === 'error' ? (
-              <div className="px-2 py-1 text-[11px] text-red-500">
+              <div
+                className="px-2 py-1 text-[11px] text-red-500"
+                title={group.diagnostics?.join('\n')}
+              >
                 列表加载失败
               </div>
             ) : group.items.length === 0 ? (

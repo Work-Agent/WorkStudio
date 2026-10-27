@@ -51,7 +51,7 @@ const PAGES: SettingsPageDef[] = [
   {
     id: 'plugins',
     label: '插件',
-    desc: 'npm / git / 本地路径 · 内置插件',
+    desc: 'zip 安装 · 本地路径 · 内置插件',
     icon: 'package',
   },
   {
