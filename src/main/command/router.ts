@@ -850,8 +850,10 @@ export async function invoke(
 
       case 'lists.snapshot':
         return ok(await d.lists.snapshot(0));
-      case 'lists.activate':
-        return ok(await activateListItem(d, p.item as ListItem));
+      case 'list.action':
+        if (p.action === 'open')
+          return ok(await activateListItem(d, p.item as ListItem));
+        return err('unknown_action', `Unknown list action: ${p.action}`);
 
       default:
         return err('unknown_command', `Unknown command: ${command}`);

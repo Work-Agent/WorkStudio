@@ -45,7 +45,7 @@ function iconFor(item: ListItem): LucideIcon {
 }
 
 async function activate(item: ListItem): Promise<void> {
-  await window.workbench?.cmd('lists.activate', { item });
+  await window.workbench?.cmd('list.action', { action: 'open', item });
 }
 
 function Row({ item, collapsed }: { item: ListItem; collapsed: boolean }) {

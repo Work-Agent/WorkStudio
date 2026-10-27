@@ -10,5 +10,5 @@ export const OPEN_ACTION: ListActionSpec = {
   id: 'open',
   label: '打开',
   scope: 'workspace',
-  action: 'lists.activate',
+  action: 'list.action',
 };

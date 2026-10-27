@@ -81,7 +81,7 @@ export function FindList() {
       title: name,
       meta: { ref },
     };
-    void mainBridge?.cmd('lists.activate', { item });
+    void mainBridge?.cmd('list.action', { action: 'open', item });
   };
 
   return (
