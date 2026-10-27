@@ -27,7 +27,8 @@ import '../index.css';
 import { bridge, MENU_SOURCE } from './bridge';
 import { MessageRow, ResizeHandles } from './components';
 import { formatTokens, tabLabel } from './format';
-import { useAgent, useMessages, useSessions, useShell } from './session';
+import { useMessages } from './messages';
+import { useAgent, useSessions, useShell } from './session';
 
 // 浮动圆角依赖视图透明：页面画布与 body 不得有底色（面板底色由根容器负责）。
 document.documentElement.style.background = 'transparent';
