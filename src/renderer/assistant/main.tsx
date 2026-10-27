@@ -6,7 +6,7 @@
  *   浮动 = 拖拽标题栏 + 同一排 tabs；移动/缩放交主进程交互层。
  * 会话标签集合语义（打开/关闭/激活）在主进程（session.openTab / closeTabs）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   BookOpen,
@@ -67,6 +67,7 @@ function Assistant() {
   const activeTokens = sessions.find((s) => s.path === activePath)?.tokens;
 
   const [text, setText] = useState('');
+  const [commandTag, setCommandTag] = useState<string | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [extensionStatus, setExtensionStatus] = useState<
     Record<string, string | undefined>
@@ -88,6 +89,9 @@ function Assistant() {
   const [acIdx, setAcIdx] = useState(0);
   const [acDismissed, setAcDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const tagRef = useRef<HTMLDivElement | null>(null);
+  const [tagWidth, setTagWidth] = useState(0);
+  const [inputScrollTop, setInputScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const commands = useCommands(activePath);
@@ -96,12 +100,16 @@ function Assistant() {
     const fragment = text.slice(1).split(' ')[0] ?? '';
     if (fragment !== text.slice(1)) return [];
     return matchCommands(commands, fragment);
-  }, [acDismissed, commands, text]);
+  }, [acDismissed, commandTag, commands, text]);
 
   useEffect(() => {
     setAcIdx(0);
     setAcDismissed(false);
   }, [text]);
+
+  useLayoutEffect(() => {
+    setTagWidth(commandTag ? (tagRef.current?.offsetWidth ?? 0) : 0);
+  }, [commandTag]);
 
   useEffect(() => {
     const openStats = (): void => setStatsOpen(true);
@@ -113,6 +121,7 @@ function Assistant() {
     const onEditor = (event: Event): void => {
       const detail = (event as CustomEvent<{ text: string; paste?: boolean }>)
         .detail;
+      setCommandTag(null);
       setText((previous) =>
         detail.paste && previous ? previous + detail.text : detail.text,
       );
@@ -228,7 +237,9 @@ function Assistant() {
   const submit = async (
     mode: 'prompt' | 'steer' | 'followUp' = 'prompt',
   ): Promise<void> => {
-    const value = text.trim();
+    const value = commandTag
+      ? `/${commandTag}${text.trim() ? ` ${text.trim()}` : ''}`
+      : text.trim();
     const api = bridge;
     if (!value || !api) return;
     if (value.startsWith('/')) {
@@ -245,10 +256,12 @@ function Assistant() {
       });
       if (consumed) {
         setText('');
+        setCommandTag(null);
         return;
       }
     }
     setText('');
+    setCommandTag(null);
     pushOptimistic(value);
     if (streaming || agent?.isStreaming) {
       await api.cmd(
@@ -265,7 +278,10 @@ function Assistant() {
   };
 
   const applyCompletion = (name: string): void => {
-    setText('/' + name + ' ');
+    setCommandTag(name);
+    setText('');
+    setInputScrollTop(0);
+    setAcDismissed(true);
     textareaRef.current?.focus();
   };
 
@@ -351,7 +367,9 @@ function Assistant() {
     [models, agent?.provider, agent?.modelId],
   );
 
-  const canSend = Boolean(agent?.configured) && text.trim().length > 0;
+  const canSend =
+    Boolean(agent?.configured) &&
+    (text.trim().length > 0 || commandTag !== null);
   const showEmpty = messages.length === 0 && !streaming && !optimisticText;
 
   return (
@@ -559,8 +577,8 @@ function Assistant() {
                     key={command.name}
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      applyCompletion(command.name);
                     }}
+                    onClick={() => applyCompletion(command.name)}
                     className={`w-full text-left px-2.5 py-1.5 text-[12px] flex items-center gap-2 ${
                       index === acIdx
                         ? 'bg-zinc-100 dark:bg-[#2a2d2e]'
@@ -577,77 +595,124 @@ function Assistant() {
                 ))}
               </div>
             )}
-            <textarea
-              ref={textareaRef}
-              className={`min-w-0 flex-1 resize-none bg-transparent text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none text-[12.5px] leading-normal overflow-y-auto pr-5 ${
-                inputExpanded ? 'h-full' : ''
-              }`}
-              rows={inputExpanded ? undefined : 3}
-              placeholder={
-                agent?.configured
-                  ? '描述要完成的操作…（/ 命令，Enter 发送，⇧⌘Enter 排队）'
-                  : '未配置模型'
-              }
-              value={text}
-              disabled={!agent?.configured}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (acItems.length > 0) {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setAcIdx((index) =>
-                      Math.min(index + 1, acItems.length - 1),
-                    );
-                    return;
-                  }
-                  if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setAcIdx((index) => Math.max(index - 1, 0));
-                    return;
-                  }
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
+            <div className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
+              {commandTag && (
+                <div
+                  ref={tagRef}
+                  style={{
+                    height: '18.75px',
+                    lineHeight: '18.75px',
+                    transform: `translateY(${-inputScrollTop}px)`,
+                  }}
+                  className="absolute left-0 top-0 z-10 flex items-center gap-0.5 rounded-md bg-[#4F6BED]/10 text-[#4F6BED] dark:text-[#8ea2f5] px-1 py-0 text-[10.5px] font-mono"
+                >
+                  <Terminal className="w-3 h-3" />
+                  <span>/{commandTag}</span>
+                  <button
+                    onClick={() => setCommandTag(null)}
+                    className="ml-0.5 rounded-sm hover:bg-[#4F6BED]/15"
+                    title="移除命令"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
+              <textarea
+                ref={textareaRef}
+                className={`w-full min-w-0 flex-1 resize-none bg-transparent text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none text-[12.5px] leading-normal overflow-y-auto pr-5 ${
+                  inputExpanded ? 'h-full' : ''
+                }`}
+                rows={inputExpanded ? undefined : 3}
+                placeholder={
+                  !agent?.configured
+                    ? '未配置模型'
+                    : commandTag
+                      ? '输入参数…'
+                      : '描述任务，或 / 命令'
+                }
+                value={text}
+                disabled={!agent?.configured}
+                style={{
+                  textIndent: commandTag ? `${tagWidth + 6}px` : undefined,
+                }}
+                onScroll={(event) =>
+                  setInputScrollTop(event.currentTarget.scrollTop)
+                }
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const match = /^\/(\S+)\s+([\s\S]*)$/.exec(next);
+                  if (match) {
+                    setCommandTag(match[1]!);
+                    setText(match[2] ?? '');
+                    setInputScrollTop(0);
                     setAcDismissed(true);
                     return;
                   }
-                  if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                  setText(next);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Backspace' && commandTag && !text) {
                     e.preventDefault();
-                    const command = acItems[acIdx];
-                    if (!command) return;
-                    if (
-                      e.key === 'Enter' &&
-                      '/' + command.name === text.trim()
-                    ) {
-                      setText('');
-                      void submit('prompt');
-                      return;
-                    }
-                    applyCompletion(command.name);
+                    setCommandTag(null);
                     return;
                   }
-                }
-                if (
-                  e.key === 'Enter' &&
-                  (e.metaKey || e.ctrlKey) &&
-                  e.shiftKey &&
-                  !e.nativeEvent.isComposing
-                ) {
-                  e.preventDefault();
-                  void submit('followUp');
-                  return;
-                }
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
-                ) {
-                  e.preventDefault();
-                  void submit(
-                    streaming || agent?.isStreaming ? 'steer' : 'prompt',
-                  );
-                }
-              }}
-            />
+                  if (acItems.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setAcIdx((index) =>
+                        Math.min(index + 1, acItems.length - 1),
+                      );
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setAcIdx((index) => Math.max(index - 1, 0));
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setAcDismissed(true);
+                      return;
+                    }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault();
+                      const command = acItems[acIdx];
+                      if (!command) return;
+                      if (
+                        e.key === 'Enter' &&
+                        '/' + command.name === text.trim()
+                      ) {
+                        setText('');
+                        void submit('prompt');
+                        return;
+                      }
+                      applyCompletion(command.name);
+                      return;
+                    }
+                  }
+                  if (
+                    e.key === 'Enter' &&
+                    (e.metaKey || e.ctrlKey) &&
+                    e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    void submit('followUp');
+                    return;
+                  }
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    void submit(
+                      streaming || agent?.isStreaming ? 'steer' : 'prompt',
+                    );
+                  }
+                }}
+              />
+            </div>
             <button
               onClick={() => setUi({ inputExpanded: !inputExpanded })}
               className="absolute right-1.5 top-1 p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] rounded transition-colors"
@@ -665,6 +730,7 @@ function Assistant() {
           <div className="flex items-center gap-1 px-2 pb-1 pt-1.5 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0">
             <button
               onClick={() => {
+                setCommandTag(null);
                 setText('/');
                 textareaRef.current?.focus();
               }}
