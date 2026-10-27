@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
-import type { DocumentMeta } from '../../../shared/types';
+import type { ListItem } from '../../../shared/lists';
 import type { ListEntry } from '../../../shared/ura';
 import { setUiState } from '../../state/ui';
 
@@ -75,24 +75,13 @@ export function FindList() {
   );
 
   const open = (ref: string, name: string): void => {
-    const isWeb = ref.includes('/sites/');
-    const domain = isWeb ? ref.split('/sites/')[1]?.split('/')[0] : undefined;
-    const dot = name.lastIndexOf('.');
-    const meta: DocumentMeta = {
-      id: ref,
+    const item: ListItem = {
+      key: ref,
+      itemType: 'document',
       title: name,
-      path: ref,
-      url: ref,
-      ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : '',
-      type: 'content',
-      source: isWeb ? 'web' : 'local',
-      sourceLabel: isWeb ? '网站资料' : '本地文档',
-      group: isWeb
-        ? { id: domain ?? 'web', title: domain ?? '网站资料' }
-        : { id: 'docs', title: '本地文档' },
-      createdAt: 0,
+      meta: { ref },
     };
-    void mainBridge?.cmd('views.openResource', { ref, document: meta });
+    void mainBridge?.cmd('lists.activate', { item });
   };
 
   return (

@@ -29,6 +29,7 @@ import type {
   WorkspaceInfo,
 } from '../../shared/types';
 import { CH_EXT, CH_INTERACTION } from '../../shared/channels';
+import type { ListItem } from '../../shared/lists';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
 import type { SessionAdapter } from '../app/session-adapter';
@@ -166,6 +167,47 @@ export function isAssistantCommand(command: string): boolean {
     command === 'skills.setActive' ||
     command === 'plugins.list'
   );
+}
+
+// ─── 列表项激活 ───────────────────────────────────────────
+
+/** 列表行激活是唯一入口：渲染层只发命令，不按 itemType 写死通道。 */
+async function activateListItem(
+  d: RouterDeps,
+  item: ListItem,
+): Promise<unknown> {
+  const meta = item.meta ?? {};
+  switch (item.itemType) {
+    case 'document':
+      return d.viewHost.openResource(
+        String(meta['ref'] ?? item.key),
+        undefined,
+      );
+    case 'session': {
+      const path = String(meta['path'] ?? item.key);
+      const ui = d.uiState.get();
+      const openPaths = ui.openPaths.includes(path)
+        ? ui.openPaths
+        : [...ui.openPaths, path];
+      d.uiState.set({ openPaths, activePath: path });
+      return d.sessions.switchSession(path);
+    }
+    case 'link':
+      return d.viewHost.activate(String(meta['viewId'] ?? ''));
+    case 'plugin':
+      return d.viewHost.open({
+        type: 'plugin',
+        pluginId: String(meta['pluginId'] ?? ''),
+        settings: true,
+      });
+    case 'settings':
+      return d.viewHost.open({
+        type: 'settings',
+        pageId: String(meta['pageId'] ?? ''),
+      });
+    default:
+      return null;
+  }
 }
 
 // ─── ws:cmd 实现 ──────────────────────────────────────────
@@ -808,6 +850,8 @@ export async function invoke(
 
       case 'lists.snapshot':
         return ok(await d.lists.snapshot(0));
+      case 'lists.activate':
+        return ok(await activateListItem(d, p.item as ListItem));
 
       default:
         return err('unknown_command', `Unknown command: ${command}`);

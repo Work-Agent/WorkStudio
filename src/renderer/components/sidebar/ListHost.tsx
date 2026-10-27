@@ -45,36 +45,7 @@ function iconFor(item: ListItem): LucideIcon {
 }
 
 async function activate(item: ListItem): Promise<void> {
-  const bridge = window.workbench;
-  if (!bridge) return;
-  const meta = item.meta ?? {};
-  switch (item.itemType) {
-    case 'document':
-      await bridge.cmd('views.openResource', { ref: meta['ref'] });
-      return;
-    case 'session':
-      await bridge.cmd('session.openTab', { path: meta['path'] });
-      return;
-    case 'link':
-      await bridge.cmd('views.activate', { id: meta['viewId'] });
-      return;
-    case 'plugin':
-      await bridge.cmd('views.open', {
-        input: {
-          type: 'plugin',
-          pluginId: meta['pluginId'],
-          settings: true,
-        },
-      });
-      return;
-    case 'settings':
-      await bridge.cmd('views.open', {
-        input: { type: 'settings', pageId: meta['pageId'] },
-      });
-      return;
-    default:
-      return;
-  }
+  await window.workbench?.cmd('lists.activate', { item });
 }
 
 function Row({ item, collapsed }: { item: ListItem; collapsed: boolean }) {
