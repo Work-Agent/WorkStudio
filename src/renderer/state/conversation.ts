@@ -800,7 +800,9 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     if (ev.type === 'session_rebound') {
       set({ piSessionFile: ev.sessionFile || null });
       const sync = mainBridge
-        ? mainBridge.sync().then((s) => s.agent.thinkingLevel)
+        ? mainBridge
+            .appSync()
+            .then((s) => s.session.snapshot?.thinkingLevel ?? null)
         : piAPI.sync().then((s) => s.state.thinkingLevel);
       void sync
         .then((level) => set({ piThinkingLevel: level }))
@@ -944,14 +946,15 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
   /** 启动初始化：握手 + 会话列表 + 恢复上次现场。 */
   init: async () => {
     if (mainBridge) {
-      const sync = await mainBridge.sync();
+      const sync = await mainBridge.appSync();
+      const agent = sync.session.snapshot;
       lastSeq = sync.seq;
       set({
-        piThinkingLevel: sync.agent.thinkingLevel,
-        piSessionFile: sync.agent.sessionFile,
+        piThinkingLevel: agent?.thinkingLevel ?? null,
+        piSessionFile: agent?.sessionFile ?? null,
       });
-      if (sync.agent.isStreaming) {
-        streamingKeys.add(sync.agent.sessionFile ?? '__new__');
+      if (agent?.isStreaming) {
+        streamingKeys.add(agent.sessionFile ?? '__new__');
         set({ streamingSessions: new Set(streamingKeys) });
       }
     } else {
@@ -990,9 +993,13 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 // 全局事件监听（main.tsx init 时挂一次）
 export function bindPiEvents(): void {
   if (mainBridge) {
-    mainBridge.onEvent((frame) =>
-      useConversationStore.getState().handlePiFrame(frame),
-    );
+    mainBridge.onAppEvent((event) => {
+      if (event.scope !== 'session') return;
+      useConversationStore.getState().handlePiFrame({
+        seq: event.seq,
+        event: event.event as never,
+      });
+    });
     return;
   }
   piAPI.onEvent((frame) =>

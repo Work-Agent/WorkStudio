@@ -22,16 +22,14 @@ import {
   Square,
   X,
 } from 'lucide-react';
+import type { AppSnapshot } from '../../shared/app';
 import type {
   AgentSnapshot,
   ParsedBlock,
   ResizeDirection,
   ParsedMessage,
-  PiEventFrame,
   SessionMeta,
-  ShellSnapshot,
   ThinkingLevel,
-  UiState,
 } from '../../shared/types';
 import '../index.css';
 
@@ -44,12 +42,38 @@ const MENU_SOURCE = 'chat-tabs';
 
 // ─── 事实订阅 ─────────────────────────────────────────────
 
-function useShell(): ShellSnapshot | null {
-  const [shell, setShell] = useState<ShellSnapshot | null>(null);
+interface AssistantShell {
+  ui: {
+    theme: 'light' | 'dark';
+    aiFloating: boolean;
+    inputExpanded: boolean;
+    activePath: string | null;
+    openPaths: string[];
+    selectedSkills: string[];
+  };
+}
+
+function shellFrom(snapshot: AppSnapshot): AssistantShell {
+  return {
+    ui: {
+      theme: snapshot.ui.theme,
+      aiFloating: snapshot.ui.assistant.floating,
+      inputExpanded: snapshot.ui.assistant.inputExpanded,
+      activePath: snapshot.session.meta?.path ?? null,
+      openPaths: snapshot.ui.openSessionPaths,
+      selectedSkills: snapshot.session.context.activeSkills,
+    },
+  };
+}
+
+function useShell(): AssistantShell | null {
+  const [shell, setShell] = useState<AssistantShell | null>(null);
   useEffect(() => {
     if (!bridge) return;
-    const off = bridge.onState(setShell);
-    void bridge.sync().then((r) => setShell(r.shell));
+    void bridge.appSync().then((snapshot) => setShell(shellFrom(snapshot)));
+    const off = bridge.onAppSnapshot((snapshot) =>
+      setShell(shellFrom(snapshot)),
+    );
     return off;
   }, []);
   return shell;
@@ -59,9 +83,12 @@ function useAgent(): AgentSnapshot | null {
   const [agent, setAgent] = useState<AgentSnapshot | null>(null);
   useEffect(() => {
     if (!bridge) return;
-    void bridge.sync().then((r) => setAgent(r.agent));
-    const off = bridge.onEvent((frame: PiEventFrame) => {
-      const ev = frame.event as { type: string; status?: AgentSnapshot };
+    void bridge
+      .appSync()
+      .then((snapshot) => setAgent(snapshot.session.snapshot));
+    const off = bridge.onAppEvent((event) => {
+      if (event.scope !== 'session') return;
+      const ev = event.event as { type: string; status?: AgentSnapshot };
       if (ev.type === 'agent_status_changed' && ev.status) setAgent(ev.status);
       if (ev.type === 'agent_settled') {
         void bridge
@@ -77,27 +104,17 @@ function useAgent(): AgentSnapshot | null {
 /** 全部会话（标签显示名 + 新会话命名）；事件驱动刷新。 */
 function useSessions(openPaths: string[]): SessionMeta[] {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const reload = (): void => {
-    void bridge
-      ?.cmd<SessionMeta[]>('session.list')
-      .then((r) => r.ok && setSessions(r.data));
-  };
   useEffect(() => {
-    reload();
     if (!bridge) return;
-    const off = bridge.onEvent((frame) => {
-      const type = (frame.event as { type: string }).type;
-      if (
-        type === 'session_created' ||
-        type === 'session_rebound' ||
-        type === 'agent_settled'
-      )
-        reload();
-    });
+    void bridge
+      .appSync()
+      .then((snapshot) => setSessions(snapshot.workspace.sessions));
+    const off = bridge.onAppSnapshot((snapshot) =>
+      setSessions(snapshot.workspace.sessions),
+    );
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(reload, [openPaths.join('|')]);
+  }, [openPaths.join('|')]);
   return sessions;
 }
 
@@ -348,8 +365,9 @@ function useMessages(activePath: string | null): {
       setStreaming(false);
     };
 
-    const off = bridge.onEvent((frame: PiEventFrame) => {
-      const ev = frame.event as Record<string, unknown> & { type: string };
+    const off = bridge.onAppEvent((appEvent) => {
+      if (appEvent.scope !== 'session') return;
+      const ev = appEvent.event as Record<string, unknown> & { type: string };
       switch (ev.type) {
         case 'session_created': {
           const path = String(ev.sessionPath ?? '');
@@ -531,7 +549,7 @@ interface PopupItem {
 function Assistant() {
   const shell = useShell();
   const agent = useAgent();
-  const ui: UiState | undefined = shell?.ui;
+  const ui = shell?.ui;
   const activePath = ui?.activePath ?? null;
   const openPaths = ui?.openPaths ?? [];
   const sessions = useSessions(openPaths);
@@ -694,7 +712,10 @@ function Assistant() {
     });
   };
 
-  const setUi = (patch: Partial<UiState>): void => {
+  const setUi = (patch: {
+    aiFloating?: boolean;
+    inputExpanded?: boolean;
+  }): void => {
     void bridge?.cmd('ui.set', { patch });
   };
 

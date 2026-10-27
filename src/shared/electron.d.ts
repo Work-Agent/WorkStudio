@@ -73,6 +73,9 @@ export interface AssistantBridge {
     params?: unknown,
   ) => Promise<CommandResponse<T>>;
   sync: () => Promise<WorkSyncResult>;
+  appSync: () => Promise<AppSnapshot>;
+  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
+  onAppEvent: (cb: (event: AppEvent) => void) => () => void;
   onEvent: (cb: (frame: PiEventFrame) => void) => () => void;
   onState: (cb: (snapshot: ShellSnapshot) => void) => () => void;
   onInteraction: (cb: (update: { preview: unknown }) => void) => () => void;

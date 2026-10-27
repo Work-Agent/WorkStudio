@@ -5,12 +5,17 @@
  * 会话事件仍在 Phase 6 后续迁移到 AppEvent。
  */
 
+import { create } from 'zustand';
 import type { AppEvent, AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAgentConfigStore } from './agentConfig';
 import { useListsStore } from './lists';
 import { usePluginsStore } from './plugins';
 import { useShellStore } from './shell';
 import { useUiStore } from './uiState';
+
+export const useAppScope = create<{ snapshot: AppSnapshot | null }>(() => ({
+  snapshot: null,
+}));
 
 let initialized = false;
 let workspaceEpoch = -1;
@@ -53,6 +58,7 @@ function isFresh(snapshot: AppSnapshot): boolean {
 }
 
 function applySnapshot(snapshot: AppSnapshot): void {
+  useAppScope.setState({ snapshot });
   workspaceEpoch = snapshot.workspaceEpoch;
   sessionEpoch = snapshot.sessionEpoch;
 

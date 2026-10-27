@@ -32,6 +32,7 @@ import type {
 } from '../shared/types';
 import {
   APP_CMD,
+  APP_EVENT,
   APP_SNAPSHOT,
   APP_SYNC,
   CH_BUS,
@@ -543,6 +544,14 @@ app.whenReady().then(async () => {
       sendEvent: (frame) => {
         broadcastToWindows(CH_EVENT, frame);
         viewHost?.broadcastToSystemViews(CH_EVENT, frame);
+        const appEvent = {
+          scope: 'session' as const,
+          epoch: appHost?.epochs.session ?? 0,
+          seq: frame.seq,
+          event: frame.event,
+        };
+        broadcastToWindows(APP_EVENT, appEvent);
+        viewHost?.broadcastToSystemViews(APP_EVENT, appEvent);
         publishAppSnapshot();
       },
       onTurnFinished: () => {

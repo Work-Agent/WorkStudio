@@ -3,6 +3,9 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  APP_EVENT,
+  APP_SNAPSHOT,
+  APP_SYNC,
   CH_CMD,
   CH_EVENT,
   CH_INTERACTION,
@@ -12,6 +15,7 @@ import {
   CH_STATE,
   CH_SYNC,
 } from '../shared/channels';
+import type { AppEvent, AppSnapshot } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
@@ -28,6 +32,17 @@ const api = {
     params?: unknown,
   ): Promise<CommandResponse<T>> => ipcRenderer.invoke(CH_CMD, command, params),
   sync: (): Promise<WorkSyncResult> => ipcRenderer.invoke(CH_SYNC),
+  appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
+  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void): (() => void) => {
+    const listener = (_e: unknown, snapshot: AppSnapshot): void => cb(snapshot);
+    ipcRenderer.on(APP_SNAPSHOT, listener);
+    return () => ipcRenderer.removeListener(APP_SNAPSHOT, listener);
+  },
+  onAppEvent: (cb: (event: AppEvent) => void): (() => void) => {
+    const listener = (_e: unknown, event: AppEvent): void => cb(event);
+    ipcRenderer.on(APP_EVENT, listener);
+    return () => ipcRenderer.removeListener(APP_EVENT, listener);
+  },
   onEvent: (cb: (frame: PiEventFrame) => void): (() => void) => {
     const listener = (_e: unknown, frame: PiEventFrame): void => cb(frame);
     ipcRenderer.on(CH_EVENT, listener);
