@@ -205,7 +205,7 @@ function isAssistantCommand(command: string): boolean {
 
 // ─── ws:cmd 实现 ──────────────────────────────────────────
 
-async function invoke(
+export async function invoke(
   d: RouterDeps,
   command: string,
   p: Record<string, unknown>,

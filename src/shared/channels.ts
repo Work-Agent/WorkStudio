@@ -4,6 +4,17 @@
  * 所有模块一律 import 本文件，不得内联通道字符串。
  */
 
+// ─── App 作用域通道（architecture.md §2） ─────────────────
+
+/** AppSnapshot 握手：返回 app / workspaces / workspace / ui / session。 */
+export const APP_SYNC = 'app:sync';
+/** 统一命令通道：AppCommand（scope + action + payload）。 */
+export const APP_CMD = 'app:cmd';
+/** AppSnapshot 推送。 */
+export const APP_SNAPSHOT = 'app:snapshot';
+/** AppEvent 推送（scope + epoch + seq）。 */
+export const APP_EVENT = 'app:event';
+
 // ─── 命令 / 握手（invoke） ────────────────────────────────
 
 /** 唯一命令通道：域 × 命令，结构化信封。 */

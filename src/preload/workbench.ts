@@ -6,6 +6,10 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  APP_CMD,
+  APP_EVENT,
+  APP_SNAPSHOT,
+  APP_SYNC,
   CH_BUS,
   CH_CMD,
   CH_EVENT,
@@ -21,6 +25,7 @@ import {
   CH_URA_WATCH,
   CH_VIEW,
 } from '../shared/channels';
+import type { AppCommand, AppEvent, AppSnapshot } from '../shared/app';
 import type {
   CommandResponse,
   InteractionBeginInput,
@@ -50,6 +55,22 @@ const api = {
 
   /** 启动 / 重连握手。 */
   sync: (): Promise<WorkSyncResult> => ipcRenderer.invoke(CH_SYNC),
+
+  /** AppSnapshot 握手（新渲染层）。 */
+  appSync: (): Promise<AppSnapshot> => ipcRenderer.invoke(APP_SYNC),
+  /** 统一 AppCommand 通道（新渲染层）。 */
+  appCmd: <T = unknown>(command: AppCommand): Promise<CommandResponse<T>> =>
+    ipcRenderer.invoke(APP_CMD, command),
+  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void): (() => void) => {
+    const listener = (_e: unknown, snapshot: AppSnapshot): void => cb(snapshot);
+    ipcRenderer.on(APP_SNAPSHOT, listener);
+    return () => ipcRenderer.removeListener(APP_SNAPSHOT, listener);
+  },
+  onAppEvent: (cb: (event: AppEvent) => void): (() => void) => {
+    const listener = (_e: unknown, event: AppEvent): void => cb(event);
+    ipcRenderer.on(APP_EVENT, listener);
+    return () => ipcRenderer.removeListener(APP_EVENT, listener);
+  },
 
   onEvent: (cb: (frame: PiEventFrame) => void): (() => void) => {
     const listener = (_e: unknown, frame: PiEventFrame): void => cb(frame);

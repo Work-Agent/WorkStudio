@@ -23,6 +23,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from '../shared/titlebar';
 import { fileRef } from '../shared/ura';
+import type { AppCommand } from '../shared/app';
 import type {
   InteractionPreview,
   Rect,
@@ -30,6 +31,8 @@ import type {
   UiState,
 } from '../shared/types';
 import {
+  APP_CMD,
+  APP_SYNC,
   CH_BUS,
   CH_EVENT,
   CH_RESOURCES,
@@ -63,11 +66,15 @@ import { SiteSnapshots } from './capabilities/browser/snapshots';
 import { containsSettingsPage } from './capabilities/settings/registry';
 import { UiStateService } from './state/ui-state';
 import { broadcastToWindows } from './state/broadcast';
-import { registerRouter } from './command/router';
+import { invoke, registerRouter, type RouterDeps } from './command/router';
 import { InteractionController } from './capabilities/webview/interaction';
 import { NativeFacilities } from './capabilities/webview/native-facilities';
 import { BrowserAutomation } from './capabilities/browser/views';
 import { ViewHost } from './capabilities/webview/host';
+import { AppHost } from './app/app-host';
+import { buildAppSnapshot } from './app/snapshot';
+import { WorkspaceManager } from './app/workspace-manager';
+import { WorkspaceScope } from './app/workspace-scope';
 import { computeLayout } from '../shared/layout-engine';
 import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
@@ -176,6 +183,8 @@ const nativeFacilities = new NativeFacilities();
 let winRef: BrowserWindow | null = null;
 let agent: AgentHost | null = null;
 let viewHost: ViewHost | null = null;
+let appHost: AppHost | null = null;
+let workspaceManager: WorkspaceManager | null = null;
 let interaction: InteractionController | null = null;
 let uraRuntime: UraRuntime | null = null;
 let workspaceWatcher: { close(): void } | null = null;
@@ -379,6 +388,29 @@ function registerShortcuts(): void {
   });
 }
 
+// ─── App 作用域 IPC（Phase 1） ─────────────────────────────
+
+function registerAppIpc(): void {
+  ipcMain.handle(APP_SYNC, (event) => {
+    if (winRef && event.sender !== winRef.webContents) {
+      return {
+        ok: false,
+        error: { code: 'forbidden', message: 'App sync is workbench-only' },
+      };
+    }
+    return appHost!.snapshot();
+  });
+  ipcMain.handle(APP_CMD, (event, command: AppCommand) => {
+    if (winRef && event.sender !== winRef.webContents) {
+      return {
+        ok: false,
+        error: { code: 'forbidden', message: 'App command is workbench-only' },
+      };
+    }
+    return appHost!.dispatch(command);
+  });
+}
+
 // ─── 装配 ─────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -423,6 +455,7 @@ app.whenReady().then(async () => {
     }`,
   );
   const pageSessions = new PageSessions(uraRuntime.ura);
+  const writeSessions = new WriteSessionRegistry(uraRuntime.ura);
 
   // 3. 工作区订阅（URA watch → 渲染层刷新）
   const watchWorkspaceRoot = (): void => {
@@ -509,7 +542,23 @@ app.whenReady().then(async () => {
         const nextWsId = registerWorkspace(next);
         watchWorkspaceRoot();
         uraRuntime?.map.restart();
-        uiState.attachWorkspace(nextWsId);
+        if (viewHost && workspaceManager) {
+          workspaceManager.activate(
+            new WorkspaceScope({
+              path: next,
+              id: nextWsId,
+              uiState,
+              viewHost,
+              pageSessions,
+              writeSessions,
+            }),
+          );
+          appHost?.bumpWorkspace();
+          broadcastState();
+          broadcastViews();
+        } else {
+          uiState.attachWorkspace(nextWsId);
+        }
       },
       ui: {
         onDialogRequest: (req) => viewHost?.showDialog(req),
@@ -572,13 +621,13 @@ app.whenReady().then(async () => {
   }
 
   // 7. 命令路由 / 原生设施
-  registerRouter({
+  const routerDeps: RouterDeps = {
     agent,
     viewHost,
     uiState,
     ura: uraRuntime.ura,
     collections: uraRuntime.collections,
-    writeSessions: new WriteSessionRegistry(uraRuntime.ura),
+    writeSessions,
     pageSessions,
     skills,
     registry: uraRuntime.host,
@@ -659,7 +708,32 @@ app.whenReady().then(async () => {
         },
       };
     },
+  };
+  registerRouter(routerDeps);
+
+  appHost = new AppHost({
+    snapshot: (epochs) =>
+      buildAppSnapshot(
+        {
+          agent: agent!,
+          viewHost: viewHost!,
+          uiState,
+          registry: uraRuntime!.host,
+          pluginService: pluginService!,
+          workspacePath,
+          resourceMapVersion: () => uraRuntime?.map.currentVersion ?? '',
+        },
+        epochs,
+      ),
+    dispatch: (command) =>
+      invoke(
+        routerDeps,
+        command.action,
+        (command.payload ?? {}) as Record<string, unknown>,
+      ),
   });
+  registerAppIpc();
+
   nativeFacilities.registerShellIpc(() => winRef);
   registerShortcuts();
 
@@ -677,6 +751,17 @@ app.whenReady().then(async () => {
   buildAppMenu();
   bootLog('window created');
   viewHost.restore();
+  workspaceManager = new WorkspaceManager();
+  workspaceManager.adopt(
+    new WorkspaceScope({
+      path: workspacePath,
+      id: wsId,
+      uiState,
+      viewHost,
+      pageSessions,
+      writeSessions,
+    }),
+  );
   await viewHost.createAssistantView();
   bootLog('assistant view created');
   await viewHost.createOverlayView();
@@ -737,6 +822,11 @@ app.on('before-quit', (e) => {
     workspaceWatcher?.close();
   } catch (err) {
     log.error('workspace watch dispose', err);
+  }
+  try {
+    workspaceManager?.dispose();
+  } catch (err) {
+    log.error('workspace manager dispose', err);
   }
   try {
     viewHost?.dispose();

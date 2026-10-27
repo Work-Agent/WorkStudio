@@ -1,3 +1,4 @@
+import type { AppCommand, AppEvent, AppSnapshot } from './app';
 import type {
   AgentStatus,
   CommandResponse,
@@ -24,6 +25,10 @@ export interface WorkbenchBridge {
     params?: unknown,
   ) => Promise<CommandResponse<T>>;
   sync: () => Promise<WorkSyncResult>;
+  appSync: () => Promise<AppSnapshot>;
+  appCmd: <T = unknown>(command: AppCommand) => Promise<CommandResponse<T>>;
+  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
+  onAppEvent: (cb: (event: AppEvent) => void) => () => void;
   onEvent: (cb: (frame: PiEventFrame) => void) => () => void;
   onState: (cb: (snapshot: ShellSnapshot) => void) => () => void;
   onViews: (cb: (views: ViewEntry[]) => void) => () => void;
