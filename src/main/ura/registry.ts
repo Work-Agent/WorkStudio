@@ -256,6 +256,13 @@ export class UraRegistry {
     return this.pickPresenter(transport, mime, codec, options)?.impl;
   }
 
+  ownerOfCodec(codecId: string): string | undefined {
+    for (const [, entry] of this.codecs) {
+      if (entry.impl.id === codecId) return entry.owner;
+    }
+    return undefined;
+  }
+
   ownerOfPresenter(
     transport: TransportId,
     mime: Mime | undefined,

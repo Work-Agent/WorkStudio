@@ -660,6 +660,7 @@ app.whenReady().then(async () => {
     agent: agent!,
     plugins: uraRuntime!.host,
     viewHost: viewHost!,
+    uiState,
   });
 
   uraRuntime!.map.setSource(async () => {

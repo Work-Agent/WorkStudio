@@ -422,6 +422,10 @@ export interface UiState {
   sidebarDomain?: string | null;
   /** 左栏 Sidebar 是否收起（收起 = 固定 56px 图标列，非整栏隐藏）。 */
   sidebarCollapsed: boolean;
+  /** 资源两级列表：当前展开的分组 id（null = 分组总览）。 */
+  sidebarGroup: string | null;
+  /** 顶置的资源分组 id（主列表排序用）。 */
+  pinnedGroups: string[];
   /** 资源面板是否收起。 */
   panelCollapsed: boolean;
   /** 输入框展开态。 */

@@ -5,7 +5,7 @@
  */
 
 export type ListSourceScope = 'app' | 'workspace';
-export type ListSection = 'resources' | 'plugins' | 'settings';
+export type ListSection = 'resources' | 'plugins' | 'settings' | 'hidden';
 
 export interface ListFieldSpec {
   /** title / subtitle / time / badge / meta.<key> */
@@ -32,6 +32,12 @@ export interface ListDefinition {
   sourceScope: ListSourceScope;
   /** 侧栏主形态；缺省 = resources。 */
   section?: ListSection;
+  /** 分组图标底色（Tailwind class）；缺省按 icon 语义。 */
+  tone?: string;
+  /** 计数单位（项 / 页 / 个标签…）。 */
+  unit?: string;
+  /** 默认计数文案（Provider 未给时由 count + unit 生成）。 */
+  countLabel?: string;
   itemType: string;
   fields: ListFieldSpec[];
   actions: ListActionSpec[];
@@ -62,6 +68,14 @@ export interface ListGroup {
   section: ListSection;
   label: string;
   icon?: string;
+  tone?: string;
+  unit?: string;
+  /** 已生成的计数文案（渲染层直接展示）。 */
+  countLabel: string;
+  /** 最近更新时间（0 = 无）；由 Provider 或数据层给出。 */
+  updatedAt: number;
+  /** 顶置态（工作区 UI 现场投影）。 */
+  pinned: boolean;
   order?: number;
   count: number;
   state: 'loading' | 'ready' | 'error';

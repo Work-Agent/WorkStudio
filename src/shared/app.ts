@@ -114,6 +114,8 @@ export interface WorkspaceUiSlice {
     view: SidebarView;
     domain: string | null;
     collapsed: boolean;
+    group: string | null;
+    pinnedGroups: string[];
   };
   paneWidths: { left: number; right: number };
   assistant: {

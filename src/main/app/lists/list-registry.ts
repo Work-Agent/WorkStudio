@@ -11,6 +11,10 @@ export interface ListProviderGroup {
   id: string;
   label: string;
   icon?: string;
+  tone?: string;
+  unit?: string;
+  countLabel?: string;
+  updatedAt?: number;
   order?: number;
   items: ListItem[];
   empty?: { icon?: string; text: string };

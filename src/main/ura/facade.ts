@@ -75,6 +75,26 @@ export class Ura {
     };
   }
 
+  /** 资源当前表现层的归属插件（列表图标等展示元数据用；不打开内容）。 */
+  ownerForRef(ref: string): string | undefined {
+    const parsed = parseRef(ref);
+    const index = parsed.path.lastIndexOf('.');
+    const ext = index > 0 ? parsed.path.slice(index + 1).toLowerCase() : '';
+    const codec = this.registry.codecForExtension(ext);
+    if (!codec || !codec.extensions?.includes(ext)) return undefined;
+    const key =
+      codec.keys.find(
+        (item) => item.transport === '*' || item.transport === parsed.scheme,
+      ) ?? codec.keys[0];
+    if (!key) return undefined;
+    const owner = this.registry.ownerOfPresenter(
+      key.transport,
+      key.mime,
+      codec.id,
+    );
+    return owner ?? this.registry.ownerOfCodec(codec.id);
+  }
+
   // ─── 绑定 ──────────────────────────────────────────────────────
 
   bindings(): Binding[] {

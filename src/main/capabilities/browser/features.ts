@@ -12,6 +12,7 @@ import { MIME } from '../../../shared/ura';
 import type { ListDefinition } from '../../../shared/lists';
 import type { ListProvider } from '../../app/lists/list-registry';
 import { DOC_FIELDS, OPEN_ACTION } from '../../app/lists/builtins/common';
+import { mtimeOf } from '../../app/lists/builtins/file-time';
 
 const SITES_DIR = 'sites';
 
@@ -23,6 +24,8 @@ const webDefinition: ListDefinition = {
   id: 'web',
   label: '网站资料',
   icon: 'globe',
+  tone: 'bg-sky-500 text-sky-50 dark:bg-sky-600 dark:text-sky-100',
+  unit: '页',
   order: 20,
   sourceScope: 'workspace',
   itemType: 'document',
@@ -40,25 +43,33 @@ const webProvider: ListProvider = async (ctx) => {
     const entries = await ctx
       .find('*.md', { scope, limit: 200 })
       .catch(() => []);
+    const favicon = `https://${domain}/favicon.ico`;
     groups.push({
       id: domain,
       label: domain,
-      icon: `https://${domain}/favicon.ico`,
-      items: entries
-        .filter((entry: { type: string }) => entry.type === 'file')
-        .map((entry: { ref: string }) => ({
-          key: entry.ref,
-          itemType: 'document',
-          title: titleOf(entry.ref),
-          subtitle: '网站资料',
-          meta: {
-            ref: entry.ref,
-            source: 'web',
-            sourceLabel: '网站资料',
-            groupId: domain,
-            groupTitle: domain,
-          },
-        })),
+      icon: favicon,
+      items: await Promise.all(
+        entries
+          .filter((entry: { type: string }) => entry.type === 'file')
+          .map(async (entry: { ref: string }) => {
+            const updatedAt = await mtimeOf(entry.ref);
+            return {
+              key: entry.ref,
+              itemType: 'document',
+              title: titleOf(entry.ref),
+              subtitle: '网站资料',
+              icon: favicon,
+              meta: {
+                ref: entry.ref,
+                source: 'web',
+                sourceLabel: '网站资料',
+                groupId: domain,
+                groupTitle: domain,
+                ...(updatedAt ? { updatedAt } : {}),
+              },
+            };
+          }),
+      ),
     });
   }
   return groups;

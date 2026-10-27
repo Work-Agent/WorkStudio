@@ -18,6 +18,11 @@ export class ListContexts {
       workspace: fileRef(this.workspace()),
       tree: (ref, limit) => this.ura.tree(ref, limit),
       find: (pattern, options) => this.ura.find(pattern, options ?? {}),
+      icon: (ref) => {
+        const pluginId = this.ura.ownerForRef(ref);
+        const pkg = pluginId ? this.host.get(pluginId) : undefined;
+        return pkg?.iconUrl ?? pkg?.icon;
+      },
       settings: {
         get: (key, fallback) => this.host.getSetting(owner, key, fallback),
       },

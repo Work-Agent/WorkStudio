@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
+import { rendererIcon } from '../titlebar/icons';
 import { useUiStore } from '../../state/ui';
 
 const ICONS: Record<string, LucideIcon> = {
@@ -41,7 +42,9 @@ async function activate(item: ListItem): Promise<void> {
 
 function Row({ item, collapsed }: { item: ListItem; collapsed: boolean }) {
   const semantic = item.icon && !/^(data:|https?:|app:)/.test(item.icon);
-  const Icon = semantic ? (ICONS[item.icon!] ?? iconFor(item)) : iconFor(item);
+  const Icon = semantic
+    ? (rendererIcon(item.icon) ?? ICONS[item.icon!] ?? iconFor(item))
+    : iconFor(item);
   const active = item.state?.active === true;
   const disabled = item.state?.disabled === true;
   return (

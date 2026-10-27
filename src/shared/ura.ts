@@ -447,6 +447,8 @@ export interface ListContext {
     pattern: string,
     options?: { scope?: string; limit?: number },
   ): Promise<ListEntry[]>;
+  /** 资源图标（插件清单 icon / iconUrl）；未知返回 undefined。 */
+  icon?(ref: string): string | undefined;
   settings: {
     get<T>(key: string, fallback: T): Promise<T>;
   };

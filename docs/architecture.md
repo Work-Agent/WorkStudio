@@ -250,6 +250,8 @@ interface WorkspaceUiSlice {
     view: SidebarView;
     domain: string | null;
     collapsed: boolean;
+    group: string | null; // 当前展开的资源分组
+    pinnedGroups: string[]; // 顶置分组
   };
   paneWidths: { left: number; right: number };
   assistant: {
@@ -387,10 +389,14 @@ interface AppEvent<T = unknown> {
 interface ListDefinition {
   id: string;
   label: string;
+  /** lucide 语义名或图片 URL / data URL。 */
   icon?: string;
   order?: number;
   sourceScope: ListSourceScope;
-  section?: 'resources' | 'plugins' | 'settings'; // 缺省 resources
+  section?: 'resources' | 'plugins' | 'settings' | 'hidden'; // 缺省 resources
+  tone?: string; // 分组图标底色
+  unit?: string; // 计数单位
+  countLabel?: string; // Provider 覆盖计数文案
   itemType: string; // document / session / link / plugin / settings / ...
   fields: ListFieldSpec[];
   actions: ListActionSpec[];
@@ -398,7 +404,7 @@ interface ListDefinition {
   grouping?: 'flat' | 'domain' | 'custom';
 }
 
-type ListSection = 'resources' | 'plugins' | 'settings';
+type ListSection = 'resources' | 'plugins' | 'settings' | 'hidden';
 
 interface ListFieldSpec {
   key: string; // title / subtitle / time / badge / meta.<key>
@@ -420,6 +426,7 @@ interface ListItem {
   itemType: string;
   title: string;
   subtitle?: string;
+  /** lucide 语义名或图片 URL / data URL（favicon）。 */
   icon?: string;
   badge?: string;
   meta?: Record<string, unknown>;
@@ -438,6 +445,11 @@ interface ListGroup {
   section: ListSection;
   label: string;
   icon?: string;
+  tone?: string;
+  unit?: string;
+  countLabel: string;
+  updatedAt: number;
+  pinned: boolean;
   order?: number;
   count: number;
   state: 'loading' | 'ready' | 'error';
@@ -644,7 +656,8 @@ WorkspaceScope 释放时按序清理：
 列表定义由 App 持有，完整类型见 §2.4。定义只描述结构，不携带数据：
 
 - `sourceScope`：数据来自 App 还是当前工作区。
-- `section`：侧栏主形态归属（资源 / 插件 / 设置）；渲染层不按列表 id 写死过滤。
+- `section`：侧栏主形态归属（资源 / 插件 / 设置 / 隐藏）；渲染层不按列表 id 写死过滤。
+- `tone` / `unit` / `countLabel`：分组外观与计数文案；Provider 可逐组覆盖。
 - `itemType`：渲染层行模板。
 - `fields`：行内字段（标题 / 副行 / 时间 / badge / meta）。
 - `actions`：可用动作（打开 / 关闭 / 固定 / 删除 / 插件动作）。
@@ -690,14 +703,14 @@ ListHost
 
 ### 4.5 内置列表
 
-| id         | 数据来源            | 行模板   | 说明                             |
-| ---------- | ------------------- | -------- | -------------------------------- |
-| `docs`     | 工作区文件          | document | 未被其他 provider 认领的本地文件 |
-| `web`      | 站点快照 / 白名单域 | document | 按域分组                         |
-| `temp`     | 未归档的网页标签    | link     | 不落盘，只活在标签里             |
-| `sessions` | pi 会话索引         | session  | 工作区级；切换会话只换激活       |
-| `plugins`  | 插件清单            | plugin   | App 数据，工作区展示             |
-| `settings` | 设置页清单          | settings | App 数据，工作区展示             |
+| id         | 数据来源            | 行模板   | 说明                                   |
+| ---------- | ------------------- | -------- | -------------------------------------- |
+| `docs`     | 工作区文件          | document | 未被其他 provider 认领的本地文件       |
+| `web`      | 站点快照 / 白名单域 | document | 按域分组                               |
+| `temp`     | 未归档的网页标签    | link     | 不落盘，只活在标签里                   |
+| `sessions` | pi 会话索引         | session  | 工作区级；默认隐藏在侧栏，经设置页管理 |
+| `plugins`  | 插件清单            | plugin   | App 数据，工作区展示                   |
+| `settings` | 设置页清单          | settings | App 数据，工作区展示                   |
 
 ## 五、视图管理（Workspace）
 
@@ -1093,7 +1106,7 @@ harness 是自持能力层，也是内置的 Pi Extension：提示、技能、�
       全部       数据       网页（域分组）
 ```
 
-- **资源**：ListSnapshot 投影（docs / web / temp / sessions 等），分组行 + 展开项。
+- **资源**：ListSnapshot 投影（docs / web / temp 等）。主列表只显示分组行；分组下显示已打开项，点击分组进入二级列表。
 - **插件**：`plugins` 列表；点击打开插件页。
 - **设置**：`settings` 列表；点击打开设置页。
 - 行结构统一：图标 + 标题 + 副行 + badge；空分组不渲染。
@@ -1238,6 +1251,8 @@ plugin-docx.zip
 - **段可以拆开填**：一个插件能只填一段，也能填整条；填哪段由注册接口决定。
 - **填段不改身份**：插件只声明能处理什么；ref、绑定表、写队列、脏标记仍归框架。
 - 列表定义归 App，数据归 Workspace；插件不能直接改视图集合。
+- 图标是展示元数据：`icon` 支持 lucide 语义名或图片 URL / data URL；列表 provider 可经 `ctx.icon(ref)` 取所属插件的清单图标，网页列表使用站点 favicon。
+- 分组外观（`tone` / `unit` / `countLabel`）由定义或 provider 给出，渲染层不按列表 id 写死。
 
 ### 9.4 扩展页面与信任
 

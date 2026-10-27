@@ -14,6 +14,7 @@ import type { AgentHost } from '../../agent/agent-host';
 import type { ViewHost } from '../../capabilities/webview/host';
 import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
+import type { UiStateService } from '../../state/ui-state';
 import type { ListContexts } from '../../ura/contexts';
 import { listRegistry } from './list-registry';
 import { OPEN_ACTION } from './builtins/common';
@@ -23,12 +24,49 @@ export interface ListServiceDeps {
   agent: AgentHost;
   plugins: PluginHost;
   viewHost: ViewHost;
+  uiState: UiStateService;
+}
+
+function latestOf(items: ListItem[]): number {
+  return items.reduce((latest, item) => {
+    const value = item.meta?.['updatedAt'];
+    return typeof value === 'number' ? Math.max(latest, value) : latest;
+  }, 0);
+}
+
+function countLabelOf(
+  count: number,
+  unit: string | undefined,
+  override: string | undefined,
+): string {
+  if (override) return override;
+  return count > 0 ? `${count} ${unit ?? '项'}` : '暂无';
 }
 
 export class ListService {
   constructor(private readonly deps: ListServiceDeps) {
     for (const definition of builtinDefinitions()) {
       listRegistry.register(definition);
+    }
+  }
+
+  /** 打开 / 激活态是 UI 覆盖：按 ref 合并当前视图集合。 */
+  private applyViewStates(groups: ListGroup[]): void {
+    const views = this.deps.viewHost.list();
+    const byRef = new Map(
+      views
+        .map((view) => [view.document?.id ?? view.url, view] as const)
+        .filter(([ref]) => Boolean(ref)),
+    );
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.itemType !== 'document') continue;
+        const ref = String(item.meta?.['ref'] ?? '');
+        const view = byRef.get(ref);
+        if (!view) continue;
+        item.meta = { ...item.meta, viewId: view.id };
+        item.state = { ...item.state, open: true, active: view.active };
+      }
     }
   }
 
@@ -48,6 +86,21 @@ export class ListService {
             ...(group.icon || definition.icon
               ? { icon: group.icon ?? definition.icon }
               : {}),
+            ...(group.tone || definition.tone
+              ? { tone: group.tone ?? definition.tone }
+              : {}),
+            ...(group.unit || definition.unit
+              ? { unit: group.unit ?? definition.unit }
+              : {}),
+            countLabel: countLabelOf(
+              group.items.length,
+              group.unit ?? definition.unit,
+              group.countLabel ?? definition.countLabel,
+            ),
+            updatedAt: group.updatedAt ?? latestOf(group.items),
+            pinned: this.deps.uiState
+              .get()
+              .pinnedGroups.includes(`${definition.id}:${group.id}`),
             order: group.order,
             count: group.items.length,
             state: 'ready',
@@ -66,6 +119,9 @@ export class ListService {
           section: definition.section ?? 'resources',
           label: definition.label,
           ...(definition.icon ? { icon: definition.icon } : {}),
+          countLabel: '加载失败',
+          updatedAt: 0,
+          pinned: false,
           order: definition.order,
           count: 0,
           state: 'error',
@@ -92,10 +148,13 @@ export class ListService {
       }
     }
 
+    this.applyViewStates(groups);
+
     groups.sort(
       (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
         (listRegistry.get(a.definitionId)?.order ?? 0) -
-        (listRegistry.get(b.definitionId)?.order ?? 0),
+          (listRegistry.get(b.definitionId)?.order ?? 0),
     );
 
     return { workspaceEpoch, groups };
@@ -110,6 +169,11 @@ export class ListService {
       section: definition.section ?? 'resources',
       label: definition.label,
       ...(definition.icon ? { icon: definition.icon } : {}),
+      ...(definition.tone ? { tone: definition.tone } : {}),
+      ...(definition.unit ? { unit: definition.unit } : {}),
+      countLabel: '加载失败',
+      updatedAt: 0,
+      pinned: false,
       order: definition.order,
       count: 0,
       state: 'error',
@@ -141,6 +205,17 @@ export class ListService {
       section: definition.section ?? 'resources',
       label: definition.label,
       ...(definition.icon ? { icon: definition.icon } : {}),
+      ...(definition.tone ? { tone: definition.tone } : {}),
+      ...(definition.unit ? { unit: definition.unit } : {}),
+      countLabel: countLabelOf(
+        items.length,
+        definition.unit,
+        definition.countLabel,
+      ),
+      updatedAt: latestOf(items),
+      pinned: this.deps.uiState
+        .get()
+        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -171,6 +246,17 @@ export class ListService {
       section: definition.section ?? 'resources',
       label: definition.label,
       ...(definition.icon ? { icon: definition.icon } : {}),
+      ...(definition.tone ? { tone: definition.tone } : {}),
+      ...(definition.unit ? { unit: definition.unit } : {}),
+      countLabel: countLabelOf(
+        items.length,
+        definition.unit,
+        definition.countLabel,
+      ),
+      updatedAt: latestOf(items),
+      pinned: this.deps.uiState
+        .get()
+        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -202,6 +288,17 @@ export class ListService {
       section: definition.section ?? 'resources',
       label: definition.label,
       ...(definition.icon ? { icon: definition.icon } : {}),
+      ...(definition.tone ? { tone: definition.tone } : {}),
+      ...(definition.unit ? { unit: definition.unit } : {}),
+      countLabel: countLabelOf(
+        items.length,
+        definition.unit,
+        definition.countLabel,
+      ),
+      updatedAt: latestOf(items),
+      pinned: this.deps.uiState
+        .get()
+        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -227,6 +324,17 @@ export class ListService {
       section: definition.section ?? 'resources',
       label: definition.label,
       ...(definition.icon ? { icon: definition.icon } : {}),
+      ...(definition.tone ? { tone: definition.tone } : {}),
+      ...(definition.unit ? { unit: definition.unit } : {}),
+      countLabel: countLabelOf(
+        items.length,
+        definition.unit,
+        definition.countLabel,
+      ),
+      updatedAt: latestOf(items),
+      pinned: this.deps.uiState
+        .get()
+        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -243,6 +351,8 @@ function builtinDefinitions(): ListDefinition[] {
       id: 'temp',
       label: '临时网页',
       icon: 'hourglass',
+      tone: 'bg-zinc-500 text-zinc-50 dark:bg-zinc-600 dark:text-zinc-100',
+      unit: '个标签',
       order: 30,
       sourceScope: 'workspace',
       itemType: 'link',
@@ -252,8 +362,11 @@ function builtinDefinitions(): ListDefinition[] {
     },
     {
       id: 'sessions',
+      section: 'hidden',
       label: '会话',
       icon: 'messages',
+      tone: 'bg-violet-500 text-violet-50 dark:bg-violet-600 dark:text-violet-100',
+      unit: '个会话',
       order: 40,
       sourceScope: 'workspace',
       itemType: 'session',
@@ -270,6 +383,8 @@ function builtinDefinitions(): ListDefinition[] {
       section: 'plugins',
       label: '插件',
       icon: 'package',
+      tone: 'bg-cyan-500 text-cyan-50 dark:bg-cyan-600 dark:text-cyan-100',
+      unit: '个',
       order: 50,
       sourceScope: 'app',
       itemType: 'plugin',
@@ -285,6 +400,8 @@ function builtinDefinitions(): ListDefinition[] {
       section: 'settings',
       label: '设置',
       icon: 'sliders',
+      tone: 'bg-zinc-500 text-zinc-50 dark:bg-zinc-600 dark:text-zinc-100',
+      unit: '项',
       order: 60,
       sourceScope: 'app',
       itemType: 'settings',

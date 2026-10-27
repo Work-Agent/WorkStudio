@@ -74,6 +74,8 @@ function applySnapshot(snapshot: AppSnapshot): void {
     sidebarView: ui.sidebar.view,
     sidebarDomain: ui.sidebar.domain,
     sidebarCollapsed: ui.sidebar.collapsed,
+    sidebarGroup: ui.sidebar.group,
+    pinnedGroups: ui.sidebar.pinnedGroups,
     paneWidths: ui.paneWidths,
     inputExpanded: ui.assistant.inputExpanded,
     openPaths: ui.openSessionPaths,
