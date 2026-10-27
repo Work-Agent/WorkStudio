@@ -3,17 +3,20 @@
 // 7 个工具不含 IO、不含格式解释：解参数 → 调门面 → 格式化结果。
 // 统一标识是 ref（scheme://authority/path）；工具不接触路径与句柄。
 
-import { Type } from 'typebox'
-import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent'
-import type { Ura } from '../ura/facade'
+import { Type } from 'typebox';
+import {
+  defineTool,
+  type ToolDefinition,
+} from '@earendil-works/pi-coding-agent';
+import type { Ura } from '../ura/facade';
 
 const refParam = Type.String({
   description:
     'Resource id: scheme://authority/path (e.g. "file:///Users/me/notes.md").',
-})
+});
 
-const MAX_LINES = 2000
-const MAX_BYTES = 50 * 1024
+const MAX_LINES = 2000;
+const MAX_BYTES = 50 * 1024;
 
 export function createUraTools(ura: Ura): ToolDefinition[] {
   // ─── read ─────────────────────────────────────────────────
@@ -22,8 +25,10 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     offset: Type.Optional(
       Type.Number({ description: 'Line number to start from (1-indexed).' }),
     ),
-    limit: Type.Optional(Type.Number({ description: 'Maximum lines to read.' })),
-  })
+    limit: Type.Optional(
+      Type.Number({ description: 'Maximum lines to read.' }),
+    ),
+  });
   const readTool = defineTool<typeof readParams, unknown>({
     name: 'read',
     label: '读取资源',
@@ -31,42 +36,42 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
       'Read a resource by id. Output is truncated to 2000 lines or 50KB; use offset/limit for large resources.',
     parameters: readParams,
     execute: async (_id, { ref, offset, limit }) => {
-      const opened = await ura.read(ref, { as: 'agent' })
+      const opened = await ura.read(ref, { as: 'agent' });
       if (opened.presentation.type !== 'text') {
-        return text(`(no sidecar: ${ref})`, { ref, error: true })
+        return text(`(no sidecar: ${ref})`, { ref, error: true });
       }
-      const window = sliceLines(opened.presentation.content, offset, limit)
+      const window = sliceLines(opened.presentation.content, offset, limit);
       const trailer = window.truncated
         ? `\n\n(truncated: lines ${window.startLine}-${window.endLine} of ${window.totalLines}; continue with offset=${window.endLine + 1})`
-        : ''
+        : '';
       return text(window.text + trailer, {
         ref,
         codec: opened.codec,
         version: opened.version,
         degraded: opened.degraded,
         totalLines: window.totalLines,
-      })
+      });
     },
-  })
+  });
 
   // ─── write ────────────────────────────────────────────────
   const writeParams = Type.Object({
     ref: refParam,
     content: Type.String({ description: 'Full content to write.' }),
-  })
+  });
   const writeTool = defineTool<typeof writeParams, unknown>({
     name: 'write',
     label: '写入资源',
     description: 'Write the full content of a resource (create or overwrite).',
     parameters: writeParams,
     execute: async (_id, { ref, content }) => {
-      const result = await ura.write(ref, content)
+      const result = await ura.write(ref, content);
       return text(`wrote ${ref} (${result.version})`, {
         ref,
         version: result.version,
-      })
+      });
     },
-  })
+  });
 
   // ─── edit ─────────────────────────────────────────────────
   const editParams = Type.Object({
@@ -77,7 +82,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
       Type.String({ description: 'Baseline slice that must match.' }),
     ),
     content: Type.String({ description: 'Replacement content.' }),
-  })
+  });
   const editTool = defineTool<typeof editParams, unknown>({
     name: 'edit',
     label: '编辑资源',
@@ -88,13 +93,13 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
         ref,
         { start, end, ...(expected !== undefined ? { expected } : {}) },
         content,
-      )
+      );
       return text(`edited ${ref} (${result.version})`, {
         ref,
         version: result.version,
-      })
+      });
     },
-  })
+  });
 
   // ─── grep ─────────────────────────────────────────────────
   const grepParams = Type.Object({
@@ -104,7 +109,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     ),
     ignoreCase: Type.Optional(Type.Boolean()),
     limit: Type.Optional(Type.Number()),
-  })
+  });
   const grepTool = defineTool<typeof grepParams, unknown>({
     name: 'grep',
     label: '内容检索',
@@ -115,13 +120,13 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
         ...(scope ? { scope } : {}),
         ...(ignoreCase ? { ignoreCase } : {}),
         ...(limit ? { limit } : {}),
-      })
+      });
       const body = matches
         .map((match) => `${match.ref}:${match.line}: ${match.text}`)
-        .join('\n')
-      return text(body || '(no matches)', { count: matches.length })
+        .join('\n');
+      return text(body || '(no matches)', { count: matches.length });
     },
-  })
+  });
 
   // ─── find ─────────────────────────────────────────────────
   const findParams = Type.Object({
@@ -130,7 +135,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
       Type.String({ description: 'Resource id to search under.' }),
     ),
     limit: Type.Optional(Type.Number()),
-  })
+  });
   const findTool = defineTool<typeof findParams, unknown>({
     name: 'find',
     label: '查找资源',
@@ -140,31 +145,31 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
       const entries = await ura.find(pattern, {
         ...(scope ? { scope } : {}),
         ...(limit ? { limit } : {}),
-      })
+      });
       return text(
         entries.map((entry) => entry.ref).join('\n') || '(no matches)',
         { count: entries.length },
-      )
+      );
     },
-  })
+  });
 
   // ─── ls ───────────────────────────────────────────────────
   const lsParams = Type.Object({
     ref: refParam,
-  })
+  });
   const lsTool = defineTool<typeof lsParams, unknown>({
     name: 'ls',
     label: '列出资源',
     description: 'List a directory or container resource.',
     parameters: lsParams,
     execute: async (_id, { ref }) => {
-      const entries = await ura.ls(ref)
+      const entries = await ura.ls(ref);
       const body = entries
         .map((entry) => `${entry.type === 'dir' ? 'd' : '-'} ${entry.name}`)
-        .join('\n')
-      return text(body || '(empty)', { count: entries.length })
+        .join('\n');
+      return text(body || '(empty)', { count: entries.length });
     },
-  })
+  });
 
   // ─── query ────────────────────────────────────────────────
   const queryParams = Type.Object({
@@ -172,7 +177,7 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
     select: Type.Optional(Type.Array(Type.String())),
     where: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     limit: Type.Optional(Type.Number()),
-  })
+  });
   const queryTool = defineTool<typeof queryParams, unknown>({
     name: 'query',
     label: '结构化查询',
@@ -184,38 +189,44 @@ export function createUraTools(ura: Ura): ToolDefinition[] {
         ...(select ? { select } : {}),
         ...(where ? { where } : {}),
         ...(limit ? { limit } : {}),
-      })
-      return text(JSON.stringify(result, null, 2), { ref })
+      });
+      return text(JSON.stringify(result, null, 2), { ref });
     },
-  })
+  });
 
-  return [readTool, writeTool, editTool, grepTool, findTool, lsTool, queryTool]
+  return [readTool, writeTool, editTool, grepTool, findTool, lsTool, queryTool];
 }
 
 function text(payload: string, details: unknown) {
   return {
     content: [{ type: 'text' as const, text: payload }],
     details,
-  }
+  };
 }
 
 function sliceLines(
   content: string,
   offset?: number,
   limit?: number,
-): { text: string; totalLines: number; startLine: number; endLine: number; truncated: boolean } {
-  const lines = content.split('\n')
-  const start = Math.max(0, (offset ?? 1) - 1)
-  const count = Math.max(1, limit ?? MAX_LINES)
-  const slice = lines.slice(start, start + count)
-  let body = slice.join('\n')
-  if (body.length > MAX_BYTES) body = body.slice(0, MAX_BYTES)
-  const endLine = Math.min(lines.length, start + slice.length)
+): {
+  text: string;
+  totalLines: number;
+  startLine: number;
+  endLine: number;
+  truncated: boolean;
+} {
+  const lines = content.split('\n');
+  const start = Math.max(0, (offset ?? 1) - 1);
+  const count = Math.max(1, limit ?? MAX_LINES);
+  const slice = lines.slice(start, start + count);
+  let body = slice.join('\n');
+  if (body.length > MAX_BYTES) body = body.slice(0, MAX_BYTES);
+  const endLine = Math.min(lines.length, start + slice.length);
   return {
     text: body,
     totalLines: lines.length,
     startLine: start + 1,
     endLine,
     truncated: endLine < lines.length || body.length < slice.join('\n').length,
-  }
+  };
 }

@@ -233,7 +233,8 @@
       <div id="plugins"></div>
 
       <p class="hint">
-        远程只接受带 sha256 的 zip；本地路径不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
+        远程只接受带 sha256 的
+        zip；本地路径不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
         插件可执行主进程代码，安装前请确认来源。
       </p>
     </div>
@@ -374,9 +375,7 @@
               '<div class="meta">' +
               esc(p.id) +
               ' · ' +
-              (p.extensionCount > 0
-                ? p.extensionCount + ' 个视图'
-                : '无视图') +
+              (p.extensionCount > 0 ? p.extensionCount + ' 个视图' : '无视图') +
               '</div></div></div>',
           )
           .join('');

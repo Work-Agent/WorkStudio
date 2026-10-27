@@ -7,7 +7,7 @@
 
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../../state/workspace';
-import { useUiStore } from '../../state/uiState';
+import { useUiStore } from '../../state/ui';
 import { FindList } from './FindList';
 import { ListHost } from './ListHost';
 import { SidebarNav } from './SidebarNav';

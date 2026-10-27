@@ -16,7 +16,7 @@ import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
 import type { Collections } from '../../ura/collections';
 import { listRegistry } from './list-registry';
-import { DOC_FIELDS, OPEN_ACTION } from './builtins/common';
+import { OPEN_ACTION } from './builtins/common';
 
 export interface ListServiceDeps {
   collections: Collections;

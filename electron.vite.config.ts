@@ -24,7 +24,9 @@ function copyBuiltinPlugins(): Plugin {
       const settingsTo = resolve(__dirname, 'out/settings');
       if (existsSync(settingsFrom)) {
         rmSync(settingsTo, { recursive: true, force: true });
-        for (const entry of readdirSync(settingsFrom, { withFileTypes: true })) {
+        for (const entry of readdirSync(settingsFrom, {
+          withFileTypes: true,
+        })) {
           if (!entry.isDirectory()) continue;
           cpSync(join(settingsFrom, entry.name), join(settingsTo, entry.name), {
             recursive: true,

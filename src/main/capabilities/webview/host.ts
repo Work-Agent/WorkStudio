@@ -554,7 +554,7 @@ export class ViewHost {
     const on = action.toggle ? current !== 'on' : true;
     const setState = (state: string): void => {
       record.actionStates = {
-        ...(record.actionStates ?? {}),
+        ...record.actionStates,
         [actionId]: state,
       };
       this.broadcastViews();

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import type { ListEntry } from '../../../shared/ura';
-import { setUiState } from '../../state/uiState';
+import { setUiState } from '../../state/ui';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 

@@ -102,7 +102,8 @@ function DialogCard({ dialog, onRespond }: Props) {
               确认
             </button>
           )}
-          {(dialog.dialogType === 'input' || dialog.dialogType === 'editor') && (
+          {(dialog.dialogType === 'input' ||
+            dialog.dialogType === 'editor') && (
             <button
               className="px-3 py-1 rounded-md text-[12px] bg-[#4F6BED] text-white hover:bg-[#3D56E0]"
               onClick={() => onRespond({ value: text })}

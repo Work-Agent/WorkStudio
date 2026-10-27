@@ -11,7 +11,7 @@ import { ResourcePane } from './components/resource/ResourcePane';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { TitleBar } from './components/titlebar/TitleBar';
 import { rectStyle, useWorkspaceStore } from './state/workspace';
-import { useUiStore } from './state/uiState';
+import { useUiStore } from './state/ui';
 
 export function App() {
   const layout = useWorkspaceStore((s) => s.layout);

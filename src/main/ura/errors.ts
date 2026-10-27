@@ -5,14 +5,14 @@ export class UraError extends Error {
     readonly code: string,
     message: string,
   ) {
-    super(message)
-    this.name = 'UraError'
+    super(message);
+    this.name = 'UraError';
   }
 }
 
 export class PageNotFoundError extends UraError {
   constructor(surface: string) {
-    super('page.not-found', `页面未找到：${surface}`)
-    this.name = 'PageNotFoundError'
+    super('page.not-found', `页面未找到：${surface}`);
+    this.name = 'PageNotFoundError';
   }
 }

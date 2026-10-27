@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
-import { useUiStore } from '../../state/uiState';
+import { useUiStore } from '../../state/ui';
 
 const ICONS: Record<string, LucideIcon> = {
   folder: FolderOpen,

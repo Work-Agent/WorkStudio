@@ -221,7 +221,9 @@ export function createBrowserTools(
             type: 'text' as const,
             text:
               `url: ${snapshot.url}\ntitle: ${snapshot.title}` +
-              (archived ? `\narchived: ${archived.ref}` : '\narchived: (not on allowlist)') +
+              (archived
+                ? `\narchived: ${archived.ref}`
+                : '\narchived: (not on allowlist)') +
               `\n\n${snapshot.markdown.slice(0, 8000)}`,
           },
         ],
@@ -234,5 +236,13 @@ export function createBrowserTools(
     },
   });
 
-  return [openTool, readTool, snapshotTool, clickTool, typeTool, backTool, shotTool];
+  return [
+    openTool,
+    readTool,
+    snapshotTool,
+    clickTool,
+    typeTool,
+    backTool,
+    shotTool,
+  ];
 }

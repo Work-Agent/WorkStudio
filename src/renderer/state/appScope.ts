@@ -7,7 +7,7 @@
 
 import type { AppEvent, AppSnapshot } from '../../shared/app';
 import { toAgentStatus, useAppStore } from './app';
-import { useUiStore } from './uiState';
+import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
 
 let initialized = false;

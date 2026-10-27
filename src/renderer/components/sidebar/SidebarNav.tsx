@@ -11,7 +11,7 @@ import { useEffect } from 'react';
 import { ChevronDown, Files, Package, Search, Settings } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { popupMenu } from '../../api/runtime';
-import { setUiState, useUiStore } from '../../state/uiState';
+import { setUiState, useUiStore } from '../../state/ui';
 
 /** 顶层形态（二级形态 docs / data / web 属于 main 家族）。 */
 const ITEMS = [

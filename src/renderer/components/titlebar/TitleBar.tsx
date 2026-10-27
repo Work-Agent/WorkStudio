@@ -12,7 +12,7 @@ import {
   Sparkles,
   Sun,
 } from 'lucide-react';
-import { setUiState, toggleTheme, useUiStore } from '../../state/uiState';
+import { setUiState, toggleTheme, useUiStore } from '../../state/ui';
 import { ResourceToolbar } from './ResourceToolbar';
 import { WorkspaceSelect } from './WorkspaceSelect';
 

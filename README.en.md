@@ -14,11 +14,11 @@
 
 ### 1.1 How vertical agents differ
 
-| Dimension     | Personal Agent | Coding Agent       | Work Agent (this project)             |
-| ------------- | -------------- | ------------------ | ------------------------------------- |
-| Material      | Few sources, cloud | Single code base | Many sources, many formats, uneven permissions |
-| Content       | Text / chat    | Executable, verifiable | Content + data (data exposed as schema only) |
-| Goal          | Finish a task  | Change code correctly | Complete business operations within rules |
+| Dimension      | Personal Agent      | Coding Agent            | Work Agent (this project)                           |
+| -------------- | ------------------- | ----------------------- | --------------------------------------------------- |
+| Material       | Few sources, cloud  | Single code base        | Many sources, many formats, uneven permissions      |
+| Content        | Text / chat         | Executable, verifiable  | Content + data (data exposed as schema only)        |
+| Goal           | Finish a task       | Change code correctly   | Complete business operations within rules           |
 | Execution path | Retrieve + generate | Generate → run → verify | Orchestrate deterministic tools, no code generation |
 
 ### 1.2 Problem analysis: the gap in both workarounds
@@ -27,57 +27,57 @@ The fragments are not defects — they are what a job looks like: work naturally
 
 #### A. Without a workbench: a person carries things between tools
 
-| Stage      | What happens                                                                 | What it costs                                                |
-| ---------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Gather     | Material is scattered across local files, cloud drives, business systems, web pages and email; finding it relies on memory and search terms | You cannot be sure you found it all, or found it at all       |
-| Gather     | Downloaded copies, saved-as copies and mail attachments coexist with no authoritative version | You work on a stale copy and notice only after editing        |
-| Gather     | Cloud links, system roles and mailbox delegation each define permissions their own way | Visibility must be confirmed by hand, item by item            |
-| Understand | docx, pdf, xlsx, email and web pages each have a dedicated viewer; the same content renders differently in each | Time goes into opening and converting; the judgement basis shifts with the tool |
-| Understand | Converting to plain text or a screenshot loses table relations, hierarchy, comments and revision marks | Evidence is lost, conclusions rest on impressions             |
-| Understand | Business data is visible only through the UI, never as fields                 | Definitions, value ranges and relations are relayed verbally  |
-| Understand | Rules, templates and approval requirements live in documents and verbal agreements | Every task re-learns them, and what is learned is recorded nowhere |
-| Execute    | The person is the process engine, manually copying, comparing, filling and submitting across UIs | Steps cannot be replayed; a handover starts from zero          |
-| Execute    | No idempotency and no serialization                                          | Retries create duplicate records; later writes silently overwrite earlier ones |
-| Deliver    | Output lands as a file first, then is carried back into the business system  | Attachment names, folder placement and field mapping rely on convention |
-| Deliver    | Export → edit → import round trips                                           | Styles, formulas, hyperlinks and revisions are broken        |
-| Trace      | Nobody can say which material and which version a conclusion rested on; operations are scattered across system logs | Review means redoing the work; the next person starts over    |
-| Security   | Material moves between people and tools as attachments, share links and screenshots | No record of who saw it or forwarded it; redaction is manual  |
+| Stage      | What happens                                                                                                                                | What it costs                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Gather     | Material is scattered across local files, cloud drives, business systems, web pages and email; finding it relies on memory and search terms | You cannot be sure you found it all, or found it at all                         |
+| Gather     | Downloaded copies, saved-as copies and mail attachments coexist with no authoritative version                                               | You work on a stale copy and notice only after editing                          |
+| Gather     | Cloud links, system roles and mailbox delegation each define permissions their own way                                                      | Visibility must be confirmed by hand, item by item                              |
+| Understand | docx, pdf, xlsx, email and web pages each have a dedicated viewer; the same content renders differently in each                             | Time goes into opening and converting; the judgement basis shifts with the tool |
+| Understand | Converting to plain text or a screenshot loses table relations, hierarchy, comments and revision marks                                      | Evidence is lost, conclusions rest on impressions                               |
+| Understand | Business data is visible only through the UI, never as fields                                                                               | Definitions, value ranges and relations are relayed verbally                    |
+| Understand | Rules, templates and approval requirements live in documents and verbal agreements                                                          | Every task re-learns them, and what is learned is recorded nowhere              |
+| Execute    | The person is the process engine, manually copying, comparing, filling and submitting across UIs                                            | Steps cannot be replayed; a handover starts from zero                           |
+| Execute    | No idempotency and no serialization                                                                                                         | Retries create duplicate records; later writes silently overwrite earlier ones  |
+| Deliver    | Output lands as a file first, then is carried back into the business system                                                                 | Attachment names, folder placement and field mapping rely on convention         |
+| Deliver    | Export → edit → import round trips                                                                                                          | Styles, formulas, hyperlinks and revisions are broken                           |
+| Trace      | Nobody can say which material and which version a conclusion rested on; operations are scattered across system logs                         | Review means redoing the work; the next person starts over                      |
+| Security   | Material moves between people and tools as attachments, share links and screenshots                                                         | No record of who saw it or forwarded it; redaction is manual                    |
 
 #### B. Delegate to a coding agent: every task becomes a programming task
 
 A coding agent is shaped as “one repo + shell + generate code → run → verify”. Applied to work, every task is forced through three stages: **generate a script → run it → have a human check it**. None of the three is a business action; all of them are development actions.
 
-| Stage    | What happens                                                                 | What it costs                                                 |
-| -------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Kickoff  | Every task starts by producing a script; before the task begins, the person is already programming | Changing one cell or exporting one list waits for the script  |
-| Read     | Format parsing (docx layout, scanned pdf, merged xlsx cells, dynamic web content) is the script's job | Every source type needs its own parser; a wrong parse does not fail loudly, it silently drifts |
-| Read     | The mapping from business fields to positions inside documents is guessed     | A wrong mapping yields plausible but unusable output          |
-| Write    | There is no API back into the business system, so the script writes files or simulates clicks | Write-back is unreliable; export → edit → import breaks styles, formulas and revisions |
-| Locate   | Failures surface as stack traces and exceptions meant for developers          | The user cannot tell whether the script, the data or the system failed |
-| Verify   | No assertions; correctness depends on reading the script and comparing by hand | Verification costs more than doing it yourself; the script becomes one more artifact to check |
-| Reuse    | The same intent produces a different implementation every time                | Actions cannot accumulate into tools, nor be granted per task or audited afterwards |
-| Security | Data lands in working directories, script arguments, session logs and model context as copies | Copies escape control: who read which fields, when, cannot be answered |
-| Security | Permissions are granted per directory, not per field or per record            | Either the whole directory opens up, or the job cannot be done; credentials and sensitive fields have no channel |
-| Security | Redaction and temporary grants are done by hand beforehand, with no expiry    | One outbound send cannot be recalled, and compliance has no evidence |
-| Barrier  | Judging whether a script is safe, or will corrupt data, requires programming skill | Ordinary users can neither confirm what the agent did nor verify it; they can only trust or refuse |
+| Stage    | What happens                                                                                          | What it costs                                                                                                    |
+| -------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Kickoff  | Every task starts by producing a script; before the task begins, the person is already programming    | Changing one cell or exporting one list waits for the script                                                     |
+| Read     | Format parsing (docx layout, scanned pdf, merged xlsx cells, dynamic web content) is the script's job | Every source type needs its own parser; a wrong parse does not fail loudly, it silently drifts                   |
+| Read     | The mapping from business fields to positions inside documents is guessed                             | A wrong mapping yields plausible but unusable output                                                             |
+| Write    | There is no API back into the business system, so the script writes files or simulates clicks         | Write-back is unreliable; export → edit → import breaks styles, formulas and revisions                           |
+| Locate   | Failures surface as stack traces and exceptions meant for developers                                  | The user cannot tell whether the script, the data or the system failed                                           |
+| Verify   | No assertions; correctness depends on reading the script and comparing by hand                        | Verification costs more than doing it yourself; the script becomes one more artifact to check                    |
+| Reuse    | The same intent produces a different implementation every time                                        | Actions cannot accumulate into tools, nor be granted per task or audited afterwards                              |
+| Security | Data lands in working directories, script arguments, session logs and model context as copies         | Copies escape control: who read which fields, when, cannot be answered                                           |
+| Security | Permissions are granted per directory, not per field or per record                                    | Either the whole directory opens up, or the job cannot be done; credentials and sensitive fields have no channel |
+| Security | Redaction and temporary grants are done by hand beforehand, with no expiry                            | One outbound send cannot be recalled, and compliance has no evidence                                             |
+| Barrier  | Judging whether a script is safe, or will corrupt data, requires programming skill                    | Ordinary users can neither confirm what the agent did nor verify it; they can only trust or refuse               |
 
 #### Consolidation
 
-| Pain cluster                                                       | Missing capability                                                             | Claim it maps to              |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------ | ----------------------------- |
-| A gather, understand, deliver, security; B read, write, security    | Material has one identity, is interpreted once, and is written through one channel | **One resource pipeline**     |
-| A execute, deliver; B write, reuse                                  | One state, one entry point for human operations and AI execution, writes never overwrite each other | **One state tree, one projection** |
-| A trace; B kickoff, locate, verify, barrier                         | Content is read, edited and verified in place, with actions recorded            | **Content surfaces stand alone** |
+| Pain cluster                                                     | Missing capability                                                                                  | Claim it maps to                   |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| A gather, understand, deliver, security; B read, write, security | Material has one identity, is interpreted once, and is written through one channel                  | **One resource pipeline**          |
+| A execute, deliver; B write, reuse                               | One state, one entry point for human operations and AI execution, writes never overwrite each other | **One state tree, one projection** |
+| A trace; B kickoff, locate, verify, barrier                      | Content is read, edited and verified in place, with actions recorded                                | **Content surfaces stand alone**   |
 
 The five dimensions stay the same; what changes is who pays for convergence — A leaves it to the person, B turns it into programming. WorkStudio collects it into a pipeline.
 
 ### 1.3 Three design claims
 
-| Claim                            | Mechanism                                                                          | Problem it removes                              |
-| -------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
-| **One resource pipeline**        | Workspace material is registered uniformly and interpreted once; people, pages and AI share one read/write channel | Multiple read/write stacks, format coupling, uncontrolled copies |
-| **One state tree, one projection** | The main process holds the only state; manual operations and AI execution use the same entry point; the UI only consumes projections | Overwritten writes, two logics for human and AI, drifting state |
-| **Content surfaces stand alone** | Tab content is always a native view, so people read, edit and verify in place      | Shell occlusion, late verification               |
+| Claim                              | Mechanism                                                                                                                            | Problem it removes                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| **One resource pipeline**          | Workspace material is registered uniformly and interpreted once; people, pages and AI share one read/write channel                   | Multiple read/write stacks, format coupling, uncontrolled copies |
+| **One state tree, one projection** | The main process holds the only state; manual operations and AI execution use the same entry point; the UI only consumes projections | Overwritten writes, two logics for human and AI, drifting state  |
+| **Content surfaces stand alone**   | Tab content is always a native view, so people read, edit and verify in place                                                        | Shell occlusion, late verification                               |
 
 ## 2. Domain model
 
@@ -101,24 +101,24 @@ Cross-cutting capability
 └─ Browser: online pages + automation
 ```
 
-| Entity          | Identity                              | Source of truth            | Persistence            |
-| --------------- | ------------------------------------- | -------------------------- | ---------------------- |
-| Workspace       | Path                                  | Workspace registry         | Self-describing file   |
-| Resource        | ref (scheme + authority + path)       | Source                     | Source side + derived layer |
-| Session         | Session file                          | pi session manager         | Session file           |
-| Plugin          | Plugin id                             | Plugin catalog             | Plugin root / install dir |
-| Page            | Plugin id or settings page id         | Plugin catalog / settings registry | Page files     |
-| Model and config | provider / model id                  | pi settings and credential chain | Settings file    |
+| Entity           | Identity                        | Source of truth                    | Persistence                 |
+| ---------------- | ------------------------------- | ---------------------------------- | --------------------------- |
+| Workspace        | Path                            | Workspace registry                 | Self-describing file        |
+| Resource         | ref (scheme + authority + path) | Source                             | Source side + derived layer |
+| Session          | Session file                    | pi session manager                 | Session file                |
+| Plugin           | Plugin id                       | Plugin catalog                     | Plugin root / install dir   |
+| Page             | Plugin id or settings page id   | Plugin catalog / settings registry | Page files                  |
+| Model and config | provider / model id             | pi settings and credential chain   | Settings file               |
 
 ## 3. Product shape
 
 The same resource has three subjects: files say “what I have”, sessions say “what I want to do”, plugins say “what capabilities I have”. The three are not equal — sessions hold no data, plugins hold no identity or state and do not execute directly — so once the primary subject is fixed, the product shape follows:
 
-| Primary subject | Role       | Question the product answers              | Shape          | Where the other two sit        |
-| --------------- | ---------- | ----------------------------------------- | -------------- | ------------------------------ |
-| Files           | Person     | What material do I have, and how do I process it | **Studio** | Sessions are the process, plugins are extensions |
-| Sessions        | AI         | What am I doing, and which material do I need on the way | Chat | Files are context, plugins are tools |
-| Plugins         | Extender   | What capabilities do I have, what desktop can be assembled | Virtual desktop | Files and sessions become capability windows |
+| Primary subject | Role     | Question the product answers                               | Shape           | Where the other two sit                          |
+| --------------- | -------- | ---------------------------------------------------------- | --------------- | ------------------------------------------------ |
+| Files           | Person   | What material do I have, and how do I process it           | **Studio**      | Sessions are the process, plugins are extensions |
+| Sessions        | AI       | What am I doing, and which material do I need on the way   | Chat            | Files are context, plugins are tools             |
+| Plugins         | Extender | What capabilities do I have, what desktop can be assembled | Virtual desktop | Files and sessions become capability windows     |
 
 All three paths work; they serve different jobs. This project chooses Studio:
 
@@ -168,11 +168,11 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 
 Every piece of software handles data through the same channel: obtain bytes → interpret into structure → present to a person or hand to a program to consume; modifications travel back the same binding table, encoded layer by layer. WorkStudio cuts it into three segments, and the cut is not by responsibility but by **identity marker**: each segment recognises exactly one marker, and a different marker means a different implementation.
 
-| Segment    | Marker recognised                        | Where the marker comes from        | Replacing it means            |
-| ---------- | ---------------------------------------- | ---------------------------------- | ----------------------------- |
-| transport  | scheme                                   | ref `scheme://authority/path`      | Replacing the source          |
-| codec      | MIME                                     | canonical value returned by transport | Replacing the format interpretation |
-| consumer   | codec (result of resolving `(transport, mime)`) | Binding table                | Replacing the outlet: page / text / data |
+| Segment   | Marker recognised                               | Where the marker comes from           | Replacing it means                       |
+| --------- | ----------------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| transport | scheme                                          | ref `scheme://authority/path`         | Replacing the source                     |
+| codec     | MIME                                            | canonical value returned by transport | Replacing the format interpretation      |
+| consumer  | codec (result of resolving `(transport, mime)`) | Binding table                         | Replacing the outlet: page / text / data |
 
 - **Two data identities, one implementation identity**: ref fixes the source, MIME fixes the format, codec says “who decoded this document”; outlets, stores and write-back all follow the codec, with no separate docType.
 - **Segments meet through markers, not conventions**: with the marker present, the segment is replaceable and the rest stays put; a missing marker (unknown MIME, no codec) degrades to raw and drops out of the segmentation.
@@ -180,11 +180,11 @@ Every piece of software handles data through the same channel: obtain bytes → 
 
 Plugins, settings and the browser are not three facilities but three positions on this channel: plugins replace segments, settings occupy only the endpoint, the browser bypasses the whole channel. The difference is who owns the code and lifecycle, and where it plugs in. The framework core builds in only `file` / `http` / `https` sources; all other sources and formats are registered by plugins.
 
-| Surface       | Position                                                                 | Owner and lifecycle        | Extension mode                 |
-| ------------- | ------------------------------------------------------------------------ | -------------------------- | ------------------------------ |
-| **Plugins**   | Replace segments: register transport / codec / store / consumer, and ship pages | Installer: installable, removable | The only extension surface open to the outside |
-| **Settings**  | Endpoint only: framework pages, no codec / store                          | Framework: ships with versions | Add a page inside the framework |
-| **Browser**   | Full bypass: live view embedded directly; allowlisted domains organised into site collections and synced to the sidecar through the resource map | Framework: does not change with content | Built in, not configured per site |
+| Surface      | Position                                                                                                                                         | Owner and lifecycle                     | Extension mode                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ---------------------------------------------- |
+| **Plugins**  | Replace segments: register transport / codec / store / consumer, and ship pages                                                                  | Installer: installable, removable       | The only extension surface open to the outside |
+| **Settings** | Endpoint only: framework pages, no codec / store                                                                                                 | Framework: ships with versions          | Add a page inside the framework                |
+| **Browser**  | Full bypass: live view embedded directly; allowlisted domains organised into site collections and synced to the sidecar through the resource map | Framework: does not change with content | Built in, not configured per site              |
 
 ```
 ┌────────────────────────── WorkStudio ──────────────────────────┐
@@ -205,12 +205,12 @@ Plugins, settings and the browser are not three facilities but three positions o
 
 **Boundaries** (the three owners do not overlap):
 
-| Dimension | Pipeline (framework)                                 | Sidecar (pi + harness)                  | Surfaces (plugins · settings · browser)                                      |
-| --------- | ---------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
-| Owns      | refs, binding table, write queues, page sessions, derived indexes | sessions, turns, context, tool orchestration | Plugins: the segments they fill and their own pages; settings: pages and list; browser: live view and automation |
-| Does not own | The content itself (truth lives in the source)     | Resource implementations, pages, state tree | ref identity, binding table, write queues, sessions, other surfaces' belongings |
-| Entry     | Facade: read / write / edit / grep / find / ls / query | 7 resource tools + action tools (injected by surfaces) | Plugins: SDK registration at load time; settings: `settings.list`; browser: `browser_*` contract |
-| Exit      | Text / schema / page entry point                     | Messages and tool calls (truth in pi)   | Plugins and settings: page projection + whitelisted commands; browser: snapshot files and site collections |
+| Dimension    | Pipeline (framework)                                              | Sidecar (pi + harness)                                 | Surfaces (plugins · settings · browser)                                                                          |
+| ------------ | ----------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Owns         | refs, binding table, write queues, page sessions, derived indexes | sessions, turns, context, tool orchestration           | Plugins: the segments they fill and their own pages; settings: pages and list; browser: live view and automation |
+| Does not own | The content itself (truth lives in the source)                    | Resource implementations, pages, state tree            | ref identity, binding table, write queues, sessions, other surfaces' belongings                                  |
+| Entry        | Facade: read / write / edit / grep / find / ls / query            | 7 resource tools + action tools (injected by surfaces) | Plugins: SDK registration at load time; settings: `settings.list`; browser: `browser_*` contract                 |
+| Exit         | Text / schema / page entry point                                  | Messages and tool calls (truth in pi)                  | Plugins and settings: page projection + whitelisted commands; browser: snapshot files and site collections       |
 
 - **Facade only**: neither the sidecar nor pages touch the file system or source protocols; plugin implementations are called by the facade and never drive the sidecar in reverse.
 - **Identity is not outsourced**: refs, bindings, write queues and dirty flags belong to the framework; plugins only declare what they can handle (`(transport, mime)` and codec), they do not create an identity space.
@@ -236,13 +236,13 @@ sites/<domain>/*.md (already Markdown) ─► site collection: domain → pages
                                          └─► resource map ─► sidecar (visible next turn)
 ```
 
-| Step      | Browser                          | Plugin pipeline                                          |
-| --------- | -------------------------------- | -------------------------------------------------------- |
-| Fetch     | Navigation                       | transport                                                |
-| Interpret | The site itself (server + engine) | codec                                                    |
-| Structure | Two-level collection: domain → page | store                                                 |
-| Selection | None: a single path              | Two-level bindings `(transport, mime)` → `(transport, mime, codec)` |
-| Write     | Automation drives the site UI    | Write session: draft → encode → commit                    |
+| Step      | Browser                             | Plugin pipeline                                                     |
+| --------- | ----------------------------------- | ------------------------------------------------------------------- |
+| Fetch     | Navigation                          | transport                                                           |
+| Interpret | The site itself (server + engine)   | codec                                                               |
+| Structure | Two-level collection: domain → page | store                                                               |
+| Selection | None: a single path                 | Two-level bindings `(transport, mime)` → `(transport, mime, codec)` |
+| Write     | Automation drives the site UI       | Write session: draft → encode → commit                              |
 
 - **Shared session**: all web tabs share one browser session, so login state, cookies and cache stay consistent; temporary tabs and organised site content are the same origin.
 - **Direct navigation**: opening a page means the view host tells the WebContentsView to navigate; no prefetch, no decoding, no ref produced, no change subscription.
@@ -278,11 +278,11 @@ button "Export"            button.export
 table  "Quarterly compare" table:nth-of-type(1)
 ```
 
-| Part        | Content                                                                     | Used by                                        |
-| ----------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
-| Front matter | `url` · Readability `title` / `excerpt` · `domain` · `capturedAt`           | Collection rows, tab titles, search excerpts, dedupe |
-| Body        | Markdown body extracted by Readability                                      | Sidecar context, page rendering, search        |
-| Accessibility | role · name · selector of landmarks / heading levels / interactive elements | Automation targeting, structure verification   |
+| Part          | Content                                                                     | Used by                                              |
+| ------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Front matter  | `url` · Readability `title` / `excerpt` · `domain` · `capturedAt`           | Collection rows, tab titles, search excerpts, dedupe |
+| Body          | Markdown body extracted by Readability                                      | Sidecar context, page rendering, search              |
+| Accessibility | role · name · selector of landmarks / heading levels / interactive elements | Automation targeting, structure verification         |
 
 - **File name = path slug + URL hash**: re-capturing the same URL overwrites the same file, no copies.
 - **The body is a projection, not the source**: it is never used for write-back; site content is changed only on the site.
@@ -313,14 +313,14 @@ Write:
 change ─► locate ─► encode (minimal patch) ─► commit to source ─► data update ─► broadcast
 ```
 
-| Segment    | Responsibility                                                              |
-| ---------- | --------------------------------------------------------------------------- |
-| transport  | Protocol → RawContent (mime, bytes); capabilities declared at registration   |
-| codec      | Declares `(transport, mime)` → document                                     |
-| store      | Bound to a codec: document → structured query (derived)                      |
-| consumer   | Declares `(transport, mime, codec)` → page (render / edit) · text outlet     |
-| collection | Sidebar group                                                               |
-| action     | Address-bar action                                                          |
+| Segment    | Responsibility                                                             |
+| ---------- | -------------------------------------------------------------------------- |
+| transport  | Protocol → RawContent (mime, bytes); capabilities declared at registration |
+| codec      | Declares `(transport, mime)` → document                                    |
+| store      | Bound to a codec: document → structured query (derived)                    |
+| consumer   | Declares `(transport, mime, codec)` → page (render / edit) · text outlet   |
+| collection | Sidebar group                                                              |
+| action     | Address-bar action                                                         |
 
 - **Segments can be filled separately**: a plugin may fill one segment (add a single codec) or the whole chain (source + format + page); which segment is filled is decided by the registration API, with no requirement to own everything.
 - **Two kinds of page, two owners**: `page` is a resource page whose entry and key belong to URA; `settings` is a plugin configuration / detail page — the page comes from the plugin, but its list, entry and ref belong to settings (Settings → Plugins, install details). Both share the same page loading and whitelist bridge.
@@ -387,11 +387,11 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 
 ### 6.1 Three levels of state
 
-| Level | Owns | Lifetime | Persistence |
-| --- | --- | --- | --- |
-| **App** | model catalog, credentials, plugin installs, Pi packages, global settings, system views, workspace list, active workspace | process | `agentDir` / official credential chain |
-| **Workspace** | project settings, URA, lists, tab views, UI scene, page/write sessions, session index, browser policy, derived data | open workspace | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
-| **Session** | pi runtime, messages, turns, queue, context (resource-map version, AGENTS, skill activation) | session | `sessions/*.jsonl` |
+| Level         | Owns                                                                                                                      | Lifetime       | Persistence                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------- |
+| **App**       | model catalog, credentials, plugin installs, Pi packages, global settings, system views, workspace list, active workspace | process        | `agentDir` / official credential chain                                            |
+| **Workspace** | project settings, URA, lists, tab views, UI scene, page/write sessions, session index, browser policy, derived data       | open workspace | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
+| **Session**   | pi runtime, messages, turns, queue, context (resource-map version, AGENTS, skill activation)                              | session        | `sessions/*.jsonl`                                                                |
 
 - **Workspace-level data lists are managed by AppHost**: AppHost creates, replaces and disposes them through WorkspaceManager; WorkspaceScope is only the active instance.
 - **Session truth lives in pi**: switching delegates to pi; WorkStudio keeps only the projection, and skill activation is resolved per session context.
@@ -401,13 +401,13 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 
 ### 6.2 Communication
 
-| Channel | Direction | Semantics |
-| --- | --- | --- |
-| AppCommand | renderer → main | `scope + domain.action` → `ok/data` or error |
-| AppSnapshot | main → renderer | `app` / `workspaces` / `workspace` / `ui` / `session` + epochs |
-| AppEvent | main → renderer | scope + epoch + seq; high-frequency deltas coalesced |
-| Page data plane | page → main | whitelisted commands forwarded to the same implementation |
-| View bus | bidirectional | deliver / ready / dirty / commit / actions / theme |
+| Channel         | Direction       | Semantics                                                      |
+| --------------- | --------------- | -------------------------------------------------------------- |
+| AppCommand      | renderer → main | `scope + domain.action` → `ok/data` or error                   |
+| AppSnapshot     | main → renderer | `app` / `workspaces` / `workspace` / `ui` / `session` + epochs |
+| AppEvent        | main → renderer | scope + epoch + seq; high-frequency deltas coalesced           |
+| Page data plane | page → main     | whitelisted commands forwarded to the same implementation      |
+| View bus        | bidirectional   | deliver / ready / dirty / commit / actions / theme             |
 
 - **Handshake**: `app.sync` returns the full AppSnapshot; subscription precedes the snapshot.
 - **Gaps**: run `app.sync` again; no incremental replay.
@@ -440,17 +440,17 @@ node node_modules/electron/install.js
 
 ### 7.2 Scripts
 
-| Command              | Description                                          |
-| -------------------- | ---------------------------------------------------- |
-| `pnpm dev`           | Development mode with Vite HMR                       |
+| Command              | Description                                                 |
+| -------------------- | ----------------------------------------------------------- |
+| `pnpm dev`           | Development mode with Vite HMR                              |
 | `pnpm run build`     | Compile main / preload / renderer into `out/`, no packaging |
-| `pnpm run preview`   | Start the app from built output (verify production build) |
-| `pnpm run package`   | Package an unpacked app directory into `dist/`       |
-| `pnpm run make`      | Build the installer for the current platform into `dist/` |
-| `pnpm run release`   | Build and publish (needs publish credentials)        |
-| `pnpm run typecheck` | TypeScript type check                                |
-| `pnpm run lint`      | oxlint + oxfmt checks                                |
-| `pnpm run lint:fix`  | Auto-fix style issues                                |
+| `pnpm run preview`   | Start the app from built output (verify production build)   |
+| `pnpm run package`   | Package an unpacked app directory into `dist/`              |
+| `pnpm run make`      | Build the installer for the current platform into `dist/`   |
+| `pnpm run release`   | Build and publish (needs publish credentials)               |
+| `pnpm run typecheck` | TypeScript type check                                       |
+| `pnpm run lint`      | oxlint + oxfmt checks                                       |
+| `pnpm run lint:fix`  | Auto-fix style issues                                       |
 
 ### 7.3 Project layout
 

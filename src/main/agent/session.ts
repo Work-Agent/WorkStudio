@@ -12,35 +12,35 @@ import {
   type AgentSessionRuntimeDiagnostic,
   type SessionManager,
   type SettingsManager,
-} from '@earendil-works/pi-coding-agent'
-import type { BrowserAutomationContract } from '../harness/browser-contract'
-import { composeExtensionFactories } from '../harness/builtin-extensions'
-import { createHarnessExtension } from '../harness/harness-extension'
-import { SYSTEM_PROMPT } from '../harness/prompts'
-import type { SkillsManager } from '../harness/skills'
-import type { PluginHost } from '../plugins/host'
-import type { Ura } from '../ura/facade'
-import { uraRegistry } from '../ura/registry'
+} from '@earendil-works/pi-coding-agent';
+import type { BrowserAutomationContract } from '../harness/browser-contract';
+import { composeExtensionFactories } from '../harness/builtin-extensions';
+import { createHarnessExtension } from '../harness/harness-extension';
+import { SYSTEM_PROMPT } from '../harness/prompts';
+import type { SkillsManager } from '../harness/skills';
+import type { PluginHost } from '../plugins/host';
+import type { Ura } from '../ura/facade';
+import { uraRegistry } from '../ura/registry';
 
 type ExtensionsResult = Awaited<
   ReturnType<typeof createAgentSessionFromServices>
->['extensionsResult']
+>['extensionsResult'];
 
 export interface AgentSessionDeps {
-  ura: Ura
-  skills: SkillsManager
-  registry: PluginHost
-  getBrowserAutomation: () => BrowserAutomationContract | null
-  openExternal?: (url: string) => void | Promise<void>
+  ura: Ura;
+  skills: SkillsManager;
+  registry: PluginHost;
+  getBrowserAutomation: () => BrowserAutomationContract | null;
+  openExternal?: (url: string) => void | Promise<void>;
 }
 
 export interface AgentSessionInput {
-  cwd: string
-  workspaceId: string
-  agentDir: string
-  sessionManager: SessionManager
-  settingsManager: SettingsManager
-  deps: AgentSessionDeps
+  cwd: string;
+  workspaceId: string;
+  agentDir: string;
+  sessionManager: SessionManager;
+  settingsManager: SettingsManager;
+  deps: AgentSessionDeps;
 }
 
 export class AgentSession {
@@ -59,7 +59,7 @@ export class AgentSession {
       plugins: input.deps.registry,
       workspace: () => input.cwd,
       getBrowserAutomation: input.deps.getBrowserAutomation,
-    })
+    });
 
     const services = await createAgentSessionServices({
       cwd: input.cwd,
@@ -75,8 +75,8 @@ export class AgentSession {
             base.skills,
             base.diagnostics,
             (source) => input.deps.registry.pluginNameOf(source),
-          )
-          return input.deps.skills.filterSkills(base.skills, base.diagnostics)
+          );
+          return input.deps.skills.filterSkills(base.skills, base.diagnostics);
         },
         appendSystemPromptOverride: (base) =>
           input.deps.skills.filterAppendSystemPrompt(base),
@@ -84,21 +84,23 @@ export class AgentSession {
         // 版本变化时替换）；这里不再让 pi 旁路读文件。
         agentsFilesOverride: () => ({ agentsFiles: [] }),
       },
-    })
+    });
 
     const created = await createAgentSessionFromServices({
       services,
       sessionManager: input.sessionManager,
       noTools: 'builtin',
-    })
+    });
 
     const diagnostics: AgentSessionRuntimeDiagnostic[] = [
       ...services.diagnostics,
-      ...services.resourceLoader.getExtensions().errors.map(({ path, error }) => ({
-        type: 'error' as const,
-        message: `Failed to load extension "${path}": ${error}`,
-      })),
-    ]
+      ...services.resourceLoader
+        .getExtensions()
+        .errors.map(({ path, error }) => ({
+          type: 'error' as const,
+          message: `Failed to load extension "${path}": ${error}`,
+        })),
+    ];
 
     return new AgentSession(
       input.cwd,
@@ -107,17 +109,17 @@ export class AgentSession {
       services,
       created.extensionsResult,
       diagnostics,
-    )
+    );
   }
 }
 
 function buildSystemPrompt(): string {
-  const stores = uraRegistry.schemas()
-  if (stores.length === 0) return SYSTEM_PROMPT
-  const list = stores.map((s) => `- ${s.codec}`).join('\n')
+  const stores = uraRegistry.schemas();
+  if (stores.length === 0) return SYSTEM_PROMPT;
+  const list = stores.map((s) => `- ${s.codec}`).join('\n');
   return `${SYSTEM_PROMPT}
 
 ## Data objects（schema-only，query 查询结构）
 
-${list}`
+${list}`;
 }
