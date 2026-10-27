@@ -20,6 +20,7 @@ import {
   DEFAULT_LEFT_PX,
   LEFT_COLLAPSED_PX,
   LEFT_MAX_RATIO,
+  LEFT_MIN_DRAG_PX,
   LEFT_MIN_RATIO,
   RIGHT_MAX_RATIO,
   RIGHT_MIN_RATIO,
@@ -60,9 +61,17 @@ export function computeLayout(input: LayoutInput): LayoutSnapshot {
   const leftTarget = preview?.paneWidths?.left ?? ui.paneWidths.left;
   const rightTarget = preview?.paneWidths?.right ?? ui.paneWidths.right;
 
+  const leftDragging =
+    preview?.type === 'pane-resize' && preview.side === 'left';
   const leftWidth = collapsed
     ? LEFT_COLLAPSED_PX
-    : Math.round(clamp(leftTarget, w * LEFT_MIN_RATIO, w * LEFT_MAX_RATIO));
+    : Math.round(
+        clamp(
+          leftTarget,
+          leftDragging ? LEFT_MIN_DRAG_PX : w * LEFT_MIN_RATIO,
+          w * LEFT_MAX_RATIO,
+        ),
+      );
   const rightDockWidth =
     ui.aiOpen && !ui.aiFloating
       ? Math.round(clamp(rightTarget, w * RIGHT_MIN_RATIO, w * RIGHT_MAX_RATIO))
@@ -187,13 +196,20 @@ export function previewPaneResize(
 ): InteractionPreview {
   const dx = cursorX - startClientX;
   if (side === 'left') {
-    const raw = ui.sidebarCollapsed ? LEFT_COLLAPSED_PX : ui.paneWidths.left;
-    const next = clamp(raw + dx, 0, windowWidth * LEFT_MAX_RATIO);
+    // 收起态开始拖动即进入展开区间；拖动期间不提前套用收起宽度。
+    const raw = ui.sidebarCollapsed
+      ? COLLAPSE_THRESHOLD_PX
+      : ui.paneWidths.left;
+    const next = clamp(
+      raw + dx,
+      LEFT_MIN_DRAG_PX,
+      windowWidth * LEFT_MAX_RATIO,
+    );
     return {
       type: 'pane-resize',
       side: 'left',
       paneWidths: { left: Math.round(next), right: ui.paneWidths.right },
-      sidebarCollapsed: next < COLLAPSE_THRESHOLD_PX,
+      sidebarCollapsed: false,
     };
   }
   const next = clamp(
@@ -222,7 +238,7 @@ export function commitPaneResize(
       paneWidths: { left: ui.paneWidths.left, right: Math.round(widths.right) },
     };
   }
-  if (preview.sidebarCollapsed) {
+  if (widths.left < COLLAPSE_THRESHOLD_PX) {
     return {
       sidebarCollapsed: true,
       paneWidths: { left: DEFAULT_LEFT_PX, right: ui.paneWidths.right },
