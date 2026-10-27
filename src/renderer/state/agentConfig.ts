@@ -18,7 +18,6 @@ import type {
   WorkspaceInfo,
 } from '../../shared/types';
 import { agentAPI } from '../api/bridge';
-import { useDocumentsStore } from './documents';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
@@ -119,7 +118,6 @@ export const useAgentConfigStore = create<AgentConfigState>()((set, get) => ({
     } else {
       set({ status: await agentAPI.setWorkspace(path) });
     }
-    await useDocumentsStore.getState().refresh();
     await get().refreshSkills();
     await get().refreshWorkspaces();
   },

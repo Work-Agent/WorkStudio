@@ -7,7 +7,6 @@ import { App } from './App';
 import { bindTitlebarInsets } from './components/titlebar/windowControls';
 import { useAgentConfigStore } from './state/agentConfig';
 import { bindPiEvents, useConversationStore } from './state/conversation';
-import { useDocumentsStore } from './state/documents';
 import { bindPiUIRequests } from './state/piUI';
 import {
   bindContentDelivery,
@@ -38,7 +37,6 @@ async function bootstrap(): Promise<void> {
     }
     await Promise.all([
       useConversationStore.getState().init(),
-      useDocumentsStore.getState().init(),
       useAgentConfigStore.getState().init(),
       ...(hasMainBridge ? [] : [useTabServiceStore.getState().init()]),
     ]);
