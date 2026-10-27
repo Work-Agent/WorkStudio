@@ -43,19 +43,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   workspaces: [],
 
   refresh: async () => {
-    const r = await mainBridge!.cmd<AgentSnapshot>('agent.status');
+    if (!mainBridge) return;
+    const r = await mainBridge.cmd<AgentSnapshot>('agent.status');
     if (r.ok) set({ status: toAgentStatus(r.data) });
   },
 
   refreshWorkspaces: async () => {
-    const r = await mainBridge!.cmd<WorkspaceInfo[]>('agent.workspaces');
+    if (!mainBridge) return;
+    const r = await mainBridge.cmd<WorkspaceInfo[]>('agent.workspaces');
     if (r.ok) set({ workspaces: r.data });
   },
 
   init: async () => {
+    if (!mainBridge) return;
     const [models, status] = await Promise.all([
-      mainBridge!.cmd<ModelOption[]>('agent.models'),
-      mainBridge!.cmd<AgentSnapshot>('agent.status'),
+      mainBridge.cmd<ModelOption[]>('agent.models'),
+      mainBridge.cmd<AgentSnapshot>('agent.status'),
     ]);
     set({
       models: models.ok ? models.data : [],
@@ -69,7 +72,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   /** 工作区切换（独立通道，不经模型配置）：重绑资源域/会话域/技能。 */
   switchWorkspace: async (path) => {
-    const r = await mainBridge!.cmd<AgentSnapshot>('agent.setWorkspace', {
+    if (!mainBridge) throw new Error('window bridge is unavailable');
+    const r = await mainBridge.cmd<AgentSnapshot>('agent.setWorkspace', {
       path,
     });
     if (!r.ok) throw new Error(r.error.message);
