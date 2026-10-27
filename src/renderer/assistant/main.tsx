@@ -9,12 +9,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  BookOpen,
   Brain,
+  Check,
   ChevronDown,
   GripHorizontal,
   Maximize2,
   MessageCirclePlus,
   Info,
+  Slash,
   Minimize2,
   MoveDiagonal2,
   PanelRight,
@@ -26,6 +29,7 @@ import {
 import type { ResizeDirection, ThinkingLevel } from '../../shared/types';
 import '../index.css';
 import { bridge, MENU_SOURCE } from './bridge';
+import { matchCommands, runBuiltinCommand, useCommands } from './commands';
 import { MessageRow, ResizeHandles } from './components';
 import { SessionInfoPanel } from './SessionInfoPanel';
 import { formatTokens, tabLabel } from './format';
@@ -75,9 +79,29 @@ function Assistant() {
     Array<{ provider: string; modelId: string; label: string }>
   >([]);
   const [thinkingLevels, setThinkingLevels] = useState<ThinkingLevel[]>([]);
-  const [menu, setMenu] = useState<'model' | 'thinking' | null>(null);
+  const [menu, setMenu] = useState<'model' | 'thinking' | 'skills' | null>(
+    null,
+  );
+  const [skills, setSkills] = useState<
+    Array<{ name: string; description: string }>
+  >([]);
+  const [acIdx, setAcIdx] = useState(0);
+  const [acDismissed, setAcDismissed] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
+  const commands = useCommands(activePath);
+  const acItems = useMemo(() => {
+    if (acDismissed || !text.startsWith('/') || text.includes('\n')) return [];
+    const fragment = text.slice(1).split(' ')[0] ?? '';
+    if (fragment !== text.slice(1)) return [];
+    return matchCommands(commands, fragment);
+  }, [acDismissed, commands, text]);
+
+  useEffect(() => {
+    setAcIdx(0);
+    setAcDismissed(false);
+  }, [text]);
 
   useEffect(() => {
     const openStats = (): void => setStatsOpen(true);
@@ -133,6 +157,14 @@ function Assistant() {
       if (r.ok) setThinkingLevels((r.data as ThinkingLevel[]) ?? []);
     });
   }, [agent?.provider, agent?.modelId]);
+
+  useEffect(() => {
+    void bridge
+      ?.cmd<Array<{ name: string; description: string }>>('skills.list')
+      .then((response) => {
+        if (response.ok) setSkills(response.data);
+      });
+  }, [activePath]);
 
   // 自动滚动：距底 <80px 才跟随
   useEffect(() => {
@@ -193,17 +225,56 @@ function Assistant() {
     void bridge?.shell.showPopup({ source: MENU_SOURCE, items });
   };
 
-  const send = async (): Promise<void> => {
+  const submit = async (
+    mode: 'prompt' | 'steer' | 'followUp' = 'prompt',
+  ): Promise<void> => {
     const value = text.trim();
-    if (!value || !bridge) return;
+    const api = bridge;
+    if (!value || !api) return;
+    if (value.startsWith('/')) {
+      const consumed = await runBuiltinCommand(value, {
+        activePath,
+        messages,
+        newSession: async () => {
+          await api.cmd('session.new');
+          clearNewTask();
+        },
+        openModel: () => setMenu('model'),
+        openThinking: () => setMenu('thinking'),
+        openSessionInfo: () => setStatsOpen(true),
+      });
+      if (consumed) {
+        setText('');
+        return;
+      }
+    }
     setText('');
-    // 乐观气泡（用户消息事件到达时自动撤下）
     pushOptimistic(value);
-    await bridge.cmd('session.prompt', {
+    if (streaming || agent?.isStreaming) {
+      await api.cmd(
+        mode === 'followUp' ? 'session.followUp' : 'session.steer',
+        { text: value },
+      );
+      return;
+    }
+    await api.cmd('session.prompt', {
       text: value,
       newSession: !activePath,
       activeSkills: ui?.selectedSkills ?? [],
     });
+  };
+
+  const applyCompletion = (name: string): void => {
+    setText('/' + name + ' ');
+    textareaRef.current?.focus();
+  };
+
+  const toggleSkill = async (name: string): Promise<void> => {
+    const current = ui?.selectedSkills ?? [];
+    const next = current.includes(name)
+      ? current.filter((item) => item !== name)
+      : [...current, name];
+    await bridge?.cmd('skills.setActive', { names: next });
   };
 
   const [dragging, setDragging] = useState(false);
@@ -481,27 +552,99 @@ function Assistant() {
       >
         <div className="border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-[#232627] focus-within:border-zinc-400 dark:focus-within:border-zinc-500 flex flex-col flex-1 min-h-0">
           <div className="relative flex items-start px-2 pt-1.5 flex-1 min-h-0">
+            {acItems.length > 0 && (
+              <div className="absolute left-1 right-1 bottom-full z-50 mb-1 max-h-56 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                {acItems.map((command, index) => (
+                  <button
+                    key={command.name}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      applyCompletion(command.name);
+                    }}
+                    className={`w-full text-left px-2.5 py-1.5 text-[12px] flex items-center gap-2 ${
+                      index === acIdx
+                        ? 'bg-zinc-100 dark:bg-[#2a2d2e]'
+                        : 'hover:bg-zinc-100 dark:hover:bg-[#2a2d2e]'
+                    }`}
+                  >
+                    <span className="font-mono text-[#4F6BED]">
+                      /{command.name}
+                    </span>
+                    <span className="truncate text-[10.5px] text-zinc-400 dark:text-zinc-500">
+                      {command.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
+              ref={textareaRef}
               className={`min-w-0 flex-1 resize-none bg-transparent text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none text-[12.5px] leading-normal overflow-y-auto pr-5 ${
                 inputExpanded ? 'h-full' : ''
               }`}
               rows={inputExpanded ? undefined : 3}
               placeholder={
                 agent?.configured
-                  ? '描述要完成的操作…（Enter 发送，Shift+Enter 换行）'
+                  ? '描述要完成的操作…（/ 命令，Enter 发送，⇧⌘Enter 排队）'
                   : '未配置模型'
               }
               value={text}
               disabled={!agent?.configured}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
+                if (acItems.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setAcIdx((index) =>
+                      Math.min(index + 1, acItems.length - 1),
+                    );
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setAcIdx((index) => Math.max(index - 1, 0));
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setAcDismissed(true);
+                    return;
+                  }
+                  if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                    e.preventDefault();
+                    const command = acItems[acIdx];
+                    if (!command) return;
+                    if (
+                      e.key === 'Enter' &&
+                      '/' + command.name === text.trim()
+                    ) {
+                      setText('');
+                      void submit('prompt');
+                      return;
+                    }
+                    applyCompletion(command.name);
+                    return;
+                  }
+                }
+                if (
+                  e.key === 'Enter' &&
+                  (e.metaKey || e.ctrlKey) &&
+                  e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  void submit('followUp');
+                  return;
+                }
                 if (
                   e.key === 'Enter' &&
                   !e.shiftKey &&
                   !e.nativeEvent.isComposing
                 ) {
                   e.preventDefault();
-                  void send();
+                  void submit(
+                    streaming || agent?.isStreaming ? 'steer' : 'prompt',
+                  );
                 }
               }}
             />
@@ -520,6 +663,17 @@ function Assistant() {
 
           {/* 工具栏：思考档位（左）· 队列状态 · 模型 + 发送/停止（右） */}
           <div className="flex items-center gap-1 px-2 pb-1 pt-1.5 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0">
+            <button
+              onClick={() => {
+                setText('/');
+                textareaRef.current?.focus();
+              }}
+              className="p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
+              title="命令（/）"
+            >
+              <Slash className="w-3.5 h-3.5" />
+            </button>
+
             {/* 思考档位 */}
             <div className="relative">
               <button
@@ -557,6 +711,60 @@ function Assistant() {
                         {level}
                       </button>
                     ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 技能选择 */}
+            <div className="relative">
+              <button
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
+                onClick={() => setMenu(menu === 'skills' ? null : 'skills')}
+                title="技能"
+              >
+                <BookOpen className="w-3 h-3" />
+                <span>{(ui?.selectedSkills ?? []).length || '技能'}</span>
+              </button>
+              {menu === 'skills' && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setMenu(null)}
+                  />
+                  <div className="absolute bottom-7 left-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                    {skills.length === 0 ? (
+                      <div className="px-2.5 py-2 text-[11px] text-zinc-400">
+                        暂无技能
+                      </div>
+                    ) : (
+                      skills.map((skill) => {
+                        const active = (ui?.selectedSkills ?? []).includes(
+                          skill.name,
+                        );
+                        return (
+                          <button
+                            key={skill.name}
+                            className="w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] flex items-start gap-1.5"
+                            onClick={() => void toggleSkill(skill.name)}
+                          >
+                            <Check
+                              className={`w-3 h-3 mt-0.5 shrink-0 ${
+                                active ? 'text-[#4F6BED]' : 'text-transparent'
+                              }`}
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate">
+                                {skill.name}
+                              </span>
+                              <span className="block text-[10px] text-zinc-400 truncate">
+                                {skill.description}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </>
               )}
@@ -633,7 +841,7 @@ function Assistant() {
               <button
                 className="p-1 text-[#4F6BED] hover:text-[#3D56E0] disabled:opacity-40 transition-colors"
                 disabled={!canSend || !bridge}
-                onClick={() => void send()}
+                onClick={() => void submit('prompt')}
                 title="发送（Enter）"
               >
                 <Send className="w-3.5 h-3.5" />
