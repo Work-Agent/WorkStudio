@@ -7,7 +7,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { DocumentMeta } from '../../../shared/types';
 import type { ListEntry } from '../../../shared/ura';
-import { useDocumentsStore } from '../../state/documents';
+import { agentAPI } from '../../api/bridge';
+import { useTabServiceStore } from '../../state/tabService';
 import { setUiState } from '../../state/uiState';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
@@ -48,7 +49,13 @@ export function FindList() {
         .cmd<ListEntry[]>('ura.find', { pattern, limit: 200 })
         .then((res) => {
           const items = res.ok ? res.data : [];
-          setHits(items.map((item) => ({ ref: item.ref, name: item.name, display: item.ref })));
+          setHits(
+            items.map((item) => ({
+              ref: item.ref,
+              name: item.name,
+              display: item.ref,
+            })),
+          );
         })
         .finally(() => setLoading(false));
     }, 180);
@@ -61,7 +68,10 @@ export function FindList() {
     () =>
       hits.map((hit) => ({
         ...hit,
-        display: root && hit.ref.startsWith(root) ? hit.ref.slice(root.length + 1) : hit.ref,
+        display:
+          root && hit.ref.startsWith(root)
+            ? hit.ref.slice(root.length + 1)
+            : hit.ref,
       })),
     [hits, root],
   );
@@ -84,7 +94,16 @@ export function FindList() {
         : { id: 'docs', title: '本地文档' },
       createdAt: 0,
     };
-    void useDocumentsStore.getState().open(ref, meta);
+    if (mainBridge) {
+      void mainBridge.cmd('views.openResource', { ref, document: meta });
+      return;
+    }
+    void agentAPI.documents.open(ref).then((result) => {
+      if (!result) return;
+      void useTabServiceStore
+        .getState()
+        .openDocument(result.meta, result.content);
+    });
   };
 
   return (
@@ -102,7 +121,8 @@ export function FindList() {
                 setQuery('');
                 setUiState({ sidebarView: 'main' });
               }
-              if (event.key === 'Enter' && rows[0]) open(rows[0].ref, rows[0].name);
+              if (event.key === 'Enter' && rows[0])
+                open(rows[0].ref, rows[0].name);
             }}
             placeholder="搜索项目资源…"
             spellCheck={false}

@@ -793,15 +793,6 @@ export interface InteractionBeginInput {
   anchor: { x: number; y: number };
 }
 
-/** Shell 快照（主进程布局 / 助手几何的构建中间态）。 */
-export interface ShellSnapshot {
-  ui: UiState;
-  layout: LayoutSnapshot;
-  /** 运行期浮动助手几何（null = 未设置 → 使用默认位置）。 */
-  floating: Rect | null;
-  preview: InteractionPreview | null;
-}
-
 // ─── 扩展 UI（ws:ui） ──────────────────────────────────────
 
 export type UiDialogType = 'select' | 'confirm' | 'input' | 'editor';

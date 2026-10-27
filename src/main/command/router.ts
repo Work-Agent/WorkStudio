@@ -24,7 +24,6 @@ import {
 import { existsSync } from 'fs';
 import type {
   CommandResponse,
-  ShellSnapshot,
   StorageView,
   WorkspaceInfo,
 } from '../../shared/types';
@@ -80,8 +79,6 @@ export interface RouterDeps {
   getSettingsService: () => SettingsService;
   interaction: InteractionController;
   getWindow: () => BrowserWindow | null;
-  /** Shell 快照（UiState + 布局 + 浮动几何 + 交互预览）。 */
-  shellSnapshot: () => ShellSnapshot;
   /** 应用布局（ui.set 的后续动作；由 L3 注入避免循环依赖）。 */
   applyLayout: () => void;
   /** 页面视口上报（docked DevTools 会让页面小于窗口）。 */

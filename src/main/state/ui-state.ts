@@ -100,24 +100,15 @@ export class UiStateService {
     this.getWin = getWin;
   }
 
-  /** 状态广播出口（L3 注入：窗口 + 系统视图；缺省仅窗口）。 */
-  private stateBroadcaster: ((snapshot: unknown) => void) | null = null;
-  attachStateBroadcaster(fn: (snapshot: unknown) => void): void {
+  /** 状态广播出口（L3 注入：窗口 + 系统视图）。 */
+  private stateBroadcaster: (() => void) | null = null;
+  attachStateBroadcaster(fn: () => void): void {
     this.stateBroadcaster = fn;
   }
 
-  /** 广播 Shell 快照（由装配层注入布局快照构建器，避免本服务依赖视图层）。 */
-  private shellSnapshot: (() => unknown) | null = null;
-  attachShellSnapshot(build: () => unknown): void {
-    this.shellSnapshot = build;
-  }
-
   private broadcast(): void {
-    const snapshot = this.shellSnapshot
-      ? this.shellSnapshot()
-      : { ui: this.state };
     // 统一出口：L3 注入的广播器覆盖「窗口 + 系统视图」。
-    this.stateBroadcaster?.(snapshot);
+    this.stateBroadcaster?.();
   }
 
   // ─── 主题收敛 ───────────────────────────────────────────

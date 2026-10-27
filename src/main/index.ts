@@ -24,12 +24,7 @@ import { pathToFileURL } from 'node:url';
 import { TITLEBAR_HEIGHT, TITLEBAR_OVERLAY_COLORS } from '../shared/titlebar';
 import { fileRef } from '../shared/ura';
 import type { AppCommand } from '../shared/app';
-import type {
-  InteractionPreview,
-  Rect,
-  ShellSnapshot,
-  UiState,
-} from '../shared/types';
+import type { Rect, UiState } from '../shared/types';
 import {
   APP_CMD,
   APP_EVENT,
@@ -225,15 +220,6 @@ function buildLayout() {
     preview: interaction?.getPreview() ?? null,
     viewport: viewportSize,
   });
-}
-
-function buildShellSnapshot(): ShellSnapshot {
-  return {
-    ui: uiState.get(),
-    layout: buildLayout(),
-    floating: floatingGeometry,
-    preview: interaction?.getPreview() ?? (null as InteractionPreview | null),
-  };
 }
 
 function applyLayout(): void {
@@ -515,7 +501,6 @@ app.whenReady().then(async () => {
 
   // 4. UiState（真相源 + 主题收敛）
   uiState.attachWindowSource(() => winRef);
-  uiState.attachShellSnapshot(() => buildShellSnapshot());
   uiState.attachStateBroadcaster(() => broadcastState());
   uiState.registerQuitFlush();
   uiState.attachWorkspace(wsId);
@@ -706,7 +691,6 @@ app.whenReady().then(async () => {
     getSettingsService: () => agent!.settingsService,
     interaction,
     getWindow: () => winRef,
-    shellSnapshot: buildShellSnapshot,
     applyLayout,
     setViewport: (size) => {
       viewportSize = size;
@@ -792,7 +776,7 @@ app.whenReady().then(async () => {
           pluginService: pluginService!,
           workspacePath,
           resourceMapVersion: () => uraRuntime?.map.currentVersion ?? '',
-          layout: () => buildShellSnapshot().layout,
+          layout: buildLayout,
         },
         epochs,
       ),
