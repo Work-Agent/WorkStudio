@@ -32,6 +32,7 @@ import type {
 } from '../shared/types';
 import {
   APP_CMD,
+  APP_SNAPSHOT,
   APP_SYNC,
   CH_BUS,
   CH_EVENT,
@@ -240,10 +241,26 @@ function broadcastState(): void {
   const snapshot = buildShellSnapshot();
   broadcastToWindows(CH_STATE, snapshot);
   viewHost?.broadcastToSystemViews(CH_STATE, snapshot);
+  publishAppSnapshot();
 }
 
 function broadcastViews(): void {
   broadcastToWindows(CH_VIEW, viewHost?.list() ?? []);
+  publishAppSnapshot();
+}
+
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+
+function publishAppSnapshot(): void {
+  if (!appHost) return;
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    void appHost?.snapshot().then((snapshot) => {
+      broadcastToWindows(APP_SNAPSHOT, snapshot);
+      viewHost?.broadcastToSystemViews(APP_SNAPSHOT, snapshot);
+    });
+  }, 60);
 }
 
 // ─── 主窗口 ───────────────────────────────────────────────
@@ -526,6 +543,7 @@ app.whenReady().then(async () => {
       sendEvent: (frame) => {
         broadcastToWindows(CH_EVENT, frame);
         viewHost?.broadcastToSystemViews(CH_EVENT, frame);
+        publishAppSnapshot();
       },
       onTurnFinished: () => {
         broadcastToWindows('documents:changed');
@@ -745,6 +763,7 @@ app.whenReady().then(async () => {
           pluginService: pluginService!,
           workspacePath,
           resourceMapVersion: () => uraRuntime?.map.currentVersion ?? '',
+          layout: () => buildShellSnapshot().layout,
         },
         epochs,
       ),
@@ -756,6 +775,7 @@ app.whenReady().then(async () => {
       ),
   });
   registerAppIpc();
+  publishAppSnapshot();
 
   nativeFacilities.registerShellIpc(() => winRef);
   registerShortcuts();

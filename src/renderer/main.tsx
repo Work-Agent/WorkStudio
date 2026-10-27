@@ -16,14 +16,16 @@ import {
   useTabServiceStore,
 } from './state/tabService';
 import { initShellPresentation } from './state/shell';
+import { initAppScope } from './state/appScope';
 import { initUiState } from './state/uiState';
 import './index.css';
 
 async function bootstrap(): Promise<void> {
   try {
-    // 1. 用户操作状态 hydrate（主进程 ui-state.json 真相源）+ shell 布局/视图投影
+    // 1. AppSnapshot 水合（新主进程契约）+ 旧状态 store 兼容
+    await initAppScope();
     await initUiState();
-    await initShellPresentation();
+    if (!window.workbench) await initShellPresentation();
     console.log('[bootstrap] shell presentation ready');
 
     // 2. 领域 store 初始化

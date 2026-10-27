@@ -17,7 +17,6 @@ interface ListsState {
 }
 
 let initialized = false;
-let timer: ReturnType<typeof setTimeout> | undefined;
 
 export const useListsStore = create<ListsState>()((set, get) => ({
   groups: [],
@@ -26,15 +25,11 @@ export const useListsStore = create<ListsState>()((set, get) => ({
   init: async () => {
     if (initialized) return;
     initialized = true;
+    if (mainBridge) {
+      // 由 appScope 的 AppSnapshot 水合；不再单独拉 lists.snapshot。
+      return;
+    }
     await get().refresh();
-    if (!mainBridge) return;
-    const schedule = (): void => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void get().refresh(), 150);
-    };
-    mainBridge.onResources(schedule);
-    mainBridge.onViews(schedule);
-    mainBridge.onUra(schedule);
   },
 
   refresh: async () => {

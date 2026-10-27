@@ -5,6 +5,7 @@
  */
 
 import type { ListSnapshot } from './lists';
+import type { LayoutSnapshot } from './types';
 import type {
   AgentSnapshot,
   ModelOption,
@@ -26,6 +27,7 @@ export interface AppSnapshot {
   workspace: WorkspaceSlice;
   ui: WorkspaceUiSlice;
   session: SessionSlice;
+  layout: LayoutSnapshot | null;
   seq: number;
   workspaceEpoch: number;
   sessionEpoch: number;

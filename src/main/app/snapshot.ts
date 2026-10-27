@@ -14,6 +14,7 @@ import type {
   WorkspaceSlice,
   WorkspaceUiSlice,
 } from '../../shared/app';
+import type { LayoutSnapshot } from '../../shared/types';
 import type { AgentHost } from '../agent/agent-host';
 import {
   getWorkspaceId,
@@ -37,6 +38,7 @@ export interface SnapshotDeps {
   pluginService: PluginService;
   workspacePath: string;
   resourceMapVersion: () => string;
+  layout: () => LayoutSnapshot | null;
 }
 
 function emptyResources() {
@@ -167,6 +169,7 @@ export async function buildAppSnapshot(
     workspace,
     ui: uiSlice,
     session,
+    layout: deps.layout(),
     seq: deps.agent.currentSeq,
     workspaceEpoch: epochs.workspace,
     sessionEpoch: epochs.session,
