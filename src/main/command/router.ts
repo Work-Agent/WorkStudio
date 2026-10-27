@@ -22,6 +22,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import { existsSync } from 'fs';
+import { join } from 'node:path';
 import type {
   CommandResponse,
   StorageView,
@@ -607,6 +608,77 @@ export async function invoke(
         return ok(settingsPages().map(({ page: _page, ...entry }) => entry));
       case 'views.list':
         return ok(d.viewHost.list());
+      case 'welcome.state': {
+        const codecs = uraRegistry
+          .snapshot()
+          .codecs.filter(
+            (codec) =>
+              codec.extensions.length > 0 &&
+              uraRegistry.codecById(codec.id)?.patchType === 'text' &&
+              codec.keys.some(
+                (key) =>
+                  (key.transport === 'file' || key.transport === '*') &&
+                  key.mime,
+              ),
+          )
+          .map((codec) => {
+            const key = codec.keys.find(
+              (item) =>
+                (item.transport === 'file' || item.transport === '*') &&
+                item.mime,
+            );
+            return {
+              id: codec.id,
+              label: codec.id,
+              mime: key?.mime ?? '',
+              extensions: codec.extensions,
+            };
+          });
+        const seen = new Set<string>();
+        const workspacePath = d.agent.getWorkspacePath();
+        return ok({
+          workspace:
+            workspacePath && existsSync(workspacePath)
+              ? {
+                  path: workspacePath,
+                  name: workspaceLabel(workspacePath),
+                }
+              : null,
+          codecs: codecs.filter((codec) => {
+            const key = `${codec.mime}:${codec.extensions.join(',')}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }),
+        });
+      }
+      case 'welcome.createFile': {
+        const mime = String(p.mime ?? '');
+        const extensions = Array.isArray(p.extensions)
+          ? (p.extensions as unknown[]).map(String).filter(Boolean)
+          : [];
+        if (!mime || extensions.length === 0)
+          return err('invalid_argument', '缺少文件类型');
+        const codec = uraRegistry.codecFor('file', mime as never);
+        if (!codec || codec.patchType !== 'text')
+          return err('unsupported_type', `不支持新建该类型：${mime}`);
+        const win = d.getWindow();
+        const result = await dialog.showSaveDialog(
+          (win ?? undefined) as never,
+          {
+            defaultPath: join(
+              d.agent.getWorkspacePath(),
+              `未命名.${extensions[0]}`,
+            ),
+            filters: [{ name: mime, extensions }],
+          },
+        );
+        if (result.canceled || !result.filePath) return ok(null);
+        const ref = fileRef(result.filePath);
+        await d.ura.write(ref, '');
+        await d.viewHost.openResource(ref);
+        return ok({ ref });
+      }
       case 'views.open':
         return ok(d.viewHost.open(p.input as never));
       case 'views.openResource':
@@ -802,6 +874,8 @@ async function invokeExt(
     'app:session.abort': 'session.abort',
     'app:session.getMessages': 'session.getMessages',
     // 工作区插件页
+    'app:welcome.state': 'welcome.state',
+    'app:welcome.createFile': 'welcome.createFile',
     'app:workspaces.list': 'agent.workspaces',
     'app:workspaces.switch': 'agent.setWorkspace',
     'app:workspaces.pick': 'agent.pickWorkspace',

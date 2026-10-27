@@ -168,6 +168,12 @@ export class ViewHost {
       this.materialize(activeRecord);
       this.applyLayout();
     }
+    if (this.entries().length === 0) this.openWelcome();
+  }
+
+  /** 欢迎页：新增按钮与空集合的默认页。 */
+  openWelcome(): void {
+    this.open({ type: 'settings', pageId: 'welcome' });
   }
 
   /**
@@ -427,6 +433,7 @@ export class ViewHost {
     this.persistCollection();
     this.applyLayout();
     this.broadcastViews();
+    if (this.entries().length === 0) this.openWelcome();
   }
 
   closeOthers(anchorId: string): void {

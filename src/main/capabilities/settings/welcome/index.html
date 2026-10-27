@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>欢迎</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fafafa;
+        --fg: #18181b;
+        --muted: #71717a;
+        --line: #e4e4e7;
+        --card: #ffffff;
+        --accent: #4f6bed;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1a1c1d;
+          --fg: #f4f4f5;
+          --muted: #a1a1aa;
+          --line: #2a2d2e;
+          --card: #202223;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 13px;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 56px 32px 40px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 0 0 36px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .workspace {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--card);
+        margin-bottom: 32px;
+      }
+      .workspace .path {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .section {
+        margin-bottom: 30px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 10px;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      .primary,
+      .file-button {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 10px;
+        padding: 12px 14px;
+        text-align: left;
+      }
+      .primary {
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
+        padding: 10px 14px;
+      }
+      .file-button:hover,
+      .primary:hover {
+        border-color: var(--accent);
+      }
+      .file-button .name {
+        display: block;
+        font-weight: 550;
+        margin-bottom: 4px;
+      }
+      .file-button .meta {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .empty {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        transform: translateX(-50%);
+        background: #18181b;
+        color: #fafafa;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>欢迎使用 WorkStudio</h1>
+      <p class="lead">
+        打开一个本地目录作为工作区，或直接在当前位置新建文件。文件类型来自已注册的本地文件 codec。
+      </p>
+
+      <div class="workspace">
+        <span id="workspace-name">当前工作区</span>
+        <span class="path" id="workspace-path"></span>
+        <button class="primary" id="open-workspace">打开本地目录</button>
+      </div>
+
+      <section class="section" id="new-file-section">
+        <h2>新建本地文件</h2>
+        <div class="grid" id="codecs"></div>
+        <p class="empty" id="codecs-empty" hidden>
+          当前没有可新建的文本类 codec。
+        </p>
+      </section>
+
+      <div id="toast"></div>
+    </main>
+    <script>
+      const invoke = (command, payload) =>
+        window.extension.invoke(command, payload);
+
+      const el = (id) => document.getElementById(id);
+
+      let toastTimer;
+      function toast(message) {
+        const node = el('toast');
+        node.textContent = message;
+        node.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => node.classList.remove('show'), 1800);
+      }
+
+      function render(state) {
+        const workspace = state.workspace;
+        el('workspace-name').textContent = workspace
+          ? workspace.name
+          : '未打开工作区';
+        el('workspace-path').textContent = workspace ? workspace.path : '';
+        el('new-file-section').hidden = !workspace;
+        el('open-workspace').textContent = workspace
+          ? '切换工作区'
+          : '打开本地目录';
+
+        const codecs = state.codecs || [];
+        const list = el('codecs');
+        list.innerHTML = '';
+        if (codecs.length === 0) {
+          el('codecs-empty').hidden = false;
+          return;
+        }
+        el('codecs-empty').hidden = true;
+        for (const codec of codecs) {
+          const button = document.createElement('button');
+          button.className = 'file-button';
+          button.innerHTML =
+            '<span class="name"></span><span class="meta"></span>';
+          button.querySelector('.name').textContent = codec.label;
+          button.querySelector('.meta').textContent =
+            (codec.extensions || []).map((ext) => '.' + ext).join(' ') +
+            ' · ' +
+            codec.mime;
+          button.addEventListener('click', () => createFile(codec));
+          list.appendChild(button);
+        }
+      }
+
+      async function load() {
+        try {
+          render(await invoke('app:welcome.state'));
+        } catch (error) {
+          toast(error && error.message ? error.message : String(error));
+        }
+      }
+
+      async function createFile(codec) {
+        try {
+          const result = await invoke('app:welcome.createFile', {
+            mime: codec.mime,
+            extensions: codec.extensions,
+          });
+          if (result) toast('已创建 ' + result.ref);
+        } catch (error) {
+          toast(error && error.message ? error.message : String(error));
+        }
+      }
+
+      el('open-workspace').addEventListener('click', async () => {
+        try {
+          const path = await invoke('app:workspaces.pick');
+          if (!path) return;
+          await invoke('app:workspaces.switch', { path });
+        } catch (error) {
+          toast(error && error.message ? error.message : String(error));
+        }
+      });
+
+      void load();
+    </script>
+  </body>
+</html>

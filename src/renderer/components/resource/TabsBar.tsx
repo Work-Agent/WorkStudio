@@ -5,7 +5,7 @@
  * 右键菜单（关闭族 + 固定/取消固定）。集合语义全部在 state/tabs.ts，本组件只回调。
  */
 import { useEffect, useRef, useState, type ComponentType } from 'react';
-import { ChevronLeft, ChevronRight, Pin, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pin, Plus, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { popupMenu } from '../../api/bridge';
 
@@ -43,6 +43,7 @@ export function TabsBar({
   onTogglePin,
   onMove,
   onRetry,
+  onAdd,
   testId,
 }: {
   items: TabsBarItem[];
@@ -56,6 +57,8 @@ export function TabsBar({
   onMove?: (fromId: string, toId: string) => void;
   /** error 状态点击重试。 */
   onRetry?: (id: string) => void;
+  /** 新增标签（欢迎页 / 新建文件）。 */
+  onAdd?: () => void;
   testId?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -262,6 +265,15 @@ export function TabsBar({
       >
         <ChevronRight className="w-4 h-4" />
       </button>
+      {onAdd && (
+        <button
+          onClick={onAdd}
+          className="w-8 shrink-0 flex items-center justify-center border-l border-zinc-200 dark:border-zinc-800/60 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#252829] transition-colors"
+          title="新增"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }

@@ -19,36 +19,39 @@ export function ResourcePane() {
 
   return (
     <>
-      {/* ── 统一标签栏（空时不渲染） ── */}
-      {views.length > 0 && (
-        <div className="absolute" style={rectStyle(layout.tabbar)}>
-          <TabsBar
-            testId="doc-tabs"
-            items={views.map((v) => ({
-              id: v.id,
-              label: v.title,
-              icon: typeIcon(v.type),
-              dirty: v.dirty,
-              pinned: v.pinned,
-              error: v.state === 'error',
-            }))}
-            active={active?.id ?? ''}
-            onSelect={(id) => runViewCommand('views.activate', { id })}
-            onClose={(id) => runViewCommand('views.close', { id })}
-            onTogglePin={(id) => runViewCommand('views.togglePin', { id })}
-            onMove={(fromId, toId) =>
-              runViewCommand('views.move', { fromId, toId })
-            }
-            onRetry={(id) => runViewCommand('views.reload', { id })}
-            bulkClose={{
-              closeOthers: (id) => runViewCommand('views.closeOthers', { id }),
-              closeLeft: (id) => runViewCommand('views.closeToLeft', { id }),
-              closeRight: (id) => runViewCommand('views.closeToRight', { id }),
-              closeAll: () => runViewCommand('views.closeAll'),
-            }}
-          />
-        </div>
-      )}
+      {/* ── 统一标签栏 ── */}
+      <div className="absolute" style={rectStyle(layout.tabbar)}>
+        <TabsBar
+          testId="doc-tabs"
+          onAdd={() =>
+            runViewCommand('views.open', {
+              input: { type: 'settings', pageId: 'welcome' },
+            })
+          }
+          items={views.map((v) => ({
+            id: v.id,
+            label: v.title,
+            icon: typeIcon(v.type),
+            dirty: v.dirty,
+            pinned: v.pinned,
+            error: v.state === 'error',
+          }))}
+          active={active?.id ?? ''}
+          onSelect={(id) => runViewCommand('views.activate', { id })}
+          onClose={(id) => runViewCommand('views.close', { id })}
+          onTogglePin={(id) => runViewCommand('views.togglePin', { id })}
+          onMove={(fromId, toId) =>
+            runViewCommand('views.move', { fromId, toId })
+          }
+          onRetry={(id) => runViewCommand('views.reload', { id })}
+          bulkClose={{
+            closeOthers: (id) => runViewCommand('views.closeOthers', { id }),
+            closeLeft: (id) => runViewCommand('views.closeToLeft', { id }),
+            closeRight: (id) => runViewCommand('views.closeToRight', { id }),
+            closeAll: () => runViewCommand('views.closeAll'),
+          }}
+        />
+      </div>
 
       {/* ── 内容区：仅空态占位；视图内容全部由 WebContentsView 覆盖 ── */}
       <div
