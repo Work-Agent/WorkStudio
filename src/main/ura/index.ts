@@ -65,7 +65,19 @@ export async function createUraRuntime(options: {
     bindingStore,
   );
   const collections = new Collections(ura, host, options.workspace);
-  const map = new ResourceMap(ura, collections, uraRegistry, options.workspace);
+  const map = new ResourceMap(ura, uraRegistry, options.workspace);
+  map.setSource(async () => {
+    const views = await collections.list();
+    return views.flatMap((view) =>
+      view.groups.map((group) => ({
+        label: `${view.label} · ${group.title}`,
+        items: group.items.map((item) => ({
+          ref: item.ref,
+          title: item.title,
+        })),
+      })),
+    );
+  });
   await map.start();
   return { registry: uraRegistry, pipeline, ura, host, collections, map };
 }

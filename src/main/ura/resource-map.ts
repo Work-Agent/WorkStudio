@@ -7,24 +7,35 @@
 
 import { createHash } from 'node:crypto';
 import { fileRef } from '../../shared/ura';
-import type { Collections } from './collections';
 import type { Ura } from './facade';
 import type { UraRegistry } from './registry';
 
 const MAP_FILE = 'AGENTS.md';
 const DEBOUNCE_MS = 400;
 
+export interface ResourceMapGroup {
+  label: string;
+  items: Array<{ ref: string; title: string }>;
+}
+
+export type ResourceMapSource = () => Promise<ResourceMapGroup[]>;
+
 export class ResourceMap {
   private timer: NodeJS.Timeout | undefined;
   private watcher: { close(): void } | null = null;
   private version = '';
 
+  private listSource: ResourceMapSource | null = null;
+
   constructor(
     private readonly ura: Ura,
-    private readonly collections: Collections,
     private readonly registry: UraRegistry,
     private readonly workspace: () => string,
   ) {}
+
+  setSource(source: ResourceMapSource): void {
+    this.listSource = source;
+  }
 
   get ref(): string {
     return `${this.root()}/${MAP_FILE}`;
@@ -93,7 +104,7 @@ export class ResourceMap {
   }
 
   private async render(): Promise<string> {
-    const views = await this.collections.list();
+    const groups = this.listSource ? await this.listSource() : [];
     const lines = [
       '# WorkStudio 资源地图',
       '',
@@ -102,21 +113,17 @@ export class ResourceMap {
     ];
 
     let count = 0;
-    for (const view of views) {
-      for (const group of view.groups) {
-        if (group.items.length === 0) continue;
-        lines.push(`## ${view.label} · ${group.title}`, '');
-        lines.push('| 资源 | 格式 |');
-        lines.push('| --- | --- |');
-        for (const item of group.items) {
-          const codec = this.registry.codecForExtension(
-            extensionOf(item.title),
-          );
-          lines.push(`| \`${item.ref}\` | ${codec?.id ?? 'raw'} |`);
-          count++;
-        }
-        lines.push('');
+    for (const group of groups) {
+      if (group.items.length === 0) continue;
+      lines.push(`## ${group.label}`, '');
+      lines.push('| 资源 | 格式 |');
+      lines.push('| --- | --- |');
+      for (const item of group.items) {
+        const codec = this.registry.codecForExtension(extensionOf(item.title));
+        lines.push(`| \`${item.ref}\` | ${codec?.id ?? 'raw'} |`);
+        count++;
       }
+      lines.push('');
     }
     if (count === 0) lines.push('（空工作区）', '');
 

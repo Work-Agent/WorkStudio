@@ -661,6 +661,22 @@ app.whenReady().then(async () => {
     viewHost: viewHost!,
   });
 
+  uraRuntime!.map.setSource(async () => {
+    const snapshot = await listService.snapshot(0);
+    return snapshot.groups
+      .map((group) => ({
+        label: group.label,
+        items: group.items
+          .map((item) => ({
+            ref: String(item.meta?.['ref'] ?? ''),
+            title: item.title,
+          }))
+          .filter((item) => item.ref),
+      }))
+      .filter((group) => group.items.length > 0);
+  });
+  uraRuntime!.map.restart();
+
   const sessionAdapter = new SessionAdapter({
     agent: agent!,
     skills,
