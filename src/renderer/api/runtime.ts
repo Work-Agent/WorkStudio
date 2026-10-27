@@ -4,8 +4,6 @@
  * 工作台与助手各自有 preload 桥；共享组件按可用桥调用。
  */
 
-import type { PopupMenuItem } from '../../shared/types';
-
 function bridge() {
   return window.workbench ?? window.assistant;
 }
