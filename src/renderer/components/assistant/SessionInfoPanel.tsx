@@ -7,7 +7,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { runtimeCmd } from '../../api/runtime';
-import type { AgentSnapshot } from '../../../shared/types';
 import { OPEN_SESSION_INFO_EVT } from '../../state/commands';
 
 interface SessionStatsData {
@@ -64,23 +63,32 @@ export function SessionInfoPanel() {
 
   const load = (): void => {
     setErr(null);
-    void runtimeCmd<AgentSnapshot>('agent.status')
+    void runtimeCmd<{
+      sessionFile: string | null;
+      sessionId: string;
+      userMessages: number;
+      assistantMessages: number;
+      toolCalls: number;
+      toolResults: number;
+      totalMessages: number;
+      tokens: { input: number; output: number; total: number };
+    }>('session.stats')
       .then((res) => {
         if (res.ok) {
           setStats({
             sessionFile: res.data.sessionFile ?? undefined,
-            sessionId: res.data.sessionId ?? '',
-            userMessages: 0,
-            assistantMessages: 0,
-            toolCalls: 0,
-            toolResults: 0,
-            totalMessages: res.data.messageCount,
+            sessionId: res.data.sessionId,
+            userMessages: res.data.userMessages,
+            assistantMessages: res.data.assistantMessages,
+            toolCalls: res.data.toolCalls,
+            toolResults: res.data.toolResults,
+            totalMessages: res.data.totalMessages,
             tokens: {
-              input: 0,
-              output: 0,
+              input: res.data.tokens.input,
+              output: res.data.tokens.output,
               cacheRead: 0,
               cacheWrite: 0,
-              total: 0,
+              total: res.data.tokens.total,
             },
             cost: 0,
           });

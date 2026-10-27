@@ -267,6 +267,8 @@ export async function invoke(
       case 'session.setAutoCompaction':
         d.agent.setAutoCompaction(p.enabled === true);
         return ok(null);
+      case 'session.stats':
+        return ok(d.agent.getSessionStats());
       case 'session.getCommands':
         return ok(d.agent.getCommands());
 
