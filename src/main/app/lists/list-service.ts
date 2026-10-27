@@ -35,36 +35,62 @@ export class ListService {
   async snapshot(workspaceEpoch: number): Promise<ListSnapshot> {
     const groups: ListGroup[] = [];
     for (const entry of listRegistry.providers()) {
-      const ctx = this.deps.contexts.context(entry.owner);
-      const custom = await entry.provider(ctx);
-      for (const group of custom) {
+      const definition = entry.definition;
+      try {
+        const ctx = this.deps.contexts.context(entry.owner);
+        const custom = await entry.provider(ctx);
+        for (const group of custom) {
+          groups.push({
+            id: `${definition.id}:${group.id}`,
+            definitionId: definition.id,
+            section: definition.section ?? 'resources',
+            label: group.label,
+            ...(group.icon || definition.icon
+              ? { icon: group.icon ?? definition.icon }
+              : {}),
+            order: group.order,
+            count: group.items.length,
+            state: 'ready',
+            fields: definition.fields,
+            actions: definition.actions,
+            ...(group.empty || definition.empty
+              ? { empty: group.empty ?? definition.empty }
+              : {}),
+            items: group.items,
+          });
+        }
+      } catch (error) {
         groups.push({
-          id: `${entry.definition.id}:${group.id}`,
-          definitionId: entry.definition.id,
-          section: entry.definition.section ?? 'resources',
-          label: group.label,
-          ...(group.icon || entry.definition.icon
-            ? { icon: group.icon ?? entry.definition.icon }
-            : {}),
-          order: group.order,
-          count: group.items.length,
-          state: 'ready',
-          fields: entry.definition.fields,
-          actions: entry.definition.actions,
-          ...(group.empty || entry.definition.empty
-            ? { empty: group.empty ?? entry.definition.empty }
-            : {}),
-          items: group.items,
+          id: `${definition.id}:error`,
+          definitionId: definition.id,
+          section: definition.section ?? 'resources',
+          label: definition.label,
+          ...(definition.icon ? { icon: definition.icon } : {}),
+          order: definition.order,
+          count: 0,
+          state: 'error',
+          fields: definition.fields,
+          actions: definition.actions,
+          items: [],
+          diagnostics: [error instanceof Error ? error.message : String(error)],
         });
       }
     }
 
-    const temp = this.tempGroup();
-    if (temp) groups.push(temp);
-
-    groups.push(await this.sessionsGroup());
-    groups.push(this.pluginsGroup());
-    groups.push(this.settingsGroup());
+    for (const [id, make] of [
+      ['temp', () => this.tempGroup()],
+      ['sessions', () => this.sessionsGroup()],
+      ['plugins', () => this.pluginsGroup()],
+      ['settings', () => this.settingsGroup()],
+    ] as const) {
+      try {
+        const group = await make();
+        if (group) groups.push(group);
+      } catch (error) {
+        const group = this.errorGroup(id, error);
+        if (group) groups.push(group);
+      }
+    }
 
     groups.sort(
       (a, b) =>
@@ -73,6 +99,25 @@ export class ListService {
     );
 
     return { workspaceEpoch, groups };
+  }
+
+  private errorGroup(definitionId: string, error: unknown): ListGroup | null {
+    const definition = listRegistry.get(definitionId);
+    if (!definition) return null;
+    return {
+      id: definitionId,
+      definitionId,
+      section: definition.section ?? 'resources',
+      label: definition.label,
+      ...(definition.icon ? { icon: definition.icon } : {}),
+      order: definition.order,
+      count: 0,
+      state: 'error',
+      fields: definition.fields,
+      actions: definition.actions,
+      items: [],
+      diagnostics: [error instanceof Error ? error.message : String(error)],
+    };
   }
 
   private tempGroup(): ListGroup | null {
