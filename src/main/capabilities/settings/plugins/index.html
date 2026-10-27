@@ -2,7 +2,7 @@
 <!--
   WorkStudio 插件页（设置能力页）。
   数据面：app:plugins.sources / install / remove / list。
-  来源：npm / git / 本地路径；本地直接加载，安装或卸载后重启生效。
+  来源：zip（带 sha256）/ 本地路径；本地直接加载，安装 / 卸载后重启生效。
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -197,7 +197,7 @@
       <header>
         <h1>WorkStudio 插件</h1>
         <p>
-          插件是自带页面与资源适配器的 npm 包。支持 npm、git 与本地路径；
+          插件是自带页面与资源适配器的 zip 包。支持 zip 与本地路径；
           本地路径直接加载、不复制。安装 / 卸载后重启应用生效。
         </p>
       </header>
@@ -220,7 +220,7 @@
         <input
           id="source"
           type="text"
-          placeholder="npm:@scope/pkg@1.0.0 · git:github.com/u/r@v1 · ~/path/to/plugin"
+          placeholder="https://.../plugin.zip#sha256=... · ~/path/to/plugin"
           autocomplete="off"
         />
         <button id="install" class="primary">安装</button>
@@ -233,7 +233,7 @@
       <div id="plugins"></div>
 
       <p class="hint">
-        本地路径不复制、不安装依赖（由插件作者维护）；npm / git 安装到应用自持目录。
+        远程只接受带 sha256 的 zip；本地路径不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
         插件可执行主进程代码，安装前请确认来源。
       </p>
     </div>

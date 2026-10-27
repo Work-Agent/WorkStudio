@@ -464,7 +464,7 @@ export class ViewHost {
 
   /** 工作区切换：销毁全部标签视图，保留系统视图（助手 / 浮层 / 捕获层）。 */
   resetTabs(): void {
-    for (const record of [...this.records.values()]) {
+    for (const record of this.records.values()) {
       if (record.role !== 'tab') continue;
       this.destroyView(record);
       this.records.delete(record.id);

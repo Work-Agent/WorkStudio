@@ -1,38 +1,51 @@
-// ─── 插件来源管理（npm / git / 本地路径） ────────────────────────────
+// ─── 插件来源管理（zip / 本地路径） ─────────────────────────────────
 //
-// 可安装清单是一份 Markdown 文件（一行一条来源），它是列表的唯一数据源：
-// 页面上的添加 / 删除等价于改这份文件。已安装状态不写回清单，由安装目录
-// 与 installed.json 得出。npm / git 安装到 <userData>/plugins/node_modules，
-// 本地路径原地加载（不复制）。安装 / 卸载在下次启动时装载。
+// 可安装清单是一份 Markdown 文件（<plugins>/registry.md），一行一条来源：
+//   - [Word 文档](https://.../plugin-docx.zip#sha256=...)
+//   - ./plugins/csv
+// 远程只接受 zip，必须带 sha256；本地路径原地加载（不复制）。
+// 已安装状态由 installed/ 与 installed.json 得出，不写回清单。
+// 安装 / 卸载在下次启动时装载。
 
-import { execFile } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { unzipSync } from 'fflate';
 import { createLogger } from '../log';
 
 const log = createLogger('plugin-sources');
+const MAX_ZIP_BYTES = 64 * 1024 * 1024;
+const SUPPORTED_API_VERSION = 1;
+const ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
-export type PluginSourceType = 'npm' | 'git' | 'local';
+export type PluginSourceType = 'zip' | 'local';
 
 export interface PluginSource {
   source: string;
   type: PluginSourceType;
-  /** npm 包名（npm / git 安装后确定）。 */
+  /** 展示名（Markdown 链接文本 / 本地目录名 / 安装后的 manifest label）。 */
+  label?: string;
+  /** 已安装插件 id。 */
   name?: string;
-  /** 本地路径（local）。 */
+  version?: string;
   path?: string;
+  sha256?: string;
 }
 
-interface SourcesFile {
-  sources: PluginSource[];
+interface InstalledEntry {
+  id: string;
+  version: string;
+  hash?: string;
 }
+
+type InstalledMap = Record<string, InstalledEntry>;
 
 export interface PluginServiceOptions {
   /** 安装根（<userData>/plugins）。 */
   root: string;
-  /** 可安装清单（<userData>/plugins.md，一行一条来源）。 */
+  /** 可安装清单（<userData>/plugins/registry.md）。 */
   file: string;
   /** 相对路径解析基准（工作区）。 */
   cwd: () => string;
@@ -40,13 +53,14 @@ export interface PluginServiceOptions {
 
 export class PluginService {
   private sources: PluginSource[] = [];
-  /** source → 已安装包名（不写回清单）。 */
-  private installed: Record<string, string> = {};
+  private installed: InstalledMap = {};
 
   constructor(private readonly options: PluginServiceOptions) {}
 
   async start(): Promise<void> {
     await mkdir(this.options.root, { recursive: true });
+    await mkdir(this.installedRoot(), { recursive: true });
+    await mkdir(this.stagingRoot(), { recursive: true });
     this.installed = await this.readInstalled();
     const raw = await readFile(this.options.file, 'utf-8').catch(() => null);
     if (raw === null) {
@@ -57,20 +71,23 @@ export class PluginService {
   }
 
   list(): PluginSource[] {
-    return this.sources.map((entry) => ({
-      ...entry,
-      ...((entry.name ?? this.installed[entry.source])
-        ? { name: entry.name ?? this.installed[entry.source] }
-        : {}),
-    }));
+    return this.sources.map((entry) => {
+      const installed = this.installed[entry.source];
+      return {
+        ...entry,
+        ...(installed
+          ? { name: installed.id, version: installed.version }
+          : {}),
+      };
+    });
   }
 
-  /** 本地来源优先，其次安装目录（node_modules），最后才是内置插件。 */
+  /** 本地来源优先，其次安装目录（installed）；内置插件由装配层追加。 */
   roots(): string[] {
     const local = this.sources
       .filter((entry) => entry.type === 'local' && entry.path)
       .map((entry) => entry.path as string);
-    return [...local, this.installRoot()];
+    return [...local, this.installedRoot()];
   }
 
   async install(raw: string): Promise<PluginSource> {
@@ -80,143 +97,91 @@ export class PluginService {
 
     if (isLocalSource(source, cwd)) {
       const path = resolve(cwd, source.replace(/^~(?=\/)/, homedir()));
-      const pkg = await readPackage(path);
-      if (!pkg) throw new Error(`不是插件目录（缺少 package.json）：${path}`);
-      if (!pkg.workstudio) throw new Error(`缺少 workstudio 清单：${path}`);
-      if (pkg.name) this.installed[source] = pkg.name;
-      return this.save({
+      const manifest = await readManifest(path);
+      if (!manifest)
+        throw new Error(`不是插件目录（缺少 workstudio 清单）：${path}`);
+      const entry: PluginSource = {
         source,
         type: 'local',
         path,
-        ...(pkg.name ? { name: pkg.name } : {}),
-      });
+        name: manifest.id,
+        version: manifest.version,
+        ...(manifest.label ? { label: manifest.label } : {}),
+      };
+      this.installed[source] = { id: manifest.id, version: manifest.version };
+      return this.save(entry);
     }
 
-    const parsed = parseRemote(source);
-    await this.ensureProject();
-    const before = await this.dependencyNames();
-    await this.runNpm(
-      [
-        'install',
-        parsed.spec,
-        '--prefix',
-        this.options.root,
-        '--no-audit',
-        '--no-fund',
-      ],
-      [parsed.spec],
-    );
-    const after = await this.dependencyNames();
-    const added = after.filter((name) => !before.includes(name));
-    const name =
-      parsed.name ??
-      (added.length === 1 ? added[0] : await this.findNewPlugin(before));
-    if (!name)
-      throw new Error(`无法识别安装的包：${source}（需包含 package.json）`);
-    const pkg = await readPackage(join(this.installRoot(), name));
-    if (!pkg?.workstudio) {
-      await this.uninstallName(name);
-      throw new Error(
-        `不是 WorkStudio 插件（缺少 workstudio 清单）：${source}`,
+    const zip = describeZipSource(source);
+    const bytes = await download(zip.url);
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    if (zip.sha256 && hash !== zip.sha256)
+      throw new Error(`sha256 不匹配：期望 ${zip.sha256}，实际 ${hash}`);
+
+    const staging = join(this.stagingRoot(), randomUUID());
+    try {
+      const manifest = await extractZip(bytes, staging);
+      const target = join(this.installedRoot(), manifest.id);
+      await rm(target, { recursive: true, force: true });
+      await rename(staging, target);
+      this.installed[source] = {
+        id: manifest.id,
+        version: manifest.version,
+        hash,
+      };
+      const entry: PluginSource = {
+        source,
+        type: 'zip',
+        sha256: hash,
+        name: manifest.id,
+        version: manifest.version,
+        ...(manifest.label ? { label: manifest.label } : {}),
+      };
+      return this.save(entry);
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true }).catch(
+        () => undefined,
       );
+      throw error;
     }
-    this.installed[source] = name;
-    return this.save({ source, type: parsed.type, name });
   }
 
+  /** 卸载：只删安装目录与安装索引；清单条目保留，可再装。 */
   async remove(source: string): Promise<boolean> {
-    const index = this.sources.findIndex((entry) => entry.source === source);
-    if (index < 0) return false;
-    const entry = this.sources[index]!;
-    const name = entry.name ?? this.installed[source];
-    if (entry.type !== 'local' && name) {
-      await this.runNpm(
-        [
-          'uninstall',
-          name,
-          '--prefix',
-          this.options.root,
-          '--no-audit',
-          '--no-fund',
-        ],
-        [entry.source],
+    const entry = this.sources.find((item) => item.source === source);
+    if (!entry) return false;
+    const installed = this.installed[source];
+    if (installed) {
+      const shared = Object.entries(this.installed).some(
+        ([key, value]) => key !== source && value.id === installed.id,
       );
+      if (!shared) {
+        await rm(join(this.installedRoot(), installed.id), {
+          recursive: true,
+          force: true,
+        });
+      }
+      delete this.installed[source];
+      await this.persistInstalled();
     }
-    delete this.installed[source];
-    this.sources.splice(index, 1);
-    await this.persist();
-    await this.persistInstalled();
+    // 清单条目保留：卸载只移除安装目录，用户可再次安装。
     return true;
   }
 
   // ─── 内部 ───────────────────────────────────────────────
 
-  private installRoot(): string {
-    return join(this.options.root, 'node_modules');
+  private installedRoot(): string {
+    return join(this.options.root, 'installed');
   }
 
-  private async ensureProject(): Promise<void> {
-    const pkgFile = join(this.options.root, 'package.json');
-    if (existsSync(pkgFile)) return;
-    await writeFile(
-      pkgFile,
-      `${JSON.stringify({ name: 'workstudio-plugins', private: true }, null, 2)}\n`,
-      'utf-8',
-    );
-  }
-
-  private async dependencyNames(): Promise<string[]> {
-    const raw = await readFile(
-      join(this.options.root, 'package.json'),
-      'utf-8',
-    ).catch(() => null);
-    if (!raw) return [];
-    try {
-      const pkg = JSON.parse(raw) as {
-        dependencies?: Record<string, string>;
-      };
-      return Object.keys(pkg.dependencies ?? {});
-    } catch {
-      return [];
-    }
-  }
-
-  private async findNewPlugin(before: string[]): Promise<string | null> {
-    const root = this.installRoot();
-    const entries = await readdir(root, { withFileTypes: true }).catch(
-      () => [],
-    );
-    const candidates: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name === '.bin') continue;
-      if (entry.name.startsWith('@')) {
-        const scoped = await readdir(join(root, entry.name), {
-          withFileTypes: true,
-        }).catch(() => []);
-        for (const sub of scoped) {
-          if (sub.isDirectory()) candidates.push(`${entry.name}/${sub.name}`);
-        }
-      } else if (!before.includes(entry.name)) {
-        candidates.push(entry.name);
-      }
-    }
-    for (const name of candidates) {
-      const pkg = await readPackage(join(root, name));
-      if (pkg?.workstudio) return name;
-    }
-    return candidates[0] ?? null;
+  private stagingRoot(): string {
+    return join(this.options.root, 'staging');
   }
 
   private async save(entry: PluginSource): Promise<PluginSource> {
-    const existing =
-      entry.type === 'local'
-        ? this.sources.findIndex(
-            (item) => item.type === 'local' && item.path === entry.path,
-          )
-        : this.sources.findIndex(
-            (item) =>
-              item.type !== 'local' && item.name && item.name === entry.name,
-          );
+    const existing = this.sources.findIndex(
+      (item) => item.source === entry.source,
+    );
     if (existing >= 0) this.sources[existing] = entry;
     else this.sources.push(entry);
     await this.persist();
@@ -233,14 +198,13 @@ export class PluginService {
     const keep: string[] = [];
     const present = new Set<string>();
     for (const line of lines) {
-      const match = /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
-      if (!match) {
+      const item = parseListLine(line);
+      if (!item) {
         keep.push(line);
         continue;
       }
-      const source = match[1]!.split(/\s{2,}/)[0]!.trim();
-      if (this.sources.some((entry) => entry.source === source)) {
-        present.add(source);
+      if (this.sources.some((entry) => entry.source === item.source)) {
+        present.add(item.source);
         keep.push(line);
       }
     }
@@ -249,10 +213,9 @@ export class PluginService {
     );
     while (keep.length > 0 && keep[keep.length - 1] === '') keep.pop();
     if (additions.length > 0) {
-      // 只在非列表行之后补空行：直接接在已有列表项后面不会把清单切成两段。
       const last = keep[keep.length - 1] ?? '';
       if (last !== '' && !/^\s*[-*]\s/.test(last)) keep.push('');
-      for (const entry of additions) keep.push(`- ${entry.source}`);
+      for (const entry of additions) keep.push(formatListLine(entry));
     }
     keep.push('');
     const tmp = `${file}.tmp`;
@@ -264,12 +227,24 @@ export class PluginService {
     return join(this.options.root, 'installed.json');
   }
 
-  private async readInstalled(): Promise<Record<string, string>> {
+  private async readInstalled(): Promise<InstalledMap> {
     const raw = await readFile(this.installedFile(), 'utf-8').catch(() => null);
     if (!raw) return {};
     try {
-      const parsed = JSON.parse(raw) as Record<string, string>;
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      const parsed = JSON.parse(raw) as Record<string, string | InstalledEntry>;
+      const normalized: InstalledMap = {};
+      for (const [source, value] of Object.entries(parsed ?? {})) {
+        if (typeof value === 'string') {
+          normalized[source] = { id: value, version: '' };
+        } else if (value && typeof value === 'object' && value.id) {
+          normalized[source] = {
+            id: String(value.id),
+            version: String(value.version ?? ''),
+            ...(value.hash ? { hash: String(value.hash) } : {}),
+          };
+        }
+      }
+      return normalized;
     } catch {
       return {};
     }
@@ -286,91 +261,73 @@ export class PluginService {
     await rename(tmp, file);
   }
 
-  /** 旧版 JSON 来源声明 → 迁移成清单 md。 */
+  /** 旧版 JSON / 旧 plugins.md → 新 registry.md。 */
   private async migrateLegacy(): Promise<void> {
-    const legacy = this.options.file.replace(/\.md$/, '.json');
-    const raw = await readFile(legacy, 'utf-8').catch(() => null);
+    const legacyFile = join(dirname(this.options.root), 'plugins.md');
+    const raw = await readFile(legacyFile, 'utf-8').catch(() => null);
     if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as SourcesFile;
-        if (Array.isArray(parsed.sources)) this.sources = parsed.sources;
-        for (const entry of this.sources) {
-          if (entry.name) this.installed[entry.source] = entry.name;
-        }
-      } catch {
-        log.warn('invalid legacy plugin sources file', legacy);
-      }
+      this.sources = parseCatalog(raw, this.options.cwd()).filter(
+        (entry) => entry.type === 'local',
+      );
+      await this.persist();
+      await this.persistInstalled();
+      return;
     }
     await this.persist();
-    await this.persistInstalled();
-  }
-
-  private uninstallName(name: string): Promise<void> {
-    return this.runNpm(
-      [
-        'uninstall',
-        name,
-        '--prefix',
-        this.options.root,
-        '--no-audit',
-        '--no-fund',
-      ],
-      [name],
-    );
-  }
-
-  private runNpm(args: string[], source: string[]): Promise<void> {
-    return new Promise((resolvePromise, reject) => {
-      execFile(
-        'npm',
-        args,
-        {
-          cwd: this.options.root,
-          timeout: 180_000,
-          maxBuffer: 8 * 1024 * 1024,
-        },
-        (error, _stdout, stderr) => {
-          if (!error) return resolvePromise();
-          const message = String(stderr || error.message);
-          if (/\bENOENT\b/.test(message) && /npm/.test(message)) {
-            reject(new Error('未找到 npm（请安装 Node.js 后重启应用）'));
-            return;
-          }
-          reject(new Error(`${source[0]}：${message.trim() || error.message}`));
-        },
-      );
-    });
   }
 }
 
-// ─── 清单（Markdown） ─────────────────────────────────────
-//
-// 一行一条来源；`- npm:<pkg>@<ver>  说明` 里两个以上空格之后是注释。
+// ─── 清单解析 ─────────────────────────────────────────────
 
 function parseCatalog(markdown: string, cwd: string): PluginSource[] {
   const entries: PluginSource[] = [];
   for (const line of markdown.split('\n')) {
-    const match = /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
-    if (!match) continue;
-    const source = match[1]!.split(/\s{2,}/)[0]!.trim();
-    if (!source) continue;
-    const parsed = describeSource(source, cwd);
+    const item = parseListLine(line);
+    if (!item) continue;
+    const parsed = describeSource(item.source, item.label, cwd);
     if (parsed) entries.push(parsed);
   }
   return entries;
 }
 
-function describeSource(source: string, cwd: string): PluginSource | null {
+function parseListLine(
+  line: string,
+): { source: string; label?: string } | null {
+  const link = /^\s*[-*]\s+\[([^\]]+)\]\(([^)]+)\)\s*$/.exec(line);
+  if (link) return { label: link[1]!.trim(), source: link[2]!.trim() };
+  const plain = /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
+  if (!plain) return null;
+  const source = plain[1]!.split(/\s{2,}/)[0]!.trim();
+  return source ? { source } : null;
+}
+
+function formatListLine(entry: PluginSource): string {
+  if (entry.type === 'zip' && entry.label)
+    return `- [${entry.label}](${entry.source})`;
+  return `- ${entry.source}`;
+}
+
+function describeSource(
+  source: string,
+  label: string | undefined,
+  cwd: string,
+): PluginSource | null {
   if (isLocalSource(source, cwd)) {
     const path = resolve(cwd, source.replace(/^~(?=\/)/, homedir()));
-    return { source, type: 'local', path };
-  }
-  try {
-    const parsed = parseRemote(source);
     return {
       source,
-      type: parsed.type,
-      ...(parsed.name ? { name: parsed.name } : {}),
+      type: 'local',
+      path,
+      ...(label ? { label } : {}),
+    };
+  }
+  try {
+    const zip = describeZipSource(source);
+    return {
+      source,
+      type: 'zip',
+      sha256: zip.sha256,
+      ...(label ? { label } : {}),
     };
   } catch {
     log.warn('unrecognized plugin source', source);
@@ -378,75 +335,141 @@ function describeSource(source: string, cwd: string): PluginSource | null {
   }
 }
 
-// ─── 来源解析 ─────────────────────────────────────────────
+function describeZipSource(source: string): {
+  url: string;
+  sha256?: string;
+} {
+  let url: URL;
+  try {
+    url = new URL(source);
+  } catch {
+    throw new Error(`无法识别的来源：${source}（需要 zip URL 或本地路径）`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    throw new Error(`插件 zip 必须是 http(s) 地址：${source}`);
+  if (!url.pathname.toLowerCase().endsWith('.zip'))
+    throw new Error(`插件来源必须是 .zip：${source}`);
+  const match = /^#sha256=([a-f0-9]{64})$/i.exec(url.hash);
+  if (!match) throw new Error(`远程插件必须带 #sha256=<64位哈希>：${source}`);
+  return { url: source, sha256: match[1]!.toLowerCase() };
+}
 
 function isLocalSource(source: string, cwd: string): boolean {
   if (source.startsWith('.') || source.startsWith('~') || isAbsolute(source))
     return true;
-  // 不带前缀但确实存在的本地目录（如 OfficePlugin）按本地处理。
   return existsSync(resolve(cwd, source));
 }
 
-function parseRemote(source: string): {
-  type: 'npm' | 'git';
-  spec: string;
-  name?: string;
-} {
-  if (source.startsWith('npm:')) {
-    const spec = source.slice(4);
-    return { type: 'npm', spec, name: packageNameOf(spec) };
-  }
-  if (source.startsWith('git:')) {
-    return { type: 'git', spec: gitSpec(source.slice(4)) };
-  }
-  if (/^(https?:\/\/|git@|ssh:\/\/)/.test(source)) {
-    return { type: 'git', spec: gitSpec(source) };
-  }
-  throw new Error(
-    `无法识别的来源：${source}（npm:<包名> / git:<仓库> / 本地路径）`,
+// ─── zip 安装 ─────────────────────────────────────────────
+
+async function download(source: string): Promise<Uint8Array> {
+  const response = await fetch(source, {
+    headers: { 'User-Agent': 'work-studio' },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
+  const length = Number(response.headers.get('content-length') ?? '0');
+  if (length > MAX_ZIP_BYTES) throw new Error('插件 zip 超过大小上限');
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_ZIP_BYTES)
+    throw new Error('插件 zip 超过大小上限');
+  return new Uint8Array(buffer);
+}
+
+interface Manifest {
+  id: string;
+  version: string;
+  label?: string;
+}
+
+async function extractZip(
+  bytes: Uint8Array,
+  staging: string,
+): Promise<Manifest> {
+  await mkdir(staging, { recursive: true });
+  const files = unzipSync(bytes);
+  const names = Object.keys(files).filter((name) => !name.endsWith('/'));
+  const packageFiles = names.filter(
+    (name) => name === 'package.json' || name.endsWith('/package.json'),
   );
+  if (packageFiles.length === 0) throw new Error('zip 中缺少 package.json');
+  const depths = packageFiles.map((name) => name.split('/').length);
+  const minDepth = Math.min(...depths);
+  const roots = packageFiles.filter(
+    (name) => name.split('/').length === minDepth,
+  );
+  if (roots.length !== 1)
+    throw new Error('一个 zip 只能包含一个插件（多个 package.json）');
+  const rootFile = roots[0]!;
+  const prefix =
+    rootFile === 'package.json'
+      ? ''
+      : rootFile.slice(0, -'package.json'.length);
+
+  for (const name of names) {
+    if (prefix && !name.startsWith(prefix)) continue;
+    const relative = prefix ? name.slice(prefix.length) : name;
+    const safe = normalizeZipPath(relative);
+    const target = join(staging, safe);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, files[name]!);
+  }
+
+  const manifest = await readManifest(staging);
+  if (!manifest) throw new Error('插件清单无效');
+  return manifest;
 }
 
-/** git 来源 → npm 可安装规格（github.com/u/r@v1 → git+https://…#v1）。 */
-function gitSpec(input: string): string {
-  let url = input;
-  let ref = '';
-  const at = url.lastIndexOf('@');
-  if (at > 0 && !url.slice(at).includes('/')) {
-    ref = `#${url.slice(at + 1)}`;
-    url = url.slice(0, at);
-  }
-  const hash = url.indexOf('#');
-  if (hash >= 0) {
-    ref = url.slice(hash);
-    url = url.slice(0, hash);
-  }
-  if (url.startsWith('git@')) {
-    url = `ssh://${url.replace(':', '/')}`;
-  }
-  if (!url.startsWith('ssh://')) {
-    if (!/^https?:\/\//.test(url)) url = `https://${url}`;
-    if (url.endsWith('.git')) url = url.slice(0, -4);
-    url = `${url}.git`;
-  }
-  return `git+${url}${ref}`;
+function normalizeZipPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (
+    normalized.startsWith('/') ||
+    normalized.split('/').some((part) => part === '..' || part === '')
+  )
+    throw new Error(`zip 包含非法路径：${path}`);
+  return normalized;
 }
 
-function packageNameOf(spec: string): string {
-  const cleaned = spec.replace(/@[^/]+$/, '');
-  return spec.startsWith('@') ? cleaned : cleaned.split('/')[0]!;
-}
-
-async function readPackage(
-  root: string,
-): Promise<{ name?: string; workstudio?: unknown } | null> {
+async function readManifest(root: string): Promise<Manifest | null> {
   const raw = await readFile(join(root, 'package.json'), 'utf-8').catch(
     () => null,
   );
   if (!raw) return null;
+  let pkg: {
+    name?: string;
+    version?: string;
+    exports?: string | Record<string, unknown>;
+    workstudio?: {
+      id?: string;
+      label?: string;
+      page?: string;
+      settings?: string;
+      apiVersion?: number;
+    };
+  };
   try {
-    return JSON.parse(raw) as { name?: string; workstudio?: unknown };
+    pkg = JSON.parse(raw);
   } catch {
     return null;
   }
+  const ws = pkg.workstudio;
+  if (!ws || typeof ws !== 'object') return null;
+  const id = ws.id ?? pkg.name;
+  if (!id || !ID_RE.test(id)) return null;
+  if (!pkg.version) return null;
+  const apiVersion = ws.apiVersion ?? SUPPORTED_API_VERSION;
+  if (apiVersion > SUPPORTED_API_VERSION) return null;
+  const uraEntry =
+    typeof pkg.exports === 'string'
+      ? pkg.exports
+      : (pkg.exports?.['./ura'] as string | undefined);
+  if (!uraEntry || !existsSync(join(root, uraEntry))) return null;
+  for (const page of [ws.page, ws.settings]) {
+    if (page && !existsSync(join(root, page))) return null;
+  }
+  return {
+    id,
+    version: String(pkg.version),
+    ...(ws.label ? { label: String(ws.label) } : {}),
+  };
 }

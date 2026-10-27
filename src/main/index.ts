@@ -429,7 +429,7 @@ app.whenReady().then(async () => {
   // 2.5 URA（资源管道 + 插件包）
   pluginService = new PluginService({
     root: path.join(app.getPath('userData'), 'plugins'),
-    file: path.join(app.getPath('userData'), 'plugins.md'),
+    file: path.join(app.getPath('userData'), 'plugins', 'registry.md'),
     cwd: () => workspacePath,
   });
   await pluginService.start();

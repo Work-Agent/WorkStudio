@@ -365,6 +365,12 @@ export interface PluginInfo {
   hasHome: boolean;
   /** 是否声明了配置页。 */
   hasConfig: boolean;
+  /** 安装来源（zip / 本地路径 / 内置）。 */
+  source?: string;
+  /** zip 完整性哈希。 */
+  hash?: string;
+  /** 插件 API 版本。 */
+  apiVersion?: number;
 }
 
 /** Skill 信息（供 UI 选择器 / 技能设置页展示）。 */
