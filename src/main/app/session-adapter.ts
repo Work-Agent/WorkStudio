@@ -112,10 +112,6 @@ export class SessionAdapter {
     return this.deps.agent.getCommands();
   }
 
-  getStats(): ReturnType<AgentHost['getSessionStats']> {
-    return this.deps.agent.getSessionStats();
-  }
-
   setSteeringMode(mode: 'all' | 'one-at-a-time'): void {
     this.deps.agent.setSteeringMode(mode);
   }

@@ -7,10 +7,13 @@
 import type { AppCommand, AppSnapshot, ScopeEpochs } from '../../shared/app';
 import type { CommandResponse } from '../../shared/types';
 import { scopeForCommand } from '../../shared/command-scope';
+import type { WorkspaceManager } from './workspace-manager';
+import type { WorkspaceScope } from './workspace-scope';
 
 export interface AppHostDeps {
   snapshot: (epochs: ScopeEpochs) => Promise<AppSnapshot>;
   dispatch: (command: AppCommand) => Promise<CommandResponse>;
+  workspaces: WorkspaceManager;
 }
 
 export class AppHost {
@@ -18,6 +21,23 @@ export class AppHost {
   private sessionEpoch = 0;
 
   constructor(private readonly deps: AppHostDeps) {}
+
+  /** 启动时接管已激活的工作区作用域（不重复激活）。 */
+  adoptWorkspace(scope: WorkspaceScope): void {
+    this.deps.workspaces.adopt(scope);
+  }
+
+  /** 切换工作区：AppHost 统一执行作用域替换与两级 epoch 递增。 */
+  switchWorkspace(scope: WorkspaceScope): ScopeEpochs {
+    this.deps.workspaces.activate(scope);
+    this.workspaceEpoch += 1;
+    this.sessionEpoch += 1;
+    return this.epochs;
+  }
+
+  get workspace(): WorkspaceScope | null {
+    return this.deps.workspaces.active;
+  }
 
   get epochs(): ScopeEpochs {
     return {

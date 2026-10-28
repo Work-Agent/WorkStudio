@@ -424,8 +424,6 @@ export interface UiState {
   sidebarCollapsed: boolean;
   /** 资源两级列表：当前展开的分组 id（null = 分组总览）。 */
   sidebarGroup: string | null;
-  /** 顶置的资源分组 id（主列表排序用）。 */
-  pinnedGroups: string[];
   /** 资源面板是否收起。 */
   panelCollapsed: boolean;
   /** 输入框展开态。 */

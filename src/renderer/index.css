@@ -117,3 +117,67 @@
 .floating-fade-in {
   animation: floating-fade-in 0.08s ease-out;
 }
+
+/* ── 壳层几何（状态作用域内的布局层） ─────────────────────
+   主进程 layout 是唯一真相源；ShellLayout 把矩形写成 CSS 变量。
+   几何变化只触发样式重算，不触发 React 组件树重渲染。 */
+:root {
+  --wb-titlebar-h: 40px;
+  --wb-workbench-y: 40px;
+  --wb-workbench-h: calc(100dvh - 40px);
+  --wb-sidebar-w: 240px;
+  --wb-resource-x: 240px;
+  --wb-resource-w: calc(100vw - 240px);
+  --wb-tabbar-h: 36px;
+  --wb-content-y: 76px;
+  --wb-content-h: calc(100dvh - 76px);
+  --wb-splitter-w: 6px;
+}
+
+.shell-titlebar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--wb-titlebar-h);
+  z-index: 10;
+}
+
+.shell-sidebar {
+  position: absolute;
+  left: 0;
+  top: var(--wb-workbench-y);
+  width: var(--wb-sidebar-w);
+  height: var(--wb-workbench-h);
+  z-index: 10;
+  contain: layout paint;
+}
+
+.shell-tabbar {
+  position: absolute;
+  left: var(--wb-resource-x);
+  top: var(--wb-workbench-y);
+  width: var(--wb-resource-w);
+  height: var(--wb-tabbar-h);
+  z-index: 10;
+  contain: layout paint;
+}
+
+.shell-resource-content {
+  position: absolute;
+  left: var(--wb-resource-x);
+  top: var(--wb-content-y);
+  width: var(--wb-resource-w);
+  height: var(--wb-content-h);
+  z-index: 10;
+}
+
+.shell-left-splitter {
+  position: absolute;
+  left: calc(var(--wb-resource-x) - var(--wb-splitter-w));
+  top: var(--wb-workbench-y);
+  width: var(--wb-splitter-w);
+  height: var(--wb-workbench-h);
+  z-index: 30;
+  touch-action: none;
+}

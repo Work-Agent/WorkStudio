@@ -27,6 +27,10 @@ export async function initAppScope(): Promise<void> {
     if (!isFresh(next)) return;
     applySnapshot(next);
   });
+  // 几何帧：拖拽 / 缩放期间只更新 layout，不重建业务投影。
+  bridge.onLayout((layout) => {
+    useWorkspaceStore.setState({ layout });
+  });
   bridge.onUi((request) => {
     if (request.type !== 'notify') return;
     useNotificationsStore.getState().push({
@@ -75,7 +79,6 @@ function applySnapshot(snapshot: AppSnapshot): void {
     sidebarDomain: ui.sidebar.domain,
     sidebarCollapsed: ui.sidebar.collapsed,
     sidebarGroup: ui.sidebar.group,
-    pinnedGroups: ui.sidebar.pinnedGroups,
     paneWidths: ui.paneWidths,
     inputExpanded: ui.assistant.inputExpanded,
     openPaths: ui.openSessionPaths,

@@ -137,30 +137,34 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 │ Shell DOM · ListHost · system pages (assistant / overlay / capture) │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ AppSnapshot / AppCommand / AppEvent
-┌─ Main AppHost ────────────▼─────────────────────────────────────┐
-│ AppScope (app level)                                            │
-│ models · credentials · plugins · Pi packages · global settings   │
-│ system views · workspace list · active workspace                 │
-├─────────────────────────────────────────────────────────────────┤
-│ WorkspaceManager → WorkspaceScope (workspace level)              │
-│ URA · lists · tab views · UI scene · page/write sessions · index │
-├─────────────────────────────────────────────────────────────────┤
-│ SessionAdapter (session level)                                  │
-│ current pi session · event bridge · extension UI context         │
+┌─ Assembly / AppHost ──────▼─────────────────────────────────────┐
+│ lifecycle · window · protocol · IPC · command routing            │
+│ active workspace · epoch · snapshot outlet                       │
+└───────────────────────────┬─────────────────────────────────────┘
+┌─ Domain services ─────────▼─────────────────────────────────────┐
+│ ViewHost · UiState · Interaction · EventBridge · SessionAdapter  │
+└───────────────────────────┬─────────────────────────────────────┘
+┌─ Capability layer ────────▼─────────────────────────────────────┐
+│ surfaces: plugins · settings · browser                           │
+│ Agent harness: AgentHost · prompts / AGENTS · skills · tools     │
+└───────────────────────────┬─────────────────────────────────────┘
+┌─ Resource pipeline URA ───▼─────────────────────────────────────┐
+│ transport · codec · store · presenter / sidecar · sessions · map │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ official extension points
                          pi SDK
 ```
 
-- **App owns two levels**: AppScope holds app-level state and system views; the workspace list and switching also live in App. WorkspaceScope is all data of the active workspace and is replaced wholesale on switch.
-- **Session is delegated to pi**: switching a session calls pi; WorkStudio only rebinds the event bridge and UI context, with no second session state machine.
+- **One system outside, layered inside**: the renderer only faces AppHost; assembly, domain services, capabilities and URA keep their own responsibilities.
+- **Scopes are horizontal ownership**: AppScope owns app-level state; WorkspaceScope owns all data of the active workspace; Session is delegated to pi.
+- **AppHost owns orchestration state**: active workspace, epochs, switching transactions and outlets; it does not absorb lower-layer state.
+- **The capability layer keeps two blocks**: surfaces (plugins · settings · browser) sit side by side by delivery; Agent harness is organised vertically by session. Both share domain services and the pipeline.
 - **List structure lives in App**: groups, row templates, fields and actions are defined by App; data is resolved in the workspace; the renderer uses ListHost against the spec.
 - **Switch granularity**: extensions are installed globally and enabled per workspace; skills are installed globally, defaulted per workspace, and activated per session.
 - **Resources / pages / skills load by level**: App loads global resources and plugins, the workspace loads workspace resources, the session only activates; all resource directories live under the app-private data directory.
 - **Independent from the pi CLI**: pi runs only as a library; neither `~/.pi` nor the real workspace `.pi` is read.
 - **One channel**: the renderer only consumes AppSnapshot and only sends AppCommand; events carry scope / epoch.
-- **One-way dependencies**: the renderer depends only on the contract bridge; plugins go through the registration surface; the pi SDK knows nothing about WorkStudio.
-- **The capability layer keeps two blocks**: surfaces (plugins · settings · browser) sit side by side by delivery; the sidecar is organised vertically by session. Both share domain services and the pipeline.
+- **One-way dependencies**: assembly → domain services → capabilities → URA → pi; lower layers do not know upper layers.
 
 ## 5. Extension surfaces
 

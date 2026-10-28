@@ -24,7 +24,6 @@ import {
   LEFT_MIN_RATIO,
   RIGHT_MAX_RATIO,
   RIGHT_MIN_RATIO,
-  SPLITTER_GAP,
   TABBAR_HEIGHT,
   TITLEBAR_HEIGHT,
 } from './layout';
@@ -89,15 +88,11 @@ export function computeLayout(input: LayoutInput): LayoutSnapshot {
     width: leftWidth,
     height: workbench.height,
   };
-  // 分隔条让位：原生视图在 DOM 之上，左右各留 SPLITTER_GAP 给 DOM 把手（右侧仅停靠时留）。
-  const rightGap = rightDockWidth > 0 ? SPLITTER_GAP : 0;
+  // 右侧把手由助手视图内的原生边缘条承担；资源视图与助手视图直接相接。
   const resourcePane: Rect = {
-    x: leftWidth + SPLITTER_GAP,
+    x: leftWidth,
     y: workbench.y,
-    width: Math.max(
-      0,
-      workbench.width - leftWidth - rightDockWidth - SPLITTER_GAP,
-    ),
+    width: Math.max(0, workbench.width - leftWidth - rightDockWidth),
     height: workbench.height,
   };
   const tabbar: Rect = {
@@ -113,9 +108,9 @@ export function computeLayout(input: LayoutInput): LayoutSnapshot {
     height: Math.max(0, resourcePane.height - TABBAR_HEIGHT),
   };
   const assistantDock: Rect = {
-    x: workbench.width - rightDockWidth + rightGap,
+    x: workbench.width - rightDockWidth,
     y: workbench.y,
-    width: Math.max(0, rightDockWidth - rightGap),
+    width: rightDockWidth,
     height: workbench.height,
   };
   const floating = preview?.floating ?? input.floating;

@@ -5,7 +5,6 @@
  * 收起态：仅隐藏文字块（图标/间距/行高/卡片结构与展开态一致，图标不跳动）。
  */
 import { useState, type ComponentType, type ReactNode } from 'react';
-import { Pin } from 'lucide-react';
 import { formatTime } from './time';
 
 export function GroupRow({
@@ -18,8 +17,6 @@ export function GroupRow({
   countLabel,
   countLabelClass,
   latest,
-  pinned,
-  onTogglePin,
   onClick,
   active,
   activeRow,
@@ -35,8 +32,6 @@ export function GroupRow({
   countLabel?: string;
   countLabelClass?: string;
   latest: number;
-  pinned: boolean;
-  onTogglePin: () => void;
   onClick: () => void;
   active?: boolean;
   activeRow: ReactNode;
@@ -81,20 +76,6 @@ export function GroupRow({
             <h4 className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-100 truncate leading-none">
               {title}
             </h4>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onTogglePin();
-              }}
-              title={pinned ? '取消顶置' : '顶置分组'}
-              className={`shrink-0 p-0.5 rounded transition-opacity ${
-                pinned
-                  ? 'text-[#4F6BED] opacity-100'
-                  : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-400 opacity-0 group-hover:opacity-100'
-              }`}
-            >
-              <Pin className={`w-3.5 h-3.5 ${pinned ? 'fill-current' : ''}`} />
-            </button>
           </div>
           <div className="flex justify-between items-center mt-[5px]">
             <p

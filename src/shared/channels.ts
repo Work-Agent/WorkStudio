@@ -12,6 +12,8 @@ export const APP_SYNC = 'app:sync';
 export const APP_CMD = 'app:cmd';
 /** AppSnapshot 推送。 */
 export const APP_SNAPSHOT = 'app:snapshot';
+/** 布局帧推送（拖拽 / 窗口缩放；只含几何，不含业务快照）。 */
+export const APP_LAYOUT = 'app:layout';
 /** AppEvent 推送（scope + epoch + seq）。 */
 export const APP_EVENT = 'app:event';
 
@@ -39,8 +41,10 @@ export const CH_INTERACTION_UPDATE = 'ws:interaction:update';
 
 // ─── 交互（invoke / 预载直连） ────────────────────────────
 
-/** 指针交互会话：begin / end。 */
+/** 指针交互会话：begin / end（invoke）。 */
 export const CH_INTERACTION = 'ws:interaction';
+/** 拖拽移动帧（send；高频，不等待回执）。 */
+export const CH_INTERACTION_MOVE = 'ws:interaction:move';
 /** 捕获层指针事件（preload → 主进程；不对外暴露）。 */
 export const CH_CAPTURE = 'ws:capture';
 /** Menu.popup 选中回执（主进程 → 发起窗口）。 */

@@ -26,6 +26,7 @@ import { fileRef } from '../shared/ura';
 import type { Rect, UiState } from '../shared/types';
 import {
   APP_EVENT,
+  APP_LAYOUT,
   APP_SNAPSHOT,
   CH_BUS,
   CH_RESOURCES,
@@ -57,13 +58,7 @@ import { SiteSnapshots } from './capabilities/browser/snapshots';
 import { containsSettingsPage } from './capabilities/settings/registry';
 import { UiStateService } from './state/ui-state';
 import { broadcastToWindows } from './state/broadcast';
-import {
-  classifySender,
-  invoke,
-  isAssistantCommand,
-  registerRouter,
-  type RouterDeps,
-} from './command/router';
+import { invoke, registerRouter, type RouterDeps } from './command/router';
 import { InteractionController } from './capabilities/webview/interaction';
 import { NativeFacilities } from './capabilities/webview/native-facilities';
 import { BrowserAutomation } from './capabilities/browser/views';
@@ -233,13 +228,26 @@ function broadcastViews(): void {
   publishAppSnapshot();
 }
 
+/**
+ * 几何帧：拖拽 / 窗口缩放只更新布局，不重建 AppSnapshot。
+ * 渲染层把几何写成 CSS 变量，不触发 React 列表重渲染。
+ */
+function publishLayout(): void {
+  const layout = buildLayout();
+  if (!layout) return;
+  broadcastToWindows(APP_LAYOUT, layout);
+}
+
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
 function publishAppSnapshot(): void {
   if (!appHost) return;
+  // 拖拽中的业务快照只会制造抖动；结束由 InteractionController 统一补发。
+  if (interaction?.getPreview()) return;
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
+    if (interaction?.getPreview()) return;
     void appHost?.snapshot().then((snapshot) => {
       broadcastToWindows(APP_SNAPSHOT, snapshot);
       viewHost?.broadcastToSystemViews(APP_SNAPSHOT, snapshot);
@@ -285,7 +293,7 @@ function createWindow(): BrowserWindow {
   });
   win.on('resize', () => {
     applyLayout();
-    broadcastState();
+    publishLayout();
   });
   win.on('closed', () => {
     if (winRef === win) winRef = null;
@@ -403,6 +411,8 @@ app.whenReady().then(async () => {
   workspacePath = getCurrentWorkspace();
   const wsId = registerWorkspace(workspacePath);
   bootLog(`workspace: ${workspacePath} (${wsId})`);
+
+  workspaceManager = new WorkspaceManager();
 
   // 2.5 URA（资源管道 + 插件包）
   pluginService = new PluginService({
@@ -528,8 +538,8 @@ app.whenReady().then(async () => {
         const nextWsId = registerWorkspace(next);
         watchWorkspaceRoot();
         uraRuntime?.map.restart();
-        if (viewHost && workspaceManager) {
-          workspaceManager.activate(
+        if (viewHost && appHost) {
+          appHost.switchWorkspace(
             new WorkspaceScope({
               path: next,
               id: nextWsId,
@@ -539,8 +549,6 @@ app.whenReady().then(async () => {
               writeSessions,
             }),
           );
-          appHost?.bumpWorkspace();
-          appHost?.bumpSession();
           broadcastState();
           broadcastViews();
         } else {
@@ -584,6 +592,7 @@ app.whenReady().then(async () => {
       floatingGeometry = rect;
     },
     broadcastState,
+    publishLayout,
     applyLayout,
   });
 
@@ -612,7 +621,6 @@ app.whenReady().then(async () => {
     agent: agent!,
     plugins: uraRuntime!.host,
     viewHost: viewHost!,
-    uiState,
   });
 
   uraRuntime!.map.setSource(async () => {
@@ -665,8 +673,8 @@ app.whenReady().then(async () => {
     setViewport: (size) => {
       viewportSize = size;
       applyLayout();
-      // 视口变化会改变全部 layout 矩形（DOM 区域与原生视图同源），必须广播收敛。
-      broadcastState();
+      // 视口变化只改几何；业务切片不变，走布局帧。
+      publishLayout();
     },
     browserCapture: async () => {
       if (!browserAutomation) return null;
@@ -757,6 +765,7 @@ app.whenReady().then(async () => {
         command.action,
         (command.payload ?? {}) as Record<string, unknown>,
       ),
+    workspaces: workspaceManager,
   });
   registerAppIpc(routerDeps, () => appHost!);
   publishAppSnapshot();
@@ -778,8 +787,7 @@ app.whenReady().then(async () => {
   buildAppMenu();
   bootLog('window created');
   viewHost.restore();
-  workspaceManager = new WorkspaceManager();
-  workspaceManager.adopt(
+  appHost?.adoptWorkspace(
     new WorkspaceScope({
       path: workspacePath,
       id: wsId,

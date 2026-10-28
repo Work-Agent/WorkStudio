@@ -15,7 +15,6 @@ export const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: 'model', description: '切换模型' },
   { name: 'thinking', description: '思考档位' },
   { name: 'name', description: '命名当前会话' },
-  { name: 'session', description: '会话信息' },
   { name: 'copy', description: '复制上一条助手消息' },
 ];
 
@@ -67,7 +66,6 @@ export interface CommandActions {
   newSession: () => Promise<void> | void;
   openModel: () => void;
   openThinking: () => void;
-  openSessionInfo: () => void;
 }
 
 /** 内置命令消费；返回 false 表示应透传给 pi prompt。 */
@@ -83,9 +81,10 @@ export async function runBuiltinCommand(
       await actions.newSession();
       return true;
     case 'compact':
-      await bridge?.cmd('session.compact', {
-        ...(argument ? { instructions: argument } : {}),
-      });
+      await bridge?.cmd(
+        'session.compact',
+        argument ? { instructions: argument } : {},
+      );
       return true;
     case 'model':
       actions.openModel();
@@ -99,9 +98,6 @@ export async function runBuiltinCommand(
         path: actions.activePath,
         name: argument,
       });
-      return true;
-    case 'session':
-      actions.openSessionInfo();
       return true;
     case 'copy': {
       const text = lastAssistantText(actions.messages);

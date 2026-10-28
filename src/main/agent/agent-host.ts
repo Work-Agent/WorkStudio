@@ -316,48 +316,6 @@ export class AgentHost {
     }));
   }
 
-  /** 当前会话统计（SessionInfoPanel；只读 JSONL）。 */
-  getSessionStats(): {
-    sessionFile: string | null;
-    sessionId: string;
-    userMessages: number;
-    assistantMessages: number;
-    toolCalls: number;
-    toolResults: number;
-    totalMessages: number;
-    tokens: { input: number; output: number; total: number };
-  } {
-    const path = this.session.sessionFile ?? '';
-    const messages = path ? readSessionMessages(path) : [];
-    const tokens = path ? readSessionTokens(path) : { input: 0, output: 0 };
-    let userMessages = 0;
-    let assistantMessages = 0;
-    let toolCalls = 0;
-    let toolResults = 0;
-    for (const message of messages) {
-      if (message.role === 'user') userMessages += 1;
-      if (message.role === 'assistant') assistantMessages += 1;
-      for (const block of message.blocks) {
-        if (block.type !== 'tool') continue;
-        toolCalls += 1;
-        if (block.result) toolResults += 1;
-      }
-    }
-    return {
-      sessionFile: path || null,
-      sessionId: this.session.sessionId,
-      userMessages,
-      assistantMessages,
-      toolCalls,
-      toolResults,
-      totalMessages: messages.length,
-      tokens: {
-        ...tokens,
-        total: tokens.input + tokens.output,
-      },
-    };
-  }
-
   // ─── 会话命令 ───────────────────────────────────────────
 
   async prompt(params: {

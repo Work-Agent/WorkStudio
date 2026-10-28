@@ -74,8 +74,6 @@ export interface ListGroup {
   countLabel: string;
   /** 最近更新时间（0 = 无）；由 Provider 或数据层给出。 */
   updatedAt: number;
-  /** 顶置态（工作区 UI 现场投影）。 */
-  pinned: boolean;
   order?: number;
   count: number;
   state: 'loading' | 'ready' | 'error';

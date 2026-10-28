@@ -1,6 +1,93 @@
 /** 助手视图的消息行与浮动缩放把手。 */
+import { useEffect, useRef, useState } from 'react';
 import { MoveDiagonal2 } from 'lucide-react';
 import type { ParsedMessage, ResizeDirection } from '../../shared/types';
+import { bridge } from './bridge';
+
+/**
+ * 停靠态左边缘拉伸把手。
+ *
+ * 命中区独立于视觉线：10px 透明带 + hover 时 1px 靛蓝线 + 中央短握把，
+ * 避免“必须精确压到 1px 线”的难用感。拖拽序列与左栏一致：本视图发起，
+ * 主进程用 screen 光标计算几何并推布局帧。
+ */
+export function DockResizeHandle() {
+  const [hover, setHover] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const frame = useRef(0);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (): void => {
+      if (frame.current) return;
+      frame.current = requestAnimationFrame(() => {
+        frame.current = 0;
+        void bridge?.interaction.move();
+      });
+    };
+    const stop = (): void => {
+      if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
+      setDragging(false);
+      setHover(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      void bridge?.interaction.end();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      if (frame.current) cancelAnimationFrame(frame.current);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, [dragging]);
+
+  const active = hover || dragging;
+
+  return (
+    <div
+      data-testid="assistant-resize"
+      role="separator"
+      aria-orientation="vertical"
+      title="拖动调整助手宽度"
+      className="group absolute left-0 top-0 bottom-0 z-50 w-3 cursor-col-resize touch-none"
+      onPointerEnter={() => setHover(true)}
+      onPointerLeave={() => setHover(false)}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* 捕获失败时仍由主进程捕获层兜底 */
+        }
+        setDragging(true);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        void bridge?.interaction.begin({
+          type: 'pane-resize',
+          target: 'right',
+          anchor: { x: event.clientX, y: event.clientY },
+        });
+      }}
+    >
+      <span
+        className={`pointer-events-none absolute inset-y-0 left-px w-px transition-colors ${
+          active ? 'bg-[#4F6BED]' : 'bg-zinc-300 dark:bg-zinc-800'
+        }`}
+      />
+      <span
+        className={`pointer-events-none absolute left-[3px] top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-[#4F6BED]/70 transition-opacity ${
+          active ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+    </div>
+  );
+}
 
 export function ResizeHandles({
   onStart,

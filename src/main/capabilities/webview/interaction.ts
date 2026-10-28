@@ -62,6 +62,8 @@ export interface InteractionDeps {
   getFloating: () => Rect | null;
   setFloating: (rect: Rect | null) => void;
   broadcastState: () => void;
+  /** 只推几何帧（拖拽期间不重建业务快照）。 */
+  publishLayout: () => void;
   applyLayout: () => void;
 }
 
@@ -222,7 +224,7 @@ export class InteractionController {
     const session = this.session;
     if (!session) return;
     const now = Date.now();
-    if (now - session.lastUpdateAt < 12) return;
+    if (now - session.lastUpdateAt < 16) return;
     session.lastUpdateAt = now;
     const win = this.deps.getWindow();
     if (!win || win.isDestroyed()) return;
@@ -291,7 +293,7 @@ export class InteractionController {
     }
     void ui;
     this.deps.applyLayout();
-    this.deps.broadcastState();
+    this.deps.publishLayout();
   }
 
   /** 屏幕 DIP 坐标 → 窗口内容坐标。 */

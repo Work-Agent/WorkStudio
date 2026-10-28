@@ -14,7 +14,6 @@ import type { AgentHost } from '../../agent/agent-host';
 import type { ViewHost } from '../../capabilities/webview/host';
 import { settingsPages } from '../../capabilities/settings/registry';
 import type { PluginHost } from '../../plugins/host';
-import type { UiStateService } from '../../state/ui-state';
 import type { ListContexts } from '../../ura/contexts';
 import { listRegistry } from './list-registry';
 import { OPEN_ACTION } from './builtins/common';
@@ -24,7 +23,6 @@ export interface ListServiceDeps {
   agent: AgentHost;
   plugins: PluginHost;
   viewHost: ViewHost;
-  uiState: UiStateService;
 }
 
 function latestOf(items: ListItem[]): number {
@@ -98,9 +96,6 @@ export class ListService {
               group.countLabel ?? definition.countLabel,
             ),
             updatedAt: group.updatedAt ?? latestOf(group.items),
-            pinned: this.deps.uiState
-              .get()
-              .pinnedGroups.includes(`${definition.id}:${group.id}`),
             order: group.order,
             count: group.items.length,
             state: 'ready',
@@ -121,7 +116,6 @@ export class ListService {
           ...(definition.icon ? { icon: definition.icon } : {}),
           countLabel: '加载失败',
           updatedAt: 0,
-          pinned: false,
           order: definition.order,
           count: 0,
           state: 'error',
@@ -152,9 +146,8 @@ export class ListService {
 
     groups.sort(
       (a, b) =>
-        Number(b.pinned) - Number(a.pinned) ||
         (listRegistry.get(a.definitionId)?.order ?? 0) -
-          (listRegistry.get(b.definitionId)?.order ?? 0),
+        (listRegistry.get(b.definitionId)?.order ?? 0),
     );
 
     return { workspaceEpoch, groups };
@@ -173,7 +166,6 @@ export class ListService {
       ...(definition.unit ? { unit: definition.unit } : {}),
       countLabel: '加载失败',
       updatedAt: 0,
-      pinned: false,
       order: definition.order,
       count: 0,
       state: 'error',
@@ -213,9 +205,6 @@ export class ListService {
         definition.countLabel,
       ),
       updatedAt: latestOf(items),
-      pinned: this.deps.uiState
-        .get()
-        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -254,9 +243,6 @@ export class ListService {
         definition.countLabel,
       ),
       updatedAt: latestOf(items),
-      pinned: this.deps.uiState
-        .get()
-        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -296,9 +282,6 @@ export class ListService {
         definition.countLabel,
       ),
       updatedAt: latestOf(items),
-      pinned: this.deps.uiState
-        .get()
-        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,
@@ -332,9 +315,6 @@ export class ListService {
         definition.countLabel,
       ),
       updatedAt: latestOf(items),
-      pinned: this.deps.uiState
-        .get()
-        .pinnedGroups.includes(`${definition.id}:${definition.id}`),
       count: items.length,
       state: 'ready',
       fields: definition.fields,

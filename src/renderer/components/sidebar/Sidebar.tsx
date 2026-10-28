@@ -110,15 +110,6 @@ export function Sidebar() {
                   count={group.count}
                   countLabel={group.countLabel}
                   latest={group.updatedAt}
-                  pinned={group.pinned}
-                  onTogglePin={() => {
-                    const current = useUiStore.getState().pinnedGroups;
-                    setUiState({
-                      pinnedGroups: group.pinned
-                        ? current.filter((id) => id !== group.id)
-                        : [...current, group.id],
-                    });
-                  }}
                   onClick={() => setUiState({ sidebarGroup: group.id })}
                   activeRow={
                     openItems.length > 0
@@ -137,7 +128,9 @@ export function Sidebar() {
                             meta={item.subtitle}
                             active={item.state?.active === true}
                             onClick={() => void openItem(item)}
-                            onClose={() => void closeItem(item)}
+                            onClose={
+                              collapsed ? undefined : () => void closeItem(item)
+                            }
                           />
                         ))
                       : null

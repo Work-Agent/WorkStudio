@@ -8,6 +8,7 @@ import {
   APP_SNAPSHOT,
   APP_SYNC,
   CH_INTERACTION,
+  CH_INTERACTION_MOVE,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
   CH_SHELL,
@@ -64,8 +65,10 @@ const api = {
   interaction: {
     begin: (input: InteractionBeginInput): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(CH_INTERACTION, 'begin', input),
-    move: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(CH_INTERACTION, 'move'),
+    move: (): Promise<{ ok: boolean }> => {
+      ipcRenderer.send(CH_INTERACTION_MOVE);
+      return Promise.resolve({ ok: true });
+    },
     end: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(CH_INTERACTION, 'end'),
     cancel: (): Promise<{ ok: boolean }> =>

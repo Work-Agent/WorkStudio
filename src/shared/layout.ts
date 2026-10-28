@@ -36,8 +36,8 @@ export const RIGHT_MAX_RATIO = 0.5;
 export const LEFT_MIN_DRAG_PX = 48;
 
 /** 浮动助手：最小尺寸与距资源面板边距。 */
-export const ASSISTANT_MIN_W = 340;
-export const ASSISTANT_MIN_H = 380;
-export const ASSISTANT_DEFAULT_W = 460;
-export const ASSISTANT_DEFAULT_H = 680;
+export const ASSISTANT_MIN_W = 300;
+export const ASSISTANT_MIN_H = 360;
+export const ASSISTANT_DEFAULT_W = 320;
+export const ASSISTANT_DEFAULT_H = 460;
 export const ASSISTANT_MARGIN = 16;

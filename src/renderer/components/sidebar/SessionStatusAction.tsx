@@ -30,7 +30,7 @@ export function SessionStatusAction({
 
   return (
     <div
-      className={`absolute right-1 top-1 p-1 rounded bg-inherit z-10 ${
+      className={`absolute right-1 top-[2px] h-6 w-6 flex items-center justify-center rounded bg-inherit z-10 ${
         mode === 'idle'
           ? 'opacity-0 group-hover:opacity-100 transition-opacity'
           : 'opacity-100'
@@ -42,7 +42,7 @@ export function SessionStatusAction({
             e.stopPropagation();
             onStop?.();
           }}
-          className="text-[#4F6BED] hover:text-red-500 transition-colors"
+          className="flex h-full w-full items-center justify-center text-[#4F6BED] hover:text-red-500 transition-colors"
           title="执行中 · 点击停止"
         >
           <LoaderCircle className="w-3 h-3 animate-spin" />
@@ -60,13 +60,13 @@ export function SessionStatusAction({
             e.stopPropagation();
             onIdle();
           }}
-          className={`p-0.5 rounded transition-colors ${
+          className={`flex h-full w-full items-center justify-center rounded transition-colors ${
             idleClass ??
             'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200'
           }`}
           title={idleTitle}
         >
-          <IdleIcon className="w-3 h-3" />
+          <IdleIcon className="w-3.5 h-3.5" />
         </button>
       )}
     </div>

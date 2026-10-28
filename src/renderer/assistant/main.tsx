@@ -16,10 +16,8 @@ import {
   GripHorizontal,
   Maximize2,
   MessageCirclePlus,
-  Info,
   Terminal,
   Minimize2,
-  MoveDiagonal2,
   PanelRight,
   PictureInPicture2,
   Send,
@@ -30,8 +28,7 @@ import type { ResizeDirection, ThinkingLevel } from '../../shared/types';
 import '../index.css';
 import { bridge, MENU_SOURCE } from './bridge';
 import { matchCommands, runBuiltinCommand, useCommands } from './commands';
-import { MessageRow, ResizeHandles } from './components';
-import { SessionInfoPanel } from './SessionInfoPanel';
+import { DockResizeHandle, MessageRow, ResizeHandles } from './components';
 import { formatTokens, tabLabel } from './format';
 import { useMessages } from './messages';
 import { useAgent, useSessions, useShell } from './session';
@@ -68,7 +65,6 @@ function Assistant() {
 
   const [text, setText] = useState('');
   const [commandTag, setCommandTag] = useState<string | null>(null);
-  const [statsOpen, setStatsOpen] = useState(false);
   const [extensionStatus, setExtensionStatus] = useState<
     Record<string, string | undefined>
   >({});
@@ -110,12 +106,6 @@ function Assistant() {
   useLayoutEffect(() => {
     setTagWidth(commandTag ? (tagRef.current?.offsetWidth ?? 0) : 0);
   }, [commandTag]);
-
-  useEffect(() => {
-    const openStats = (): void => setStatsOpen(true);
-    window.addEventListener('wa:open-session-info', openStats);
-    return () => window.removeEventListener('wa:open-session-info', openStats);
-  }, []);
 
   useEffect(() => {
     const onEditor = (event: Event): void => {
@@ -252,7 +242,6 @@ function Assistant() {
         },
         openModel: () => setMenu('model'),
         openThinking: () => setMenu('thinking'),
-        openSessionInfo: () => setStatsOpen(true),
       });
       if (consumed) {
         setText('');
@@ -302,10 +291,17 @@ function Assistant() {
     if (!dragging || !api) return;
     // 发起方拥有拖拽序列（OS 语义：pointerdown 命中的视图持续收到 move/up）；
     // 这里不做按键过滤（不同平台/事件的 buttons 位不可靠），只上报“仍在拖”。
+    let frame = 0;
     const onMove = (): void => {
-      void api.interaction.move();
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        void api.interaction.move();
+      });
     };
     const stop = (): void => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
       setDragging(false);
       void api.interaction.end();
     };
@@ -316,6 +312,7 @@ function Assistant() {
     window.addEventListener('mouseup', stop);
     window.addEventListener('pointercancel', stop);
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', stop);
       window.removeEventListener('mouseup', stop);
@@ -380,6 +377,7 @@ function Assistant() {
           : ''
       }`}
     >
+      {!floating && <DockResizeHandle />}
       {/* 会话标签栏（单排；浮动态此排即标题栏：把手/空白处拖拽移动） */}
       <div
         className="h-9 shrink-0 flex items-stretch border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-[#202124] select-none"
@@ -489,14 +487,6 @@ function Assistant() {
           title={agent?.configured ? '新会话' : '配置模型后可用'}
         >
           <MessageCirclePlus className="w-3.5 h-3.5" />
-        </button>
-
-        <button
-          onClick={() => setStatsOpen(true)}
-          className="shrink-0 px-2.5 flex items-center border-l border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-300 hover:text-[#4F6BED] dark:hover:text-[#4F6BED] hover:bg-zinc-100 dark:hover:bg-[#252829]"
-          title="会话信息"
-        >
-          <Info className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -790,7 +780,9 @@ function Assistant() {
                 title="技能"
               >
                 <BookOpen className="w-3 h-3" />
-                <span>{(ui?.selectedSkills ?? []).length || '技能'}</span>
+                <span className="hidden whitespace-nowrap min-[380px]:inline">
+                  {(ui?.selectedSkills ?? []).length || '技能'}
+                </span>
               </button>
               {menu === 'skills' && (
                 <>
@@ -848,7 +840,7 @@ function Assistant() {
             {/* 模型切换（视图内浮层，向上展开且不越界） */}
             <div className="relative">
               <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] max-w-40"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] max-w-32"
                 onClick={() => setMenu(menu === 'model' ? null : 'model')}
                 disabled={models.length === 0}
                 title="切换模型"
@@ -918,7 +910,6 @@ function Assistant() {
       </div>
 
       {floating && <ResizeHandles onStart={startResize} />}
-      <SessionInfoPanel open={statsOpen} onClose={() => setStatsOpen(false)} />
     </div>
   );
 }

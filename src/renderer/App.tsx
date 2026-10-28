@@ -7,15 +7,14 @@
  */
 import { useEffect } from 'react';
 import { PaneSplitter } from './components/PaneSplitter';
+import { ShellLayout } from './components/ShellLayout';
 import { ResourcePane } from './components/resource/ResourcePane';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ToastHost } from './components/ToastHost';
 import { TitleBar } from './components/titlebar/TitleBar';
-import { rectStyle, useWorkspaceStore } from './state/workspace';
 import { useUiStore } from './state/ui';
 
 export function App() {
-  const layout = useWorkspaceStore((s) => s.layout);
   const theme = useUiStore((s) => s.theme);
 
   // 主题 → html.dark class（驱动 Tailwind dark: 变体与 CSS 变量）
@@ -39,19 +38,16 @@ export function App() {
   // TitleBar 插件 / 设置入口已移入 Sidebar 顶部导航（SidebarNav）
   return (
     <div className="fixed inset-0 overflow-hidden bg-zinc-100 dark:bg-[#1a1c1d] text-zinc-900 dark:text-zinc-100 font-sans">
-      {layout ? (
-        <>
-          <div className="absolute" style={rectStyle(layout.titlebar)}>
-            <TitleBar />
-          </div>
-          <div className="absolute" style={rectStyle(layout.sidebar)}>
-            <Sidebar />
-          </div>
-          <PaneSplitter side="left" />
-          <ResourcePane />
-          <PaneSplitter side="right" />
-        </>
-      ) : null}
+      {/* 壳层几何由 CSS 变量驱动（ShellLayout 同步）；React 不因拖拽重渲染。 */}
+      <div className="shell-titlebar">
+        <TitleBar />
+      </div>
+      <div className="shell-sidebar">
+        <Sidebar />
+      </div>
+      <PaneSplitter />
+      <ResourcePane />
+      <ShellLayout />
       <ToastHost />
     </div>
   );

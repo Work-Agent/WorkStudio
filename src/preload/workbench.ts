@@ -7,10 +7,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   APP_CMD,
   APP_EVENT,
+  APP_LAYOUT,
   APP_SNAPSHOT,
   APP_SYNC,
   CH_BUS,
   CH_INTERACTION,
+  CH_INTERACTION_MOVE,
   CH_INTERACTION_UPDATE,
   CH_POPUP_SELECT,
   CH_RESOURCES,
@@ -20,6 +22,7 @@ import {
   CH_URA_WATCH,
 } from '../shared/channels';
 import type { AppCommand, AppEvent, AppSnapshot, Scope } from '../shared/app';
+import type { LayoutSnapshot } from '../shared/types';
 import type {
   CommandResponse,
   InteractionBeginInput,
@@ -72,6 +75,12 @@ const api = {
     ipcRenderer.on(APP_EVENT, listener);
     return () => ipcRenderer.removeListener(APP_EVENT, listener);
   },
+  /** 几何帧（拖拽 / 缩放）；只更新 CSS 变量，不触发 React 快照渲染。 */
+  onLayout: (cb: (layout: LayoutSnapshot) => void): (() => void) => {
+    const listener = (_e: unknown, layout: LayoutSnapshot): void => cb(layout);
+    ipcRenderer.on(APP_LAYOUT, listener);
+    return () => ipcRenderer.removeListener(APP_LAYOUT, listener);
+  },
 
   /** 订阅一个资源（传空取消）；变更经 onUra 推送。 */
   watchUra: (ref?: string): Promise<{ ref: string } | null> =>
@@ -121,8 +130,10 @@ const api = {
   interaction: {
     begin: (input: InteractionBeginInput): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(CH_INTERACTION, 'begin', input),
-    move: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(CH_INTERACTION, 'move'),
+    move: (): Promise<{ ok: boolean }> => {
+      ipcRenderer.send(CH_INTERACTION_MOVE);
+      return Promise.resolve({ ok: true });
+    },
     end: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(CH_INTERACTION, 'end'),
     cancel: (): Promise<{ ok: boolean }> =>

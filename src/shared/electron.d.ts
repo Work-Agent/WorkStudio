@@ -3,6 +3,7 @@ import type {
   AgentStatus,
   CommandResponse,
   InteractionBeginInput,
+  LayoutSnapshot,
   UiDialogResponse,
   UiRequest,
 } from './types';
@@ -19,6 +20,7 @@ export interface WorkbenchBridge {
   appSync: () => Promise<AppSnapshot>;
   onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
   onAppEvent: (cb: (event: AppEvent) => void) => () => void;
+  onLayout: (cb: (layout: LayoutSnapshot) => void) => () => void;
   onResources: (cb: (event: unknown) => void) => () => void;
   /** 订阅一个资源（传空取消）；变更经 onUra 推送。 */
   watchUra: (ref?: string) => Promise<{ ref: string } | null>;

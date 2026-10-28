@@ -28,7 +28,11 @@ import type {
   StorageView,
   WorkspaceInfo,
 } from '../../shared/types';
-import { CH_EXT, CH_INTERACTION } from '../../shared/channels';
+import {
+  CH_EXT,
+  CH_INTERACTION,
+  CH_INTERACTION_MOVE,
+} from '../../shared/channels';
 import type { ListItem } from '../../shared/lists';
 import { fileRef } from '../../shared/ura';
 import type { AgentHost } from '../agent/agent-host';
@@ -113,6 +117,12 @@ export function registerRouter(deps: RouterDeps): void {
       );
     },
   );
+
+  // 拖拽移动帧：高频 send，只处理本机工作台 / 助手来源。
+  ipcMain.on(CH_INTERACTION_MOVE, (event) => {
+    const type = classifySender(event as never, deps);
+    if (type === 'workbench' || type === 'assistant') deps.interaction.move();
+  });
 
   // 指针交互会话。
   ipcMain.handle(
@@ -234,15 +244,6 @@ async function runListAction(
       d.viewHost.togglePin(viewId);
       return null;
     }
-    const group = p.group as { id?: string; pinned?: boolean } | undefined;
-    if (group?.id) {
-      const current = d.uiState.get().pinnedGroups;
-      d.uiState.set({
-        pinnedGroups: group.pinned
-          ? current.filter((id) => id !== group.id)
-          : [...current, group.id],
-      });
-    }
     return null;
   }
   if (action === 'delete') {
@@ -356,8 +357,6 @@ export async function invoke(
       case 'session.setAutoCompaction':
         d.sessions.setAutoCompaction(p.enabled === true);
         return ok(null);
-      case 'session.stats':
-        return ok(d.sessions.getStats());
       case 'session.getCommands':
         return ok(d.sessions.getCommands());
 

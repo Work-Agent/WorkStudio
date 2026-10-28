@@ -129,6 +129,9 @@ export class ViewHost {
   private captureActive = false;
   private lastAssistantMode: { floating: boolean; visible: boolean } | null =
     null;
+  /** bounds 去重：左栏拖拽时助手 / overlay / capture 的几何并未变化。 */
+  private readonly boundsMemo = new Map<string, Rect>();
+  private assistantChromeKey = '';
   readonly overlayRequests: string[] = [];
 
   constructor(private readonly deps: ViewHostDeps) {
@@ -714,13 +717,17 @@ export class ViewHost {
           ui.aiFloating ? layout.assistantFloating : layout.assistantDock,
         );
         // 浮动态：原生圆角 cutout + 透明底（圆角外露出下层内容，而非视图底色）。
-        try {
-          assistant.view.setBorderRadius(ui.aiFloating ? 12 : 0);
-          assistant.view.setBackgroundColor(
-            ui.aiFloating ? '#00000000' : themeBackground(ui.theme),
-          );
-        } catch {
-          /* 平台不支持时忽略（页面自身圆角兜底） */
+        const chromeKey = `${ui.aiFloating ? 'float' : 'dock'}:${ui.theme}`;
+        if (chromeKey !== this.assistantChromeKey) {
+          this.assistantChromeKey = chromeKey;
+          try {
+            assistant.view.setBorderRadius(ui.aiFloating ? 12 : 0);
+            assistant.view.setBackgroundColor(
+              ui.aiFloating ? '#00000000' : themeBackground(ui.theme),
+            );
+          } catch {
+            /* 平台不支持时忽略（页面自身圆角兜底） */
+          }
         }
       }
       assistant.view.setVisible(visible);
@@ -1064,6 +1071,7 @@ export class ViewHost {
       record.view = null;
     }
     record.state = 'destroyed';
+    this.boundsMemo.delete(record.id);
   }
 
   /** 公共事件：加载失败 / 进程崩溃（纪律：过滤 -3、memory-eviction 不动状态）。 */
@@ -1241,6 +1249,16 @@ export class ViewHost {
 
   private setBounds(record: ViewRecord, rect: Rect): void {
     if (!record.view) return;
+    const prev = this.boundsMemo.get(record.id);
+    if (
+      prev &&
+      prev.x === rect.x &&
+      prev.y === rect.y &&
+      prev.width === rect.width &&
+      prev.height === rect.height
+    )
+      return;
+    this.boundsMemo.set(record.id, rect);
     try {
       record.view.setBounds(rect);
     } catch {

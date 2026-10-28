@@ -6,25 +6,19 @@
  * 不做分栏——文档与网页内容由主进程的原生视图承载（`layout.resourceContent`）。
  */
 import { FileText } from 'lucide-react';
-import {
-  rectStyle,
-  runViewCommand,
-  useWorkspaceStore,
-} from '../../state/workspace';
+import { runViewCommand, useWorkspaceStore } from '../../state/workspace';
 import { typeIcon } from './typeIcon';
 import { TabsBar } from './TabsBar';
 
 export function ResourcePane() {
-  const layout = useWorkspaceStore((s) => s.layout);
   const views = useWorkspaceStore((s) => s.views);
-  if (!layout) return null;
 
   const active = views.find((v) => v.active) ?? null;
 
   return (
     <>
       {/* ── 统一标签栏 ── */}
-      <div className="absolute" style={rectStyle(layout.tabbar)}>
+      <div className="shell-tabbar">
         <TabsBar
           testId="doc-tabs"
           onAdd={() =>
@@ -58,10 +52,7 @@ export function ResourcePane() {
       </div>
 
       {/* ── 内容区：仅空态占位；视图内容全部由 WebContentsView 覆盖 ── */}
-      <div
-        className="absolute overflow-hidden"
-        style={rectStyle(layout.resourceContent)}
-      >
+      <div className="shell-resource-content overflow-hidden">
         {views.length === 0 && (
           <div className="pointer-events-none h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 text-[12px] gap-2 px-6 text-center">
             <FileText className="w-6 h-6 opacity-50" />

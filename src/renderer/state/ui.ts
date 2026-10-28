@@ -21,7 +21,6 @@ const DEFAULTS: UiState = {
   sidebarDomain: null,
   sidebarCollapsed: false,
   sidebarGroup: null,
-  pinnedGroups: [],
   panelCollapsed: false,
   inputExpanded: false,
   selectedSkills: [],

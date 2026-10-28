@@ -189,7 +189,6 @@ export async function buildAppSnapshot(
       domain: ui.sidebarDomain ?? null,
       collapsed: ui.sidebarCollapsed,
       group: ui.sidebarGroup ?? null,
-      pinnedGroups: ui.pinnedGroups,
     },
     paneWidths: ui.paneWidths,
     assistant: {

@@ -4,10 +4,9 @@
  * 主进程是工作区现场的唯一真相源；渲染层只消费 AppSnapshot.workspace。
  * 布局矩形由主进程计算，DOM 各区域直接消费矩形，不自行分栏或丈量。
  */
-import type { CSSProperties } from 'react';
 import { create } from 'zustand';
 import type { ListGroup } from '../../shared/lists';
-import type { LayoutSnapshot, Rect, ViewEntry } from '../../shared/types';
+import type { LayoutSnapshot, ViewEntry } from '../../shared/types';
 
 const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
@@ -20,7 +19,7 @@ interface WorkspaceState {
   groups: ListGroup[];
 }
 
-export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
+export const useWorkspaceStore = create<WorkspaceState>()(() => ({
   layout: null,
   views: [],
   groups: [],
@@ -29,15 +28,4 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
 /** 视图命令唯一出口（失败静默：主进程广播会把事实收敛回来）。 */
 export function runViewCommand(command: string, params?: unknown): void {
   void mainBridge?.cmd(command, params);
-}
-
-/** 布局矩形 → 内联绝对定位样式（DOM 各区域与原生视图共用同一份矩形）。 */
-export function rectStyle(rect: Rect): CSSProperties {
-  return {
-    position: 'absolute',
-    left: rect.x,
-    top: rect.y,
-    width: rect.width,
-    height: rect.height,
-  };
 }

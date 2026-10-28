@@ -3,7 +3,7 @@
  *
  * 主进程是事实源；这里只做 AppSnapshot / AppEvent → React 状态的投影。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AppSnapshot } from '../../shared/app';
 import type { AgentSnapshot, SessionMeta } from '../../shared/types';
 import { bridge } from './bridge';

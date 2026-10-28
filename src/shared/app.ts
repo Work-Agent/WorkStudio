@@ -115,7 +115,6 @@ export interface WorkspaceUiSlice {
     domain: string | null;
     collapsed: boolean;
     group: string | null;
-    pinnedGroups: string[];
   };
   paneWidths: { left: number; right: number };
   assistant: {
