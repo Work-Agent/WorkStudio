@@ -355,7 +355,7 @@ plugin-docx.zip
 | zip  | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
 | 本地 | 绝对路径 / `./plugins/csv`          | 原地加载，不复制                    |
 
-**可安装列表是一份 Markdown 文件**，一行一条来源；设置 → 插件页的「可安装」段直接渲染这份文件：
+**可安装清单是随源码维护的 Markdown 文件**（[PLUGINS.md](PLUGINS.md)），一行一条来源；构建时解析为静态列表，内联进主进程与插件设置页，运行期不再读 Markdown：
 
 ```markdown
 # 可安装插件
@@ -365,12 +365,14 @@ plugin-docx.zip
 - ./plugins/csv
 ```
 
-- **清单是唯一数据源**：页面不另存列表；添加 / 删除来源等价于改这份文件。
-- **插件目录统一**：`<appData>/plugins/` 下放 `registry.md`、`installed/`、`staging/`、`installed.json`；与工作区无关，和 `agent/` 下的 pi 资源分开。
+- **清单是编译期资产**：增删插件 = 改清单后重新构建；运行期不解析、不改写清单，清单写错则构建失败。
+- **页面直出**：插件设置页拿到的是构建期内联的数据，不依赖运行时读 Markdown。
 - **安装状态另算**：已安装 = `installed/` 下扫到且注册成功；卸载只删 `installed/<id>`，清单条目保留。
+- **临时安装只记状态**：手动 URL / 社区目录安装记在本机安装索引，不进清单。
+- **插件目录统一**：`<appData>/plugins/` 下放 `installed/`、`staging/`、`installed.json`；与工作区无关，和 `agent/` 下的 pi 资源分开。
 - **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `apiVersion` → 原子替换 `installed/<id>`。
 - **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm。
-- **无自动更新**：改清单 URL / hash 后重新安装；不静默更新。
+- **无自动更新**：改清单 URL / hash 后重新构建并重装；不静默更新。
 - **一次装配**：启动时扫描本地路径与 `installed/` → import `./ura` → 注册 → 建页面；安装 / 卸载下次启动生效。
 - **本地来源不复制**：开发时原地加载，改完重启即生效。
 
@@ -464,6 +466,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # 渲染进程（React + Tailwind）
 │   ├── plugins/              # 内置插件（随应用分发）
 │   └── shared/               # 主/渲染共享类型与样式
+├── PLUGINS.md                # 可安装插件清单（构建期解析进主进程与插件设置页）
 ├── docs/                     # 系统化设计（architecture）
 ├── index.html                # 渲染页面模板
 ├── electron.vite.config.ts   # 三端构建配置（main / preload / renderer）

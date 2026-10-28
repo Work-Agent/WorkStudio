@@ -486,6 +486,7 @@ Harness 是 WorkStudio 提供给 pi 的会话侧能力，不是独立产品层�
 - 清单声明 id / label / icon / page / settings / apiVersion；图标支持语义名或文件。
 - 注册入口登记 transport / codec / store / presenter / sidecar / list / view action。
 - 远程必须 `.zip` + `#sha256=`；本地路径原地加载。
+- 可安装清单随源码维护，构建期解析为静态数据，主进程与插件设置页共用；运行期不读、不写 Markdown。
 - 安装到 App 私有插件目录；安装 / 卸载下次启动生效。
 - 同 id 重复安装覆盖旧版本；不自动更新。
 

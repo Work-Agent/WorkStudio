@@ -197,7 +197,7 @@
       <header>
         <h1>WorkStudio 插件</h1>
         <p>
-          插件是自带页面与资源适配器的 zip 包。支持 zip 与本地路径；
+          插件是自带页面与资源适配器的 zip 包。可安装清单随应用版本发布；
           本地路径直接加载、不复制。安装 / 卸载后重启应用生效。
         </p>
       </header>
@@ -215,7 +215,7 @@
       <div class="hint" id="catalog-meta"></div>
       <div id="catalog-list"></div>
 
-      <div class="section-title">手动安装</div>
+      <div class="section-title">临时安装</div>
       <div class="install-row">
         <input
           id="source"
@@ -225,8 +225,9 @@
         />
         <button id="install" class="primary">安装</button>
       </div>
+      <div class="hint">临时安装只记本机安装状态，不写入随包清单。</div>
 
-      <div class="section-title">来源</div>
+      <div class="section-title">可安装插件</div>
       <div id="sources"></div>
 
       <div class="section-title">已加载插件（当前启动）</div>
@@ -239,6 +240,11 @@
       </p>
     </div>
     <div class="toast" id="toast"></div>
+
+    <!-- 构建期内联可安装清单；开发模式保留空槽位，由 IPC 回退。 -->
+    <script id="plugin-registry" type="application/json">
+      []
+    </script>
 
     <script>
       const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
@@ -280,29 +286,40 @@
       function renderSources() {
         const el = $('sources');
         if (sources.length === 0) {
-          el.innerHTML = '<div class="empty">还没有添加插件来源。</div>';
+          el.innerHTML = '<div class="empty">清单为空。</div>';
           return;
         }
         el.innerHTML = sources
           .map((p) => {
-            const title = p.name || p.path || p.source;
+            const title = p.label || p.name || p.path || p.source;
+            const installed = Boolean(p.name);
+            const action = installed
+              ? '<button class="danger" data-remove="' +
+                esc(p.source) +
+                '"' +
+                (busy ? ' disabled' : '') +
+                '>' +
+                (busy ? '处理中…' : '卸载') +
+                '</button>'
+              : '<button data-install="' +
+                esc(p.source) +
+                '"' +
+                (busy ? ' disabled' : '') +
+                '>' +
+                (busy ? '处理中…' : '安装') +
+                '</button>';
             return (
               '<div class="card"><div>' +
               '<div class="name">' +
               esc(title) +
               '<span class="badge">' +
-              esc(p.type) +
+              esc(installed ? '已安装' : p.type) +
               '</span></div>' +
               '<div class="meta">' +
               esc(p.source) +
               '</div></div>' +
-              '<button class="danger" data-remove="' +
-              esc(p.source) +
-              '"' +
-              (busy ? ' disabled' : '') +
-              '>' +
-              (busy ? '处理中…' : '卸载') +
-              '</button></div>'
+              action +
+              '</div>'
             );
           })
           .join('');
@@ -381,12 +398,37 @@
           .join('');
       }
 
-      async function load() {
+      function bakedRegistry() {
+        const el = $('plugin-registry');
+        if (!el) return [];
         try {
-          sources = await invoke('app:plugins.sources');
+          const data = JSON.parse(el.textContent || '[]');
+          return Array.isArray(data) ? data : [];
         } catch {
-          sources = [];
+          return [];
         }
+      }
+
+      function mergeSources(registry, runtime) {
+        const live = new Map(runtime.map((item) => [item.source, item]));
+        const merged = registry.map((item) => {
+          const current = live.get(item.source);
+          live.delete(item.source);
+          return current
+            ? { ...item, ...current, label: item.label || current.label }
+            : { ...item };
+        });
+        return merged.concat([...live.values()]);
+      }
+
+      async function load() {
+        let runtime = [];
+        try {
+          runtime = await invoke('app:plugins.sources');
+        } catch {
+          runtime = [];
+        }
+        sources = mergeSources(bakedRegistry(), runtime);
         try {
           loaded = await invoke('app:plugins.list');
         } catch {
@@ -417,17 +459,17 @@
         renderCatalog();
       }
 
-      async function install() {
-        const source = $('source').value.trim();
-        if (!source || busy) return;
+      async function install(source) {
+        const value = String(source ?? $('source').value).trim();
+        if (!value || busy) return;
         busy = true;
         renderSources();
         try {
-          const res = await invoke('app:plugins.install', { source });
+          const res = await invoke('app:plugins.install', { source: value });
           sources = res.sources;
           $('source').value = '';
           renderCatalog();
-          toast('已添加 ' + source + '，重启应用后生效');
+          toast('已安装 ' + value + '，重启应用后生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         } finally {
@@ -460,6 +502,8 @@
       $('sources').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-remove]');
         if (btn) void remove(btn.dataset.remove);
+        const installBtn = e.target.closest('[data-install]');
+        if (installBtn) void install(installBtn.dataset.install);
       });
       $('catalog-refresh').onclick = () => {
         void loadCatalog($('catalog-url').value.trim());

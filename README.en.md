@@ -356,7 +356,7 @@ plugin-docx.zip
 | zip    | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
 | Local  | Absolute path / `./plugins/csv`     | Loaded in place, not copied         |
 
-**The install catalog is a Markdown file**, one source per line; the “Installable” section of Settings → Plugins renders this file directly:
+**The install catalog is a Markdown file kept in source** ([PLUGINS.md](PLUGINS.md)), one source per line; it is parsed at build time into a static list inlined into the main process and the plugin settings page, and Markdown is no longer read at runtime:
 
 ```markdown
 # Installable plugins
@@ -366,12 +366,14 @@ plugin-docx.zip
 - ./plugins/csv
 ```
 
-- **The catalog is the single source of truth**: the page keeps no second list; adding or removing a source means editing this file.
-- **One plugin directory**: `<appData>/plugins/` holds `registry.md`, `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
+- **The catalog is a compile-time asset**: adding or removing a plugin means editing this file and rebuilding; the runtime neither parses nor rewrites it, and an invalid catalog fails the build.
+- **Rendered from build data**: the plugin settings page receives the catalog inlined at build time and never reads Markdown at runtime.
 - **Installed state is tracked apart**: installed = found under `installed/` and registered successfully; uninstalling only deletes `installed/<id>`, the catalog entry remains.
+- **Ad-hoc installs only record state**: manual URLs and community-catalog installs are recorded in the local install index, not in the catalog.
+- **One plugin directory**: `<appData>/plugins/` holds `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
 - **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `apiVersion` → atomically replace `installed/<id>`.
 - **Zip is self-contained**: dependencies are bundled into `dist` or shipped inside the zip as `node_modules`; nothing runs npm at install time.
-- **No auto-update**: change the catalog URL / hash and reinstall; updates are never silent.
+- **No auto-update**: change the catalog URL / hash, rebuild and reinstall; updates are never silent.
 - **One assembly pass**: at startup scan local paths and `installed/` → import `./ura` → register → build pages; install / uninstall take effect on restart.
 - **Local sources are not copied**: loaded in place during development, effective after a restart.
 
@@ -465,6 +467,7 @@ node node_modules/electron/install.js
 │   ├── renderer/             # renderer (React + Tailwind)
 │   ├── plugins/              # built-in plugins (shipped with the app)
 │   └── shared/               # types and styles shared by main / renderer
+├── PLUGINS.md                # installable plugin catalog (parsed at build time into main process and settings page)
 ├── docs/                     # systematic design (architecture)
 ├── index.html                # renderer page template
 ├── electron.vite.config.ts   # build config for the three targets (main / preload / renderer)

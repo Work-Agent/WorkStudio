@@ -1,10 +1,61 @@
-import { cpSync, existsSync, readdirSync, rmSync } from 'fs';
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { join, resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
 import * as CHANNELS from './src/shared/channels';
+import { parsePluginRegistry } from './src/shared/plugin-registry';
+
+const PLUGIN_REGISTRY_ID = 'virtual:plugin-registry';
+const PLUGIN_REGISTRY_FILE = resolve(__dirname, 'PLUGINS.md');
+const PLUGIN_REGISTRY_SLOT =
+  /(<script id="plugin-registry" type="application\/json">)[\s\S]*?(<\/script>)/;
+
+function readPluginRegistry() {
+  return parsePluginRegistry(
+    readFileSync(PLUGIN_REGISTRY_FILE, 'utf-8'),
+    'PLUGINS.md',
+  );
+}
+
+/**
+ * 可安装插件清单（PLUGINS.md）是编译期资产：构建时解析成静态数组，
+ * 主进程直接使用数据，运行期不读 Markdown；清单写错则构建失败。
+ */
+function pluginRegistry(): Plugin {
+  const resolvedId = `\0${PLUGIN_REGISTRY_ID}`;
+  return {
+    name: 'ws-plugin-registry',
+    enforce: 'pre',
+    resolveId(id) {
+      return id === PLUGIN_REGISTRY_ID ? resolvedId : null;
+    },
+    load(id) {
+      if (id !== resolvedId) return null;
+      this.addWatchFile(PLUGIN_REGISTRY_FILE);
+      const entries = readPluginRegistry();
+      this.info(`plugin registry: ${entries.length} entries`);
+      return `export const PLUGIN_REGISTRY = ${JSON.stringify(entries)};\n`;
+    },
+  };
+}
+
+/** 把清单数据内联进插件设置页（源码里保留空槽位，开发时由 IPC 回退）。 */
+function inlinePluginRegistry(html: string): string {
+  const data = JSON.stringify(readPluginRegistry()).replace(/</g, '\\u003c');
+  return html.replace(
+    PLUGIN_REGISTRY_SLOT,
+    (_match, open: string, close: string) => `${open}${data}${close}`,
+  );
+}
 
 /**
  * 内置插件（src/plugins：manifest + 静态页面）不参与打包，直接拷贝到 out/plugins。
@@ -31,6 +82,13 @@ function copyBuiltinPlugins(): Plugin {
           cpSync(join(settingsFrom, entry.name), join(settingsTo, entry.name), {
             recursive: true,
           });
+        }
+        const page = join(settingsTo, 'plugins', 'index.html');
+        if (existsSync(page)) {
+          const html = readFileSync(page, 'utf-8');
+          const next = inlinePluginRegistry(html);
+          if (next === html) this.warn('plugin registry slot missing in page');
+          else writeFileSync(page, next, 'utf-8');
         }
       }
       this.info(`copied builtin plugins → ${to}`);
@@ -100,7 +158,7 @@ function renamePiNodeGlobals(): Plugin {
  */
 export default defineConfig({
   main: {
-    plugins: [renamePiNodeGlobals(), copyBuiltinPlugins()],
+    plugins: [pluginRegistry(), renamePiNodeGlobals(), copyBuiltinPlugins()],
     build: {
       outDir: 'out/main',
       // 依赖全部打进主进程 bundle（pi + 其依赖）：打包时不再依赖 node_modules
