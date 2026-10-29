@@ -4,9 +4,10 @@
 // 内置插件静态装载（随应用构建），已安装插件动态 import 其 exports["./ura"]。
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { uraRegistry, type UraRegistry } from '../ura/registry';
+import { isWithin } from '../paths';
 import * as uraSdk from '../ura/sdk';
 import type { PluginInfo } from '../../shared/types';
 import { scanPluginPackages, type PluginPackage } from './packages';
@@ -109,7 +110,7 @@ export class PluginHost {
     for (const pkg of this.packages.values()) {
       for (const page of [pkg.page, pkg.settings]) {
         if (!page) continue;
-        if (within(dirname(page), file)) return true;
+        if (isWithin(dirname(page), file)) return true;
       }
     }
     return false;
@@ -192,11 +193,6 @@ export class PluginHost {
   private get registry(): UraRegistry {
     return this.options.registry ?? uraRegistry;
   }
-}
-
-function within(dir: string, file: string): boolean {
-  const rel = relative(dir, file);
-  return !rel.startsWith('..') && !isAbsolute(rel);
 }
 
 function messageOf(error: unknown): string {

@@ -15,7 +15,7 @@ import {
 } from 'node:fs/promises';
 import { statSync, watch as fsWatch, watchFile, unwatchFile } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathCodec } from '../../paths';
 import type {
   ChangeEvent,
   ListEntry,
@@ -195,13 +195,10 @@ function filePath(ref: string): string {
   const parsed = parseRef(ref);
   if (parsed.scheme !== 'file')
     throw new UraError('transport.mismatch', `非 file 资源：${ref}`);
-  const raw = parsed.authority
-    ? `//${parsed.authority}${parsed.path}`
-    : parsed.path;
   try {
-    return fileURLToPath(`file://${raw}`);
+    return pathCodec.refToFs(parsed);
   } catch {
-    return decodeURIComponent(raw);
+    throw new UraError('resource.invalid', `资源标识无法解析：${ref}`);
   }
 }
 

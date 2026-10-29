@@ -4,7 +4,7 @@
  * preload / partition / 页面 URL 的单一解析点；ViewHost 只消费本模块结果。
  */
 import type { WebPreferences } from 'electron';
-import { preloadFile, rendererFile } from '../../paths';
+import { pathCodec, preloadFile, rendererFile } from '../../paths';
 
 export type PreloadName =
   | 'workbench'
@@ -19,27 +19,22 @@ export function preloadPath(name: PreloadName): string {
   return preloadFile(name);
 }
 
-/** 渲染层页面 URL（dev = Vite dev server；prod = out/renderer/<page>.html）。 */
+/** 渲染层页面 URL（dev = Vite dev server；prod = file URL，路径由 pathCodec 统一处理）。 */
 export function pageUrl(page: 'index' | 'assistant' | 'overlay'): string {
   const devServer = process.env['ELECTRON_RENDERER_URL'];
   const file = page === 'index' ? 'index.html' : `${page}.html`;
   if (devServer) return `${devServer.replace(/\/$/, '')}/${file}`;
-  return `file://${rendererFile(file)}`;
+  return pathCodec.fsToFileUrl(rendererFile(file));
 }
 
 /**
  * 插件页 / 设置页的 app:// 地址。
  *
- * 只编码路径段、保留斜杠：页面里的相对资源（./assets/…）才能解析到
- * 同一插件目录；整段 encodeURIComponent 会把斜杠也编码掉，导致
- * app://page/assets/… 落到协议根目录而被 containsPage 拒绝。
+ * 路径与编码由 pathCodec 统一处理（URL 侧分隔符恒 '/'、段内编码），
+ * 页面里的相对资源（./assets/…）才能解析到同一插件目录。
  */
 export function pageUrlFor(file: string): string {
-  const normalized = file.replace(/\\/g, '/');
-  return `app://page${normalized
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')}`;
+  return `app://page${pathCodec.fsToUrlPath(file)}`;
 }
 
 /**

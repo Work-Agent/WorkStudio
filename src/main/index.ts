@@ -73,7 +73,7 @@ import { ListService } from './app/lists/list-service';
 import { computeLayout } from '../shared/layout-engine';
 import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
-import { mainDir, rendererFile } from './paths';
+import { mainDir, pathCodec, rendererFile } from './paths';
 
 const log = createLogger('main');
 const isDev = !app.isPackaged;
@@ -144,10 +144,16 @@ protocol.registerSchemesAsPrivileged([
 function handleAppRequest(request: Request): Response | Promise<Response> {
   try {
     const url = new URL(request.url);
-    if (url.hostname !== 'page')
+    // UNC（app://page//host/…）不在页面协议范围内：页面路径恒为本机绝对路径
+    if (url.hostname !== 'page' || url.pathname.startsWith('//'))
       return new Response('Not found', { status: 404 });
-    const file = decodeURIComponent(url.pathname).replace(/^\/+/, '/');
-    if (!file.startsWith('/'))
+    let file: string;
+    try {
+      file = pathCodec.urlPathToFs(url.pathname);
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+    if (!path.isAbsolute(file))
       return new Response('Not found', { status: 404 });
     if (!uraRuntime?.host.containsPage(file) && !containsSettingsPage(file))
       return new Response('Forbidden', { status: 403 });
