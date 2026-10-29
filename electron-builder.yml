@@ -24,8 +24,11 @@ electronFuses:
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
 
+# 安装包文件名不含版本号：Release 资产名保持稳定，
+# README 里的 /releases/latest/download/<name> 直链可以长期指向最新版本。
 mac:
   category: public.app-category.productivity
+  artifactName: ${productName}-mac-${arch}.${ext}
   # ad-hoc 签名：fuses 会改写二进制，原签名失效后 macOS 会直接 SIGKILL。
   # 正式分发改为 Developer ID（或经 CSC_LINK / CSC_IDENTITY_AUTO_DISCOVERY 注入证书）。
   identity: '-'
@@ -34,6 +37,7 @@ mac:
     - zip
 
 win:
+  artifactName: ${productName}-win-${arch}.${ext}
   target:
     - nsis
 
@@ -44,6 +48,7 @@ nsis:
 linux:
   category: Utility
   maintainer: qingo <97383102@qq.com>
+  artifactName: ${productName}-linux-${arch}.${ext}
   target:
     - AppImage
     - deb

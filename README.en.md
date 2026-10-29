@@ -10,6 +10,12 @@
 >
 > The systematic design is in [`docs/architecture.md`](./docs/architecture.md): scopes · data models · contracts · AppHost · lists / views / resources / capabilities · extensions · acceptance. This document covers requirements and key modules; that one is the systematic design; the two do not overlap.
 
+## Download
+
+[![Download](https://img.shields.io/badge/Download-Releases-2ea44f?style=for-the-badge)](https://github.com/Work-Agent/WorkStudio/releases/latest)
+
+The button opens the Releases page; pick the asset for your platform from the latest release: `WorkStudio-mac-arm64.dmg` (Apple Silicon) or `WorkStudio-mac-x64.dmg` (Intel) for macOS, `WorkStudio-win-x64.exe` for Windows, `WorkStudio-linux-x64.AppImage` for Linux.
+
 ## 1. Where we are
 
 ### 1.1 How vertical agents differ
@@ -480,6 +486,20 @@ node node_modules/electron/install.js
 - Build output `out/{main,preload,renderer}` and packaging output `dist/` are not committed.
 - macOS local builds use ad-hoc signing (`identity: '-'`): fuses rewrite the binary, so it must be re-signed or the system kills the app; switch to a Developer ID or inject a certificate via `CSC_LINK` for distribution.
 - Installers are produced on the matching platform (or in CI): a macOS host builds mac targets only by default; Windows / Linux targets belong to CI.
+
+Releases are triggered by a tag: the tag version must match `version` in `package.json`, otherwise the packaging jobs fail.
+
+```bash
+# 1. bump version in package.json to match the tag you are about to create
+git commit -am "chore: release v0.1.1"
+git push
+
+# 2. create and push the tag, which triggers the Release workflow
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (arm64 / x64), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Merge `ci.yml` first, then `release.yml` together with the first tag.
 
 ### 7.5 Stack
 
