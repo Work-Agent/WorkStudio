@@ -245,6 +245,23 @@
             })[c],
         );
 
+      const ROOT_SOURCES = {
+        flag: '命令行 --data-dir',
+        env: '环境变量 WA_DATA_DIR',
+        pointer: '界面设置',
+        portable: '便携目录',
+        default: '系统默认位置',
+      };
+
+      const rootRow = (path, source) =>
+        '<div class="row"><div class="label">数据根<span>' +
+        esc(ROOT_SOURCES[source] || source || '默认') +
+        ' · 重启后生效</span></div><div class="path" title="' +
+        esc(path) +
+        '">' +
+        esc(path) +
+        '</div><button data-set-root="1">更改…</button></div>';
+
       const pathRow = (label, hint, path) =>
         '<div class="row"><div class="label">' +
         esc(label) +
@@ -273,10 +290,11 @@
             '主题 / 栏宽 / 打开集合 / 会话现场',
             v.uiStateFile,
           ) +
-          pathRow('资源派生数据', '资源地图 / 网页快照', v.resourcesDir);
+          pathRow('站点快照', '白名单域归档（随内容版本管理）', v.sitesDir);
 
         $('card-config').innerHTML =
           '<h3>配置与凭证</h3>' +
+          rootRow(v.dataRoot, v.dataRootSource) +
           pathRow('全局设置', 'settings.json', v.globalSettings) +
           pathRow('模型目录', '自定义供应商与模型', v.modelsJson) +
           pathRow('凭证库', 'API Key / OAuth（值不出主进程）', v.authJson);
@@ -370,6 +388,14 @@
             (err) =>
               toast(err && err.message ? err.message : String(err), true),
           );
+          return;
+        }
+        if (e.target.closest('[data-set-root]')) {
+          void invoke('app:storage.setDataRoot')
+            .then(() => refresh())
+            .catch((err) =>
+              toast(err && err.message ? err.message : String(err), true),
+            );
           return;
         }
         if (e.target.closest('[data-edit-dir]')) {

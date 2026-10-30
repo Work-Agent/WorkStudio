@@ -1,12 +1,13 @@
 /**
  * UiStateService —— 用户操作状态的主进程真相源（README.md §三 / §6.1）。
  *
- * 存储：<agentDir>/ws/<wsId>/ui-state.json（按工作区隔离）。
+ * 存储：<workspaces/<wsId>/ui-state.json（工作区现场；主题除外）。
+ * 主题属应用级偏好，寄存 <data-root>/settings.json 的 workspaceStudio 字段。
  * 写策略：内存缓存 + 标脏 + 500ms 防抖 + 退出强制 flush；原子写（tmp → rename）。
  * 广播：AppSnapshot 中的 ui / layout 切片。
  * 主题：本服务是主题真相源，启动 / 切换 / 工作区挂载时收敛 nativeTheme + WCO 覆盖层。
  */
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { BrowserWindow, nativeTheme } from 'electron';
 import {
   existsSync,
   mkdirSync,
@@ -21,6 +22,7 @@ import {
   TITLEBAR_OVERLAY_COLORS,
 } from '../../shared/titlebar';
 import { getWorkspaceBase } from '../agent/workspace';
+import { readUserPreferences, writeUserPreferences } from '../preferences';
 
 const SCHEMA_VERSION = 2;
 
@@ -61,7 +63,9 @@ export class UiStateService {
     const base = getWorkspaceBase(wsId);
     mkdirSync(base, { recursive: true });
     this.file = join(base, 'ui-state.json');
-    this.state = this.sanitize(this.load());
+    const loaded = this.sanitize(this.load());
+    // 主题来自应用级偏好，不随工作区变化
+    this.state = { ...loaded, theme: readUserPreferences().theme };
     this.applyNativeTheme();
     this.broadcast();
   }
@@ -84,7 +88,11 @@ export class UiStateService {
     const themeChanged =
       patch.theme !== undefined && patch.theme !== this.state.theme;
     this.state = { ...this.state, ...patch };
-    if (themeChanged) this.applyNativeTheme();
+    if (themeChanged) {
+      // 应用级偏好：与 pi 的 global settings 同文件、同命名空间
+      writeUserPreferences({ theme: this.state.theme });
+      this.applyNativeTheme();
+    }
     this.markDirty();
     this.broadcast();
     for (const cb of this.listeners) cb(this.state);
@@ -149,7 +157,9 @@ export class UiStateService {
       const raw = JSON.parse(
         readFileSync(this.file, 'utf-8'),
       ) as Partial<UiState>;
-      return { ...DEFAULTS, ...raw, __version__: SCHEMA_VERSION };
+      // theme 由应用级偏好提供，文件里即使存在也忽略
+      const { theme: _ignored, ...workspaceState } = raw;
+      return { ...DEFAULTS, ...workspaceState, __version__: SCHEMA_VERSION };
     } catch {
       return { ...DEFAULTS };
     }
@@ -169,17 +179,13 @@ export class UiStateService {
     if (!this.dirty || !this.file) return;
     const tmp = `${this.file}.tmp`;
     try {
-      writeFileSync(tmp, JSON.stringify(this.state, null, 2), 'utf-8');
+      // 主题属应用级偏好，不写进工作区现场
+      const { theme: _theme, ...workspaceState } = this.state;
+      writeFileSync(tmp, JSON.stringify(workspaceState, null, 2), 'utf-8');
       renameSync(tmp, this.file);
       this.dirty = false;
     } catch (e) {
       console.error('[ui-state] flush failed:', e);
     }
-  }
-
-  /** 退出前悬挂 flush。 */
-  registerQuitFlush(): void {
-    app.on('before-quit', () => this.flushNow());
-    app.on('will-quit', () => this.flushNow());
   }
 }

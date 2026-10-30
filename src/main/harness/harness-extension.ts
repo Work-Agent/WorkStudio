@@ -27,7 +27,7 @@ export function createHarnessExtension(
 ): InlineExtension {
   return (pi) => {
     const browserAutomation = deps.getBrowserAutomation();
-    const snapshots = new SiteSnapshots(deps.ura, deps.plugins, deps.workspace);
+    const snapshots = new SiteSnapshots(deps.ura, deps.workspace);
     const tools = [
       ...createUraTools(deps.ura),
       ...(browserAutomation

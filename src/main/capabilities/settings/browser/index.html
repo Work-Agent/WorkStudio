@@ -193,15 +193,14 @@
         <ul id="list"></ul>
         <div class="empty" id="empty" hidden>白名单为空。</div>
         <p class="hint">
-          列表中的域名才会归档；名单外页面只作为临时网页标签存在。
+          列表中的域名才会归档；名单外页面只作为临时网页标签存在。白名单按工作区保存。
         </p>
       </div>
     </div>
     <div class="toast" id="toast"></div>
     <script>
       const invoke = window.extension.invoke;
-      const PLUGIN_ID = 'browser';
-      const KEY = 'allowlist';
+
       const $ = (id) => document.getElementById(id);
       let domains = [];
 
@@ -237,11 +236,7 @@
 
       async function save(next) {
         domains = next;
-        await invoke('app:plugin.settings.set', {
-          pluginId: PLUGIN_ID,
-          key: KEY,
-          value: domains,
-        });
+        await invoke('app:browser.setAllowlist', { domains });
         render();
       }
 
@@ -279,12 +274,7 @@
 
       (async () => {
         try {
-          domains =
-            (await invoke('app:plugin.settings.get', {
-              pluginId: PLUGIN_ID,
-              key: KEY,
-              fallback: [],
-            })) || [];
+          domains = (await invoke('app:browser.allowlist')) || [];
         } catch {
           domains = [];
         }

@@ -17,7 +17,13 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'fs';
 import { ipcMain } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -45,7 +51,6 @@ import {
   getSessionsDir,
   getWorkspaceBase,
   getWorkspaceId,
-  getWorkspaceResourcesDir,
   initAgentDir,
   listWorkspaces,
   registerWorkspace,
@@ -73,16 +78,38 @@ import { ListService } from './app/lists/list-service';
 import { computeLayout } from '../shared/layout-engine';
 import { preloadPath } from './capabilities/webview/presets';
 import { createLogger } from './log';
-import { mainDir, rendererFile } from './paths';
+import { getDataRoot, getDataRootSource, initDataRoot } from './data-root';
+import { readWindowState, writeWindowState } from './window-state';
+import {
+  bootLogFile as bootLogPath,
+  mainDir,
+  pluginCatalogFile,
+  pluginCatalogUrlFile,
+  pluginDataRoot,
+  pluginsRoot,
+  logsDir,
+  rendererFile,
+  uraBindingsFile,
+} from './paths';
 
 const log = createLogger('main');
 const isDev = !app.isPackaged;
 
 /**
- * 启动诊断日志（<userData>/boot.log，每次启动重建）。
+ * 数据根：写任何数据之前解析（可配置，见 architecture.md §2.6）。
+ * 失败则启动链直接断掉，避免落到错误的目录。
+ */
+const dataRootInfo = initDataRoot();
+// 顶层目录就位（渲染/日志/插件数据都要先有目录才能写）
+for (const dir of [logsDir(), pluginsRoot(), pluginDataRoot()]) {
+  mkdirSync(dir, { recursive: true });
+}
+
+/**
+ * 启动诊断日志（<data-root>/logs/boot.log，每次启动重建）。
  * 打包后主进程 stdout 不可见，启动期故障靠这份日志定位（也便于用户反馈）。
  */
-const bootLogFile = path.join(app.getPath('userData'), 'boot.log');
+const bootLogFile = bootLogPath();
 try {
   writeFileSync(bootLogFile, '');
 } catch {
@@ -108,6 +135,16 @@ process.on('unhandledRejection', (e) =>
 bootLog(
   `boot: packaged=${app.isPackaged} pid=${process.pid} cwd=${process.cwd()}`,
 );
+bootLog(`data-root: ${dataRootInfo.root} (${dataRootInfo.source})`);
+
+/**
+ * 单实例：数据根是共享状态（ui-state / 工作区注册表 / Chromium 缓存），
+ * 两个主进程会互相覆盖。第二次启动只把已有窗口拉到前台。
+ */
+if (!app.requestSingleInstanceLock()) {
+  bootLog('single-instance: 已有实例在运行，本进程退出');
+  app.exit(0);
+}
 
 // live-dev（.pi/extensions/dev-mode）：WA_DEBUG_PORT 时开放 CDP。
 if (
@@ -401,33 +438,50 @@ function registerShortcuts(): void {
 
 // ─── 装配 ─────────────────────────────────────────────────
 
+app.on('second-instance', () => {
+  const win = winRef;
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 app.whenReady().then(async () => {
   bootLog('whenReady');
   // 1. agentDir + 工作区（首装引导）
-  initAgentDir(path.join(app.getPath('userData'), 'agent'));
+  initAgentDir(getDataRoot());
   if (listWorkspaces().length === 0) {
     ensureDefaultWorkspace(app.getPath('documents'));
   }
-  workspacePath = getCurrentWorkspace();
+  // 恢复上次的窗口工作区；记录失效则回落到最近打开的工作区
+  const restored = readWindowState().workspaceId;
+  const restoredMeta = restored
+    ? listWorkspaces().find((meta) => getWorkspaceId(meta.path) === restored)
+    : undefined;
+  workspacePath =
+    restoredMeta && existsSync(restoredMeta.path)
+      ? restoredMeta.path
+      : getCurrentWorkspace();
   const wsId = registerWorkspace(workspacePath);
+  writeWindowState({ workspaceId: wsId });
   bootLog(`workspace: ${workspacePath} (${wsId})`);
 
   workspaceManager = new WorkspaceManager();
 
   // 2.5 URA（资源管道 + 插件包）
   pluginService = new PluginService({
-    root: path.join(app.getPath('userData'), 'plugins'),
+    root: pluginsRoot(),
     cwd: () => workspacePath,
   });
   await pluginService.start();
   pluginCatalog = new PluginCatalogService({
-    cacheFile: path.join(app.getPath('userData'), 'plugin-catalog.md'),
-    urlFile: path.join(app.getPath('userData'), 'plugin-catalog-url.txt'),
+    cacheFile: pluginCatalogFile(),
+    urlFile: pluginCatalogUrlFile(),
   });
   await pluginCatalog.start();
   uraRuntime = await createUraRuntime({
-    dataRoot: path.join(app.getPath('userData'), 'plugin-data'),
-    bindingFile: path.join(app.getPath('userData'), 'ura-bindings.json'),
+    dataRoot: pluginDataRoot(),
+    bindingFile: uraBindingsFile(),
     workspace: () => workspacePath,
     pluginRoots: [
       ...pluginService.roots(),
@@ -463,7 +517,6 @@ app.whenReady().then(async () => {
   // 4. UiState（真相源 + 主题收敛）
   uiState.attachWindowSource(() => winRef);
   uiState.attachStateBroadcaster(() => broadcastState());
-  uiState.registerQuitFlush();
   uiState.attachWorkspace(wsId);
 
   // 启动收敛：打开集合只保留仍存在的会话文件（外部删除 / 旧现场不留幽灵标签）
@@ -535,6 +588,7 @@ app.whenReady().then(async () => {
       onWorkspaceChange: (next) => {
         workspacePath = next;
         const nextWsId = registerWorkspace(next);
+        writeWindowState({ workspaceId: nextWsId });
         watchWorkspaceRoot();
         uraRuntime?.map.restart();
         if (viewHost && appHost) {
@@ -680,7 +734,6 @@ app.whenReady().then(async () => {
       const page = await browserAutomation.snapshot();
       const archived = await new SiteSnapshots(
         uraRuntime!.ura,
-        uraRuntime!.host,
         () => workspacePath,
       ).capture(page);
       return {
@@ -697,6 +750,7 @@ app.whenReady().then(async () => {
         at: Date.now(),
       });
     },
+    workspaceId: () => getWorkspaceId(workspacePath),
     storageInfo: () => {
       const wsId = getWorkspaceId(workspacePath);
       const agentDir = getAgentDir();
@@ -712,6 +766,8 @@ app.whenReady().then(async () => {
         /* 未配置 / 损坏按未配置处理 */
       }
       return {
+        dataRoot: getDataRoot(),
+        dataRootSource: getDataRootSource(),
         workspacePath,
         workspaceId: wsId,
         agentDir,
@@ -723,10 +779,10 @@ app.whenReady().then(async () => {
         defaultSessionsDir: getSessionsDir(wsId),
         sessionsDirConfigured: configuredSessionDir,
         uiStateFile: path.join(getWorkspaceBase(wsId), 'ui-state.json'),
-        resourcesDir: getWorkspaceResourcesDir(wsId),
+        sitesDir: path.join(workspacePath, 'sites'),
         pluginsDirs: [
           path.join(app.getAppPath(), 'src', 'plugins'),
-          path.join(app.getPath('userData'), 'plugins'),
+          pluginsRoot(),
         ],
         bootLog: bootLogFile,
         versions: {
@@ -780,6 +836,22 @@ app.whenReady().then(async () => {
   });
 
   bootLog('router + facilities ready');
+
+  // 生产 CSP：必须在建窗之前注册，否则首屏响应可能绕过拦截器
+  if (!isDev) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'",
+          ],
+        },
+      });
+    });
+    bootLog('csp: registered');
+  }
+
   // 8. 主窗口 + 视图挂载
   winRef = createWindow();
   viewHost.attach(winRef);
@@ -805,20 +877,6 @@ app.whenReady().then(async () => {
 
   // 插件页协议（默认 session：工作台窗口；各原生视图 partition 在创建视图时注册）
   registerAppProtocol(session.defaultSession);
-
-  // 生产 CSP（工作台页面；插件页自持 CSP）
-  if (!isDev) {
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'",
-          ],
-        },
-      });
-    });
-  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

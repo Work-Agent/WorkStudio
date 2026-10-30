@@ -52,6 +52,8 @@ export class PluginService {
   async start(): Promise<void> {
     await mkdir(this.options.root, { recursive: true });
     await mkdir(this.installedRoot(), { recursive: true });
+    // 解压沙盒：目录常驻、内容瞬态——启动清空，覆盖安装中断留下的残留
+    await rm(this.stagingRoot(), { recursive: true, force: true });
     await mkdir(this.stagingRoot(), { recursive: true });
     this.installed = await this.readInstalled();
   }

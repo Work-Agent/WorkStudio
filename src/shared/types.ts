@@ -90,6 +90,10 @@ export interface ModelCatalogItem {
 
 /** 存储与数据设置页视图（路径全部为绝对路径；凭证文件不含内容）。 */
 export interface StorageView {
+  /** 数据根（可配置，见 architecture.md §2.6）。 */
+  dataRoot: string;
+  /** 根的来源：flag / env / pointer / portable / default。 */
+  dataRootSource: string;
   workspacePath: string;
   workspaceId: string;
   agentDir: string;
@@ -102,7 +106,8 @@ export interface StorageView {
   /** settings.json 里显式配置的 sessionDir（null = 未配置）。 */
   sessionsDirConfigured: string | null;
   uiStateFile: string;
-  resourcesDir: string;
+  /** 站点快照目录（落在用户工作区内，跟随内容）。 */
+  sitesDir: string;
   pluginsDirs: string[];
   bootLog: string;
   versions: {

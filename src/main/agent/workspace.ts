@@ -1,10 +1,10 @@
 /**
  * 工作区注册表（architecture.md §5.3）—— 目录自描述，无独立「当前选中」文件。
  *
- * <userData>/agent/                     ← agentDir（应用自持，与用户全局 pi 隔离）
+ * <data-root>/                        ← 即 pi 的 agent dir（数据根，可配置）
  *   models.json / auth.json / settings.json
- *   ws/<wsId>/workspace.json            ← { path, createdAt, lastOpenedAt }（唯一事实源）
- *     settings.json / sessions/ / ui-state.json / resources/
+ *   workspaces/<wsId>/workspace.json   ← { path, createdAt, lastOpenedAt }（唯一事实源）
+ *     settings.json / sessions/ / ui-state.json
  *
  * 「当前工作区」= lastOpenedAt 最大且路径仍存在者；切换 = 注册（bump lastOpenedAt）。
  */
@@ -18,6 +18,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { basename, join } from 'path';
+import { getDataRoot } from '../data-root';
 
 let agentRoot: string | null = null;
 
@@ -48,15 +49,11 @@ export interface WorkspaceMeta {
 
 /** per-workspace 数据根目录（sessions / settings.json / ui-state.json 的父目录）。 */
 export function getWorkspaceBase(wsId: string): string {
-  return join(getAgentDir(), 'ws', wsId);
+  return join(getDataRoot(), 'workspaces', wsId);
 }
 
 export function getSessionsDir(wsId: string): string {
   return join(getWorkspaceBase(wsId), 'sessions');
-}
-
-export function getWorkspaceResourcesDir(wsId: string): string {
-  return join(getWorkspaceBase(wsId), 'resources');
 }
 
 /** 注册（= 打开）工作区：mkdir + 写自描述 workspace.json（幂等）。 */
@@ -88,7 +85,7 @@ export function registerWorkspace(workspacePath: string): string {
 
 /** 全部已注册工作区（lastOpenedAt 降序；孤儿目录跳过）。 */
 export function listWorkspaces(): WorkspaceMeta[] {
-  const root = join(getAgentDir(), 'ws');
+  const root = join(getDataRoot(), 'workspaces');
   let ids: string[];
   try {
     ids = readdirSync(root, { withFileTypes: true })

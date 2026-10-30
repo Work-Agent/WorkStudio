@@ -15,6 +15,7 @@
  * 插件页经 ws:ext 走 app:* 前缀（同一命令目录，语义不复制）。
  */
 import {
+  app,
   dialog,
   ipcMain,
   shell,
@@ -35,6 +36,8 @@ import {
 } from '../../shared/channels';
 import type { ListItem } from '../../shared/lists';
 import { fileRef } from '../../shared/ura';
+import { getDataRoot, setDataRoot } from '../data-root';
+import { readBrowserAllowlist, writeBrowserAllowlist } from '../preferences';
 import type { AgentHost } from '../agent/agent-host';
 import type { SessionAdapter } from '../app/session-adapter';
 import type { ListService } from '../app/lists/list-service';
@@ -89,6 +92,8 @@ export interface RouterDeps {
   setViewport: (size: { width: number; height: number }) => void;
   /** 存储与数据设置页视图（路径真相由 L3 装配持有）。 */
   storageInfo: () => StorageView;
+  /** 当前工作区标识（工作区级策略的落点，如浏览器白名单）。 */
+  workspaceId: () => string;
   /** 插件设置变化（侧栏集合需要重算）。 */
   onSettingsChanged?: (pluginId: string) => void;
   /** 当前网页快照（提取 + 白名单归档）。 */
@@ -530,6 +535,47 @@ export async function invoke(
         const message = await shell.openPath(target);
         return ok(message || null);
       }
+      case 'config.browser.allowlist':
+        return ok(readBrowserAllowlist(d.workspaceId()));
+      case 'config.browser.setAllowlist':
+        return ok(
+          writeBrowserAllowlist(
+            d.workspaceId(),
+            Array.isArray(p.domains) ? (p.domains as string[]) : [],
+          ),
+        );
+      case 'config.storage.setDataRoot': {
+        // 数据根：只写指针，重启后生效（发现式路径，不支持热切换）。
+        const win = d.getWindow();
+        const picked = await dialog.showOpenDialog(
+          win ?? (undefined as never),
+          {
+            title: '选择数据根',
+            defaultPath: getDataRoot(),
+            properties: ['openDirectory', 'createDirectory'],
+          },
+        );
+        if (picked.canceled || !picked.filePaths[0]) return ok(null);
+        const next = picked.filePaths[0]!;
+        if (next === getDataRoot()) return ok({ restarted: false });
+        setDataRoot(next);
+        const confirm = await dialog.showMessageBox(
+          win ?? (undefined as never),
+          {
+            type: 'info',
+            message: '数据根已更改',
+            detail: `${next}\n\n需要重启应用后生效。`,
+            buttons: ['立即重启', '稍后'],
+            defaultId: 0,
+            cancelId: 1,
+          },
+        );
+        if (confirm.response === 0) {
+          app.relaunch();
+          app.exit(0);
+        }
+        return ok({ restarted: confirm.response === 0 });
+      }
 
       // ═══ URA（资源管道） ═══
       case 'ura.read': {
@@ -784,11 +830,7 @@ export async function invoke(
         );
       case 'views.openBrowser': {
         const url = String(p.url ?? '');
-        const allowlist = await d.registry.getSetting<string[]>(
-          'browser',
-          'allowlist',
-          [],
-        );
+        const allowlist = readBrowserAllowlist(d.workspaceId());
         return ok(
           d.viewHost.open({
             type: 'browser',
@@ -974,6 +1016,9 @@ async function invokeExt(
     // 存储与数据插件页
     'app:storage.view': 'config.storage.view',
     'app:storage.open': 'config.storage.open',
+    'app:storage.setDataRoot': 'config.storage.setDataRoot',
+    'app:browser.allowlist': 'config.browser.allowlist',
+    'app:browser.setAllowlist': 'config.browser.setAllowlist',
     // 资源索引插件页（在资源面板打开文档）
     'app:packages.catalog': 'config.packages.catalog',
     'app:packages.list': 'config.packages.list',

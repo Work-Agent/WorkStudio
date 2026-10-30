@@ -1,8 +1,11 @@
 // ─── 浏览器内建能力：站点集合 + 可访问性标记 ────────────────────────
 //
 // 一个白名单域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
-// 白名单存在浏览器设置（plugin-data/browser/settings.json，key = allowlist）。
+// 白名单属工作区策略：settings.json 的 workspaceStudio.browser.allowlist。
 
+import { fileURLToPath } from 'node:url';
+import { getWorkspaceId } from '../../agent/workspace';
+import { readBrowserAllowlist } from '../../preferences';
 import {
   registerList,
   registerPresenter,
@@ -36,7 +39,10 @@ const webDefinition: ListDefinition = {
 };
 
 const webProvider: ListProvider = async (ctx) => {
-  const allowlist = await ctx.settings.get<string[]>('allowlist', []);
+  // 白名单属工作区策略（同一次列表快照内工作区不变）
+  const allowlist = readBrowserAllowlist(
+    getWorkspaceId(fileURLToPath(ctx.workspace)),
+  );
   const groups = [];
   for (const domain of allowlist) {
     const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`;

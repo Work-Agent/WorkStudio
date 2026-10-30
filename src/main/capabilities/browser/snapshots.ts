@@ -1,22 +1,20 @@
 // ─── 网站快照（白名单域整理） ────────────────────────────────────────
 //
-// 只有白名单域（含子域）的页面才落盘；快照是已解码的 Markdown：
+// 只有白名单域（含子域）的页面才落盘；白名单属工作区策略（settings.json 的
+// workspaceStudio.browser.allowlist）。快照是已解码的 Markdown：
 // 头部 = url + Readability 的 title / excerpt，正文 = Readability 正文，
 // 尾部 = 可访问性结构。落在应用管理的 sites/<domain>/ 下，只有浏览器写入。
 
 import { createHash } from 'node:crypto';
 import { fileRef } from '../../../shared/ura';
+import { getWorkspaceId } from '../../agent/workspace';
 import type { BrowserSnapshot } from '../../harness/browser-contract';
-import type { PluginHost } from '../../plugins/host';
+import { readBrowserAllowlist } from '../../preferences';
 import type { Ura } from '../../ura/facade';
-
-const PLUGIN_ID = 'browser';
-const ALLOWLIST_KEY = 'allowlist';
 
 export class SiteSnapshots {
   constructor(
     private readonly ura: Ura,
-    private readonly host: PluginHost,
     private readonly workspace: () => string,
   ) {}
 
@@ -24,11 +22,7 @@ export class SiteSnapshots {
   async capture(page: BrowserSnapshot): Promise<{ ref: string } | null> {
     const domain = domainOf(page.url);
     if (!domain) return null;
-    const allowlist = await this.host.getSetting<string[]>(
-      PLUGIN_ID,
-      ALLOWLIST_KEY,
-      [],
-    );
+    const allowlist = readBrowserAllowlist(getWorkspaceId(this.workspace()));
     if (!allowlist.some((entry) => matches(domain, entry))) return null;
 
     const root = fileRef(this.workspace());
