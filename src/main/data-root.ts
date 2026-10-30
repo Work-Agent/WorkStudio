@@ -3,10 +3,13 @@
  *
  * 优先级：`--data-dir=` → `WA_DATA_DIR` → 指针文件 → 便携目录 → 系统默认位置。
  *
- * 指针文件固定放在**系统默认位置**（`appData/<产品名>/data-root.json`），
- * 不随数据根移动——否则改了根就再也找不到「用户选了哪个根」。
- * 解析完成后立即 `app.setPath('userData', root)`：Chromium 缓存、日志、
- * 单实例锁与应用数据落在同一根下。
+ * 目录分层（profile 根 = `appData/<产品名>`）：
+ *   <profile>/data/       应用数据根（pi 的 agent dir + 工作区，默认值）
+ *   <profile>/chromium/   Chromium 会话数据（缓存 / Cookies / 分区存储）
+ *   <profile>/data-root.json  指针：用户选择的根，必须在数据根之外
+ *
+ * 不把 `userData` 指到数据根：那会让 Chromium 的文件落进数据根，与
+ * pi 的配置、工作区现场混在一处。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -28,14 +31,24 @@ export interface DataRootInfo {
 
 let resolved: DataRootInfo | null = null;
 
-/** 系统默认位置（Electron 的 userData 默认值；setPath 之前调用才是默认值）。 */
-export function defaultDataRoot(): string {
+/** profile 根：平台给本应用的 appData 目录。 */
+export function profileDir(): string {
   return path.join(app.getPath('appData'), app.getName());
 }
 
-/** 指针文件：记录用户选择的根，始终位于默认位置下。 */
+/** 默认数据根：profile 下的 data/。 */
+export function defaultDataRoot(): string {
+  return path.join(profileDir(), 'data');
+}
+
+/** Chromium 会话数据目录：与数据根并列，不混入应用数据。 */
+export function chromiumDataDir(): string {
+  return path.join(profileDir(), 'chromium');
+}
+
+/** 指针文件：记录用户选择的根，固定在 profile 根下（数据根之外）。 */
 export function dataRootPointerFile(): string {
-  return path.join(defaultDataRoot(), POINTER_FILE);
+  return path.join(profileDir(), POINTER_FILE);
 }
 
 /** 解析并应用数据根（幂等；必须在写任何数据文件之前调用）。 */
@@ -43,7 +56,8 @@ export function initDataRoot(): DataRootInfo {
   if (resolved) return resolved;
   const info = resolveDataRoot();
   mkdirSync(info.root, { recursive: true });
-  app.setPath('userData', info.root);
+  // Chromium 会话数据单独收拢：数据根里只留应用自己的东西
+  app.setPath('sessionData', chromiumDataDir());
   resolved = info;
   return info;
 }

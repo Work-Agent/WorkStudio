@@ -157,7 +157,7 @@ interface ScopeEpochs {
 
 持久化只有一个数据根，根内按 **pi 原生 / 应用扩展** 两类组织：pi 有的概念一律沿用 pi 的位置与命名，应用只新增 pi 没有的概念。
 
-**根**：按 `--data-dir` → `WA_DATA_DIR` → 便携目录 → 系统默认位置 的优先级解析，解析后立即让平台缓存、日志与实例锁跟随同一根，避免数据与缓存分离。
+**根**：按 `--data-dir` → `WA_DATA_DIR` → 指针文件 → 便携目录 → 系统默认位置 的优先级解析。默认值为平台 profile 目录下的 `data/`；Chromium 的会话数据（缓存、Cookies、分区存储）固定在并列的 `chromium/`，指针文件放在 profile 根，三者互不混入。
 
 ```text
 <data-root>/                     pi 的 agent dir
