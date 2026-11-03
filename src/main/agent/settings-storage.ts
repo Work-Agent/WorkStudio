@@ -2,7 +2,7 @@
  * AppSpaceSettingsStorage —— pi SettingsManager 的 App 空间存储（architecture.md §5.3）。
  *
  * pi 的 settings 分层：global 落 <agentDir>/settings.json；project 层默认落项目内
- * .pi/settings.json。我们把 project 层搬到 App 空间（<agentDir>/ws/<wsId>/settings.json），
+ * .pi/settings.json。我们把 project 层搬到 App 空间（<agentDir>/workspaces/<wsId>/settings.json），
  * 与 sessions 同构：工作区隔离、不污染用户项目目录。
  *
  * 契约：SettingsStorage.withLock(scope, fn) —— fn 收到当前文件文本，返回新文本则写回。

@@ -169,6 +169,7 @@ Workspace（聚合根）
 - **开关粒度**：extensions 全局安装、工作区启用；skills 全局安装、工作区默认、会话激活。
 - **资源 / 页面 / 技能按级加载**：App 装全局资源与插件，Workspace 装工作区资源，Session 只做激活；所有资源目录都在 App 私有数据目录。
 - **与 pi CLI 独立**：pi 只作为库运行；不读 `~/.pi`，也不读真实工作区 `.pi`。
+- **配置目录**：数据根即 pi 的 agentDir；pi 原生配置沿用 pi 布局，project 层与场景收进 App 私有工作区目录；视图插件与 pi 扩展分属 `plugins/` 与 `extensions/`，详见[架构设计 §2.6–2.7](docs/architecture.md#26-存储布局)。
 - **单一通道**：渲染层只消费 AppSnapshot，只发 AppCommand；事件带 scope / epoch。
 - **依赖单向**：装配层 → 域服务层 → 能力层 → URA → pi；下层不知道上层。
 

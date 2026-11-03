@@ -172,7 +172,7 @@ interface EventFrame<T> {
 
 ### 2.6 存储布局
 
-持久化只有一个数据根，根内按 **pi 原生 / 应用扩展** 两类组织。
+持久化只有一个数据根，根内按 **pi 原生 / 应用扩展** 两类组织。pi 原生配置不是把 `~/.pi` 搬进来，而是让 pi 直接以数据根作为 agentDir；应用只补 pi 没有的概念。
 
 **根**：按 `--data-dir` → `WA_DATA_DIR` → 指针文件 → 便携目录 → 系统默认位置 的优先级解析。Chromium 会话数据固定在并列的 `chromium/`，指针文件放在 profile 根。
 
@@ -186,7 +186,7 @@ interface EventFrame<T> {
 ├── models.json
 ├── auth.json
 ├── AGENTS.md · SYSTEM.md · APPEND_SYSTEM.md
-├── extensions/                  用户扩展
+├── extensions/                  pi 扩展（包）
 ├── skills/                      用户技能
 ├── prompts/                     提示模板
 ├── themes/                      主题
@@ -230,6 +230,36 @@ interface EventFrame<T> {
 | 目录缓存、安装沙盒、日志         | 瞬态      | 应用       | 无，可重新生成          |
 | 工作区描述、场景、项目设置       | Workspace | 应用 + pi  | 丢失窗口现场 / 项目设置 |
 | 会话记录                         | Session   | pi         | 丢失会话历史            |
+
+### 2.7 配置面：pi 原生文件与应用扩展
+
+数据根就是 pi 的 **agentDir**，也是唯一配置根。`~/.pi` 与真实工作区的 `.pi` 不参与运行；设置页、模型页、扩展页和技能页写入的配置全部落在数据根内。下表路径均相对数据根。
+
+| 配置面          | 位置                                           | 写入方                   | 说明                                                                          |
+| --------------- | ---------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
+| 全局设置        | `settings.json`                                | pi 设置层 + 应用设置服务 | pi 全局设置、包声明、会话目录覆盖；应用偏好使用 `workspaceStudio` 命名空间    |
+| 项目设置        | `workspaces/<wsId>/settings.json`              | 应用设置服务             | pi 的 project 层；工作区策略与浏览器白名单；不写项目内的 `.pi/settings.json`  |
+| 模型目录        | `models.json`                                  | 模型配置服务             | 自定义 provider / model；写入后经 pi 模型校验，失败回滚；API Key 不回传渲染层 |
+| 凭证            | `auth.json`                                    | pi 登录链                | API Key / OAuth 凭证；与 `models.json` 分离                                   |
+| pi 扩展         | `extensions/`                                  | pi 包管理器              | 社区包安装位置；会话装配时按工作区策略加载                                    |
+| 技能            | `skills/`                                      | pi 资源加载器 + 技能服务 | 技能安装位置；按会话激活，激活集随会话上下文                                  |
+| 提示模板 / 主题 | `prompts/` · `themes/`                         | pi 资源加载器            | 沿用 pi 的发现规则                                                            |
+| 系统提示        | `AGENTS.md` · `SYSTEM.md` · `APPEND_SYSTEM.md` | pi 资源加载器            | 根级提示文件；工作区上下文另行注入                                            |
+| MCP / 快捷键    | `mcp.json` · `keybindings.json`                | pi                       | 原生配置，应用不解析内部结构                                                  |
+| 会话            | `workspaces/<wsId>/sessions/`                  | pi 会话管理器            | 默认按工作区隔离；`settings.sessionDir` 可覆盖，相对路径按工作区解析          |
+| 原生现场        | `workspaces/<wsId>/scene.json`                 | 应用                     | 侧栏 / 助手 / 栏宽 / 浮动几何，不属于 pi                                      |
+| 视图插件        | `plugins/`                                     | 应用插件宿主             | WorkStudio 视图插件，与 pi 的 `extensions/` 并列而不是合并                    |
+| 应用登记        | `ura-bindings.json` · `windows.json` · `logs/` | 应用                     | 资源绑定、窗口恢复、启动诊断                                                  |
+
+配置规则：
+
+- **pi 决定格式，应用决定位置**：pi 原生文件沿用 pi 的 schema、文件名与发现规则；应用只决定数据根，不把配置复制到 `~/.pi`。
+- **project 层搬进 App 空间**：pi 默认的 project 设置是项目内 `.pi/settings.json`；WorkStudio 通过设置存储适配器把它映射到 `workspaces/<wsId>/settings.json`，工作区切换只换文件，不污染用户项目。
+- **全局与项目两层合并**：读取顺序是 global ← project，嵌套对象深度合并，数组与标量由 project 覆盖；设置页同时展示两层落盘位置。
+- **`workspaceStudio` 是应用命名空间**：用户级 `theme` / `locale` 写在全局设置，工作区级 `browser.allowlist` 写在项目设置；写入只替换该命名空间，pi 的键与未知字段原样保留。
+- **写入边界清晰**：模型配置只写 `models.json`，凭证只走 `auth.json`；插件设置写 `plugins/data/<id>/settings.json`，不混入 pi 设置。
+- **视图插件 ≠ pi 扩展**：`plugins/` 是 WorkStudio 的页面 / URA 插件；`extensions/` 是 pi 的包。两者生命周期、安装入口与信任流程不同，文档和 UI 不合并。
+- **路径展示不暴露根内绝对路径**：数据根展示为 `app/`，当前工作区的 App 数据展示为 `app/workspace/`，用户工作区展示为 `workspace/`；设置页与地址栏共用同一格式化规则。
 
 ## 三、实现分层
 

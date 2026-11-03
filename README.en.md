@@ -169,6 +169,7 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 - **Switch granularity**: extensions are installed globally and enabled per workspace; skills are installed globally, defaulted per workspace, and activated per session.
 - **Resources / pages / skills load by level**: App loads global resources and plugins, the workspace loads workspace resources, the session only activates; all resource directories live under the app-private data directory.
 - **Independent from the pi CLI**: pi runs only as a library; neither `~/.pi` nor the real workspace `.pi` is read.
+- **Config layout**: the data root is pi's agentDir; pi-native config follows pi's layout, project settings and scene live under the app-private workspace directory; view plugins and pi extensions stay separate under `plugins/` and `extensions/`; see [architecture §2.6–2.7](docs/architecture.md#26-存储布局).
 - **One channel**: the renderer only consumes AppSnapshot and only sends AppCommand; events carry scope / epoch.
 - **One-way dependencies**: assembly → domain services → capabilities → URA → pi; lower layers do not know upper layers.
 
