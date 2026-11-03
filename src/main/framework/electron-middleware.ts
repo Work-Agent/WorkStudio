@@ -23,6 +23,10 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { LayoutSnapshot } from '../../shared/types';
+import {
+  TITLEBAR_HEIGHT,
+  TITLEBAR_OVERLAY_COLORS,
+} from '../../shared/titlebar';
 import { preloadPath } from '../capabilities/webview/presets';
 import { initDataRoot } from '../data-root';
 import { rendererFile } from '../paths';
@@ -126,6 +130,11 @@ interface NativePort {
 interface ViewEntry {
   view: WebContentsView;
   type: string;
+}
+
+/** Win/Linux 窗口控件覆盖层参数：配色与标题栏高度共用同一契约。 */
+function titleBarOverlay(theme: Theme) {
+  return { ...TITLEBAR_OVERLAY_COLORS[theme], height: TITLEBAR_HEIGHT };
 }
 
 export class ElectronCapability implements Capability {
@@ -360,6 +369,9 @@ export class ElectronCapability implements Capability {
       show: false,
       backgroundColor: this.currentTheme === 'light' ? '#f4f4f5' : '#1a1c1d',
       titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+      ...(isMac
+        ? { trafficLightPosition: { x: 16, y: 12 } }
+        : { titleBarOverlay: titleBarOverlay(this.currentTheme) }),
       webPreferences: {
         preload: preloadPath('workbench'),
         contextIsolation: true,
@@ -477,6 +489,10 @@ export class ElectronCapability implements Capability {
     nativeTheme.themeSource = next === 'light' ? 'light' : 'dark';
     if (this.win && !this.win.isDestroyed()) {
       this.win.setBackgroundColor(next === 'light' ? '#f4f4f5' : '#1a1c1d');
+      // 原生三键由覆盖层绘制，配色不随 nativeTheme 自动更新，需显式同步。
+      if (process.platform !== 'darwin') {
+        this.win.setTitleBarOverlay(titleBarOverlay(next));
+      }
     }
   }
 
