@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify (typecheck / lint / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-15
+            platform: mac
+            arch: arm64
+            artifact: mac-arm64
+          - name: macOS Intel x64
+            os: macos-15-intel
+            platform: mac
+            arch: x64
+            artifact: mac-x64
+          - name: Windows x64
+            os: windows-latest
+            platform: win
+            arch: x64
+            artifact: windows-x64
+          - name: Linux x64
+            os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            artifact: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Compare tag with package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match package.json version $APP_VERSION."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package installers (${{ matrix.platform }} ${{ matrix.arch }})
+        # electron-builder must not self-publish: softprops/action-gh-release
+        # owns the GitHub Release in the publish job.
+        run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+
+      - name: Verify packaged artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(dist/*.dmg dist/*.zip dist/*.exe dist/*.AppImage dist/*.deb dist/*.rpm)
+          if [[ ${#artifacts[@]} -eq 0 ]]; then
+            echo "::error::electron-builder produced no installer artifacts."
+            ls -la dist || true
+            exit 1
+          fi
+          printf '%s\n' "${artifacts[@]}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.artifact }}
+          if-no-files-found: error
+          compression-level: 0
+          # latest*.yml update feeds are excluded: both macOS jobs would write
+          # the same file name, and the app has no auto-updater configured.
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.blockmap
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -4,9 +4,9 @@
 // 视图宿主经 app://page 装载，渲染层只拿投影（id / label / desc / icon）。
 
 import { existsSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { app } from 'electron';
-import { mainDir } from '../../paths';
+import { isWithin, mainDir } from '../../paths';
 
 export interface SettingsPage {
   id: string;
@@ -124,8 +124,5 @@ export function settingsPage(id: string): SettingsPage | undefined {
 }
 
 export function containsSettingsPage(file: string): boolean {
-  return allSettingsPages().some((page) => {
-    const dir = dirname(page.page);
-    return file === page.page || file.startsWith(`${dir}${sep}`);
-  });
+  return allSettingsPages().some((page) => isWithin(dirname(page.page), file));
 }

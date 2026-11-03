@@ -125,12 +125,7 @@
   </head>
   <body data-mode="preview">
     <div class="panes">
-      <iframe
-        class="preview"
-        id="preview"
-        sandbox=""
-        referrerpolicy="no-referrer"
-      ></iframe>
+      <!-- 预览 iframe 由脚本在内容就绪时创建，避免先提交一个空白文档 -->
       <div class="divider"></div>
       <textarea id="source" spellcheck="false"></textarea>
     </div>
@@ -156,13 +151,41 @@
           theme === 'dark' ? 'dark' : 'light';
       }
 
+      /** 预览 iframe 实例（懒创建，见 renderPreview）。 */
+      let previewFrame = null;
+
+      /**
+       * 创建预览 iframe：sandbox / srcdoc 在未连接 DOM 时写入，
+       * 插入后首次导航即为内容文档，不再经历 about:blank → srcdoc 的二次导航。
+       *
+       * 注意：sandbox="" 会让文档成为 opaque origin，站点隔离下 iframe 运行在独立
+       * 渲染进程。若先提交 about:blank 再导航到内容（跨进程 surface 交接），首帧
+       * 可能不会被合成器提交，表现为预览区一直空白。因此必须保持「首导航即内容」。
+       */
+      function createPreviewFrame(content, allowScripts) {
+        const frame = document.createElement('iframe');
+        frame.className = 'preview';
+        frame.id = 'preview';
+        frame.setAttribute('sandbox', allowScripts ? 'allow-scripts' : '');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.srcdoc = content;
+        const panes = document.querySelector('.panes');
+        panes.insertBefore(frame, panes.firstChild);
+        return frame;
+      }
+
       function renderPreview() {
-        const frame = $('preview');
-        frame.setAttribute(
+        if (!previewFrame) {
+          // 无内容时不创建：避免一个空白文档先于内容提交
+          if (!state.content) return;
+          previewFrame = createPreviewFrame(state.content, state.allowScripts);
+          return;
+        }
+        previewFrame.setAttribute(
           'sandbox',
           state.allowScripts ? 'allow-scripts' : '',
         );
-        frame.srcdoc = state.content;
+        previewFrame.srcdoc = state.content;
       }
 
       function reportState() {

@@ -10,6 +10,12 @@
 >
 > 系统化设计见 [`docs/architecture.md`](./docs/architecture.md)：作用域 · 数据模型 · 契约 · AppHost · 列表 / 视图 / 资源 / 能力 · 扩展 · 验收。本文讲需求与重点模块，那里讲系统化设计；两文边界不重叠。
 
+## 下载安装
+
+[![Download](https://img.shields.io/badge/Download-Releases-2ea44f?style=for-the-badge)](https://github.com/Work-Agent/WorkStudio/releases/latest)
+
+按钮进入 Releases 页面，在最新版本的 Assets 里按平台选择：macOS 选 `WorkStudio-mac-arm64.dmg`（Apple Silicon）或 `WorkStudio-mac-x64.dmg`（Intel），Windows 选 `WorkStudio-win-x64.exe`，Linux 选 `WorkStudio-linux-x64.AppImage`。
+
 ## 一、现状
 
 ### 1.1 垂直 Agent 的差异
@@ -479,6 +485,20 @@ node node_modules/electron/install.js
 - 构建产物 `out/{main,preload,renderer}` 与打包产物 `dist/` 都不进版本库。
 - macOS 本地构建走 ad-hoc 签名（`identity: '-'`）：fuses 会改写二进制，必须重签，否则系统直接终止应用；正式分发换成 Developer ID 或经 `CSC_LINK` 注入证书。
 - 安装包在对应平台（或 CI）上产出：macOS 主机默认只产 mac 目标，Windows / Linux 目标交给 CI。
+
+发版由 tag 触发：tag 版本必须与 `package.json` 的 `version` 一致，否则打包任务直接失败。
+
+```bash
+# 1. 改 package.json 的 version，与将要打的 tag 保持一致
+git commit -am "chore: release v0.1.1"
+git push
+
+# 2. 打 tag 并推送，触发 Release workflow
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（arm64 / x64）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。第一步合并 `ci.yml`、第二步再合并 `release.yml` 并打首个 tag。
 
 ### 7.5 技术栈
 
