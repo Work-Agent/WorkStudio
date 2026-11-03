@@ -1,0 +1,46 @@
+import type { CaseTag, E2ECase } from './contract.ts';
+import browserOpen from '../cases/browser-open.ts';
+import dialogOverlay from '../cases/dialog-overlay.ts';
+import navigation from '../cases/navigation.ts';
+import pathDisplay from '../cases/path-display.ts';
+import settingsOpen from '../cases/settings-open.ts';
+import settingsSidebar from '../cases/settings-sidebar.ts';
+import tabs from '../cases/tabs.ts';
+import viewLifecycle from '../cases/view-lifecycle.ts';
+
+export const cases: readonly E2ECase[] = [
+  navigation,
+  browserOpen,
+  dialogOverlay,
+  settingsOpen,
+  settingsSidebar,
+  tabs,
+  viewLifecycle,
+  pathDisplay,
+];
+
+export interface CaseFilter {
+  id?: string;
+  tag?: CaseTag;
+  grep?: string;
+  all?: boolean;
+}
+
+export function selectCases(
+  filter: CaseFilter,
+  options: { allowMutating?: boolean } = {},
+): E2ECase[] {
+  const needle = filter.grep?.trim();
+  return cases.filter((testCase) => {
+    const tags = testCase.tags ?? [];
+    if (filter.id && testCase.id !== filter.id) return false;
+    if (filter.tag && !tags.includes(filter.tag)) return false;
+    if (needle && !`${testCase.id} ${testCase.title}`.includes(needle)) {
+      return false;
+    }
+    // dev 运行器永远不跑 Playwright 独占用例。
+    if (tags.includes('playwright-only')) return false;
+    if (!options.allowMutating && tags.includes('mutating')) return false;
+    return true;
+  });
+}

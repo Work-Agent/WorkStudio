@@ -25,13 +25,13 @@
     "test:e2e:full": "pnpm build && playwright test",
     "test:e2e:last": "playwright test --last-failed",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:cdp": "node --experimental-strip-types e2e/runner/cli.ts",
     "test:e2e:dev": "pnpm build && E2E_DEV=1 playwright test",
     "test:e2e:dev:last": "pnpm build && E2E_DEV=1 playwright test --last-failed",
     "test:e2e:dev:ui": "pnpm build && E2E_DEV=1 playwright test --ui",
     "test:e2e:dev:run": "E2E_DEV=1 playwright test",
     "test:e2e:dev:full": "pnpm build && E2E_DEV=1 playwright test",
-    "paths:smoke": "node --experimental-strip-types scripts/paths-smoke.ts",
-    "test:e2e:attach": "E2E_ATTACH=1 playwright test e2e/dev-attach.spec.ts"
+    "paths:smoke": "node --experimental-strip-types scripts/paths-smoke.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",

@@ -158,7 +158,11 @@ out/
 dist/
 
 # pi (local agent tooling)
-.pi/
+.pi/*
+!.pi/extensions/
+.pi/extensions/*
+!.pi/extensions/dev-mode/
+!.pi/extensions/dev-mode/**
 
 
 # macOS

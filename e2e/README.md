@@ -1,89 +1,84 @@
-# E2E 基线
+# E2E 测试架构
 
-Playwright Electron，黑盒验证启动、数据根隔离与重启。
+测试分三层：共享用例、Playwright 隔离执行器、dev extension CDP 执行器。
 
-## 按需跑（默认）
+```text
+e2e/
+├─ cases/                 # 共享用户路径（不 import Playwright）
+├─ runner/
+│  ├─ contract.ts         # E2ECase / E2EContext
+│  ├─ registry.ts         # 用例注册与过滤
+│  ├─ playwright-adapter.ts
+│  ├─ cdp.ts              # 长连接 CDP 客户端
+│  ├─ cdp-context.ts      # dev extension 的 E2EContext
+│  ├─ run.ts              # CDP 执行器
+│  └─ cli.ts              # 不经 pi 的本地跑法
+├─ specs/                 # Playwright 薄壳 + playwright-only 用例
+└─ support/               # 启动、fixture、dev renderer server
+```
 
-Playwright 支持直接传文件 / 用例名；不要每次全量。
+## 分工
+
+| 场景                           | 执行器                             |
+| ------------------------------ | ---------------------------------- |
+| 开发时当前窗口验证             | `dev_test`（CDP，不启动 Electron） |
+| 提交前 / CI 隔离回归           | Playwright                         |
+| 冷启动 / 重启 / 数据根隔离     | Playwright（`playwright-only`）    |
+| 打包产物 / 主进程 evaluate     | Playwright（`playwright-only`）    |
+| 资源、设置、标签、路径、对话框 | 共享 case，两边都跑                |
+
+共享 case 只依赖 `e2e/runner/contract.ts` 的 `E2EContext`。  
+Playwright 和 CDP 各自实现点击、等待、截图，case 本身不感知执行器。
+
+## dev extension
+
+```text
+dev_test({ case: "settings.open" })
+dev_test({ tag: "dev" })
+dev_test({ grep: "路径" })
+dev_test({ all: true })
+```
+
+- 默认只跑 `tag=dev`；
+- 默认拒绝 `mutating`，需要显式 `allowMutating: true`；
+- `dev_test` 不启动/重启 dev 窗口，离线时先恢复窗口；
+- 失败返回错误和截图 `/tmp/work-studio-dev-test-failure.png`。
+
+不经 pi 的排查方式：
 
 ```bash
-# 只跑一个 spec
-pnpm test:e2e e2e/regressions.spec.ts
+pnpm test:e2e:cdp --tag dev
+pnpm test:e2e:cdp --case settings.open
+pnpm test:e2e:cdp --grep 设置
+```
 
-# 只跑匹配用例
-pnpm test:e2e --grep "设置页"
+## Playwright
 
-# 只跑上次失败
+```bash
+# 全量隔离回归（提交前）
+pnpm test:e2e
+
+# 单文件 / 单用例 / 上次失败
+pnpm test:e2e e2e/specs/resource.spec.ts
+pnpm test:e2e -g "资源"
 pnpm test:e2e:last
-```
 
-## dev 模式跑
-
-dev 模式 = renderer 走 Vite dev server（HMR），主进程 / preload 仍用
-`electron-vite build` 的产物；Playwright 仍是 `_electron.launch`，可 evaluate 主进程。
-
-```bash
-# 第一次 / 主进程或 preload 改动后：build + dev 模式全量
+# renderer 走 Vite dev server
 pnpm test:e2e:dev
-
-# 只跑一个 spec（会先 build，保证主进程产物最新）
-pnpm test:e2e:dev e2e/regressions.spec.ts
-
-# 已 build 过，直接按需跑，不再 build
-pnpm test:e2e:dev:run e2e/regressions.spec.ts
-pnpm test:e2e:dev:run -g "对话框"
-
-# dev 模式只跑上次失败 / UI
-pnpm test:e2e:dev:last
-pnpm test:e2e:dev:ui
+pnpm test:e2e:dev:run e2e/specs/regressions.spec.ts
 ```
 
-`E2E_DEV=1` 时 `e2e/global-setup.ts` 启动一个随机端口的 renderer
-Vite server，测试进程通过 `ELECTRON_RENDERER_URL` 注入；不会启动第二个 Electron。
+- 每个测试独立临时 data root；
+- `isolated` project 负责 restart / workspace / theme；
+- 其余共享用例和 playwright-only 用例在 `shared` project；
+- 不用 `test:e2e` 做日常单点验证，用 `dev_test`。
 
-## 构建产物模式
+## 新增用例
 
-```bash
-pnpm build        # 源码变化后先构建
-pnpm test:e2e     # 不重复 build
-pnpm test:e2e:full
-```
+1. 在 `e2e/cases` 写共享 case，打 `dev` + `ci`；
+2. 若需要冷启动 / 重启 / 数据根隔离，留在 `e2e/specs` 并打 `playwright-only`；
+3. 主路径必须点击真实 UI，不能只调用 `appBridge.call`；
+4. 断言用户可见结果：标题、页面、文件内容、路径文本；
+5. 写操作使用 `mutating`，dev runner 默认不执行。
 
-- 每个测试使用独立临时数据根，避免工作区、窗口状态、单实例串扰；
-- 构建产物模式启动 `out/main/index.js`；dev 模式只替换 renderer URL；
-- 测试不访问网络，不依赖真实模型。
-
-## 当前覆盖
-
-- 主窗口启动并加载壳层；
-- 侧栏资源 / 插件 / 设置入口可见，并能在三者间切换；
-- 同一数据根重启、切换工作区后恢复，且 Agent 跟随新工作区域；
-- 通过 `views.open` 打开内置设置页；
-- 通过 `views.openBrowser` 打开本地临时浏览器视图；
-- 通过 `views.openResource` 打开工作区内的 Markdown 资源页；
-- 文本编辑器修改后 `Ctrl+S` 保存回磁盘；
-- 通过 `views.close` 关闭设置视图；
-- 本地插件来源安装 / 卸载；
-- 主题切换并在重启后保留；
-- 多标签显示与标签激活；
-- 助手视图加载与未配置状态；
-- 助手会话标签跟随当前会话，而不是资源视图；
-- 设置页命令经新桥可用；
-- 对话框请求经 overlay 展示并可应答；
-- Cmd/Ctrl+数字激活标签、Ctrl/Cmd+W 关闭标签；
-- 设置页 / 插件页 provider 解析；
-- 视图注册表 pin / move / 系统视图过滤；
-- `appBridge` 暴露边界（assistant / 插件页暴露，外部 browser 页不暴露）；
-- 核心契约：call 路由、state 回放、可视图事件 / 内部事件、请求中间件顺序与短路；
-- 会话流：PiEventFrame 归约为 SessionStreamState、受约束增量、校验器拒绝非法载荷。
-
-## 覆盖矩阵
-
-见 [COVERAGE.md](COVERAGE.md)。[PARITY.md](PARITY.md) 保留历史矩阵。
-
-## 重写时的原则
-
-- 断言用户可见行为，不绑内部 IPC / 模块结构；
-- 选择器优先 test id 或可访问角色；
-- 固定 fixture，禁止真实 AI / 外网；
-- 新架构切换后，同一套基线先跑通，再补全 parity 矩阵。
+详细覆盖见 [COVERAGE.md](COVERAGE.md)。

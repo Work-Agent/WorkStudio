@@ -800,7 +800,10 @@
               baseUrl: $('new-base').value.trim(),
               api: $('new-api').value,
             };
-            await call('/piconf/models/save-provider', { providerId: id, config });
+            await call('/piconf/models/save-provider', {
+              providerId: id,
+              config,
+            });
             $('new-id').value = $('new-name').value = $('new-base').value = '';
             await refresh();
             toast('已添加供应商 ' + id);

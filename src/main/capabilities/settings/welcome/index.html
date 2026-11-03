@@ -194,7 +194,9 @@
         el('workspace-name').textContent = workspace
           ? workspace.name
           : '未打开工作区';
-        el('workspace-path').textContent = workspace ? shortPath(workspace.path) : '';
+        el('workspace-path').textContent = workspace
+          ? shortPath(workspace.path)
+          : '';
         el('new-file-section').hidden = !workspace;
         el('open-workspace').textContent = workspace
           ? '切换工作区'

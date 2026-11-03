@@ -557,7 +557,9 @@
               esc(p.source) +
               '</span>' +
               (p.installedPath
-                ? '<span title="' + esc(shortPath(p.installedPath)) + '">已落盘</span>'
+                ? '<span title="' +
+                  esc(shortPath(p.installedPath)) +
+                  '">已落盘</span>'
                 : '') +
               '</div>' +
               '</div>' +
