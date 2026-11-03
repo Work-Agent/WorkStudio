@@ -502,7 +502,7 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（arm64 / x64）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。第一步合并 `ci.yml`、第二步再合并 `release.yml` 并打首个 tag。
+workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（arm64 / x64）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
 
 ### 7.5 技术栈
 

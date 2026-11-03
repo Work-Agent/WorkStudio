@@ -1,15 +1,17 @@
 name: CI
 
+# 自动 CI 暂时关闭：当前只保留跨平台打包与 tag 发布链路，自检走本地 pnpm verify。
+# 项目 public 后恢复 push / pull_request 触发（取消下面注释即可）。
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - 'docs/**'
+  #     - '**/*.md'
+  # pull_request:
+  #   paths-ignore:
+  #     - 'docs/**'
+  #     - '**/*.md'
   workflow_dispatch:
 
 permissions:

@@ -503,7 +503,7 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (arm64 / x64), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Merge `ci.yml` first, then `release.yml` together with the first tag.
+The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (arm64 / x64), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Once the workflows are merged, pushing the first tag produces the first Release.
 
 ### 7.5 Stack
 
