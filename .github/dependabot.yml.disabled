@@ -1,3 +1,5 @@
+# 停用中：文件名带 .disabled，GitHub 不读取（仅认 .github/dependabot.yml | .yaml）。
+# 恢复：改回 dependabot.yml，并解开两处 commit-message 注释。
 version: 2
 updates:
   - package-ecosystem: npm

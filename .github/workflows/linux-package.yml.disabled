@@ -1,5 +1,7 @@
 name: Linux package validation
 
+# 停用中：Linux 包已由 release.yml 的 tag 矩阵产出，此文件保留作手动兜底。
+# 恢复：改回 linux-package.yml。
 on:
   workflow_dispatch:
 
