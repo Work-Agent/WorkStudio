@@ -82,6 +82,10 @@ export function routesResources(r: Router, service: ResourcesService): void {
   r.handle('/pages/open', async (call: RouteCall<{ ref: string }>) => {
     const result = await service.openPage(call.input.ref);
     if (result.type === 'browser') return result;
+    if (!result.info.page) {
+      service.closePage(result.info.id);
+      throw new RouteFailure('failed', `无可用查看器：${call.input.ref}`);
+    }
     const path = r.at('/pages/:pageId', {
       ...call.params,
       pageId: result.info.id,
@@ -118,6 +122,9 @@ export function routesResources(r: Router, service: ResourcesService): void {
       const info = service.page(String(call.params['pageId']));
       if (!info)
         throw new Error(`unknown page ${String(call.params['pageId'])}`);
+      if (!info.page) {
+        throw new RouteFailure('failed', `无可用查看器：${info.ref}`);
+      }
       return {
         type: 'page',
         url: `${appPageUrl(info.page)}?session=${info.id}`,

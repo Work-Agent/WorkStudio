@@ -45,6 +45,9 @@ export class PageSessions {
     if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${ref}`);
     }
+    if (!opened.presentation.page) {
+      throw new Error(`无可用查看器：${ref}`);
+    }
     const binary = isBinaryRef(ref);
     const base = await this.baseOf(ref, binary);
     const info: PageSessionInfo = {
@@ -94,6 +97,9 @@ export class PageSessions {
     const opened = await this.ura.read(entry.info.ref, { as: 'editor' });
     if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${entry.info.ref}`);
+    }
+    if (!opened.presentation.page) {
+      throw new Error(`无可用查看器：${entry.info.ref}`);
     }
     entry.info = {
       ...entry.info,

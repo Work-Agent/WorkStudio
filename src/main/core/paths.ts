@@ -4,6 +4,7 @@
  * 全是纯函数：路由表、状态键、授权表、页面提供者共用同一套匹配语义。
  */
 
+import { pathCodec } from './path-codec';
 import type { Params } from './types';
 
 /** 拆段：'/a/b/' → ['a','b']；'/' → []。 */
@@ -92,11 +93,13 @@ export function substituteSelf(path: string, viewId: string): string {
   return `/${segments.join('/')}`;
 }
 
-/** 插件 / 设置页的 app:// 地址：只编码路径段，保留斜杠。 */
+/**
+ * 插件 / 设置页的 app:// 地址。
+ *
+ * URL 路径的拼写（前导斜杠、盘符、段内编码）只能由 pathCodec 产出：
+ * 手写拼接在 Windows 上会丢掉盘符前的斜杠，`app://pageD:/…` 会让 Chromium
+ * 把 `d:` 当成端口，页面以 ERR_INVALID_URL 终止。
+ */
 export function appPageUrl(file: string): string {
-  const normalized = file.replace(/\\/g, '/');
-  return `app://page${normalized
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')}`;
+  return `app://page${pathCodec.fsToUrlPath(file)}`;
 }
