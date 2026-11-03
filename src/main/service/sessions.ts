@@ -279,6 +279,13 @@ export class SessionsService {
   receiveFrame(frame: PiEventFrame): void {
     const snapshot = this.agent.getSnapshot();
     this.currentView = snapshot;
+    // 状态类内部事件（应用默认模型 / 思考档位等）只改快照，不带流式增量。
+    // 必须在这里重新发布当前会话状态：否则设置页与助手面板会一直停留在
+    // 「未配置模型」之类的旧投影上，直到某个偶然的 refresh 才对齐。
+    if (frame.event.type === 'agent_status_changed') {
+      this.emitChange();
+      return;
+    }
     const file = snapshot.sessionFile;
     if (!file) return;
 
