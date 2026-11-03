@@ -444,14 +444,17 @@ export class AgentHost {
 
   setSteeringMode(mode: 'all' | 'one-at-a-time'): void {
     this.session.setSteeringMode(mode);
+    this.emitStatus();
   }
 
   setFollowUpMode(mode: 'all' | 'one-at-a-time'): void {
     this.session.setFollowUpMode(mode);
+    this.emitStatus();
   }
 
   setAutoCompaction(enabled: boolean): void {
     this.session.setAutoCompactionEnabled(enabled);
+    this.emitStatus();
   }
 
   getCommands(): Array<{ name: string; description: string; source: string }> {

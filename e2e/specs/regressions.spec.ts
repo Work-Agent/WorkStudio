@@ -64,3 +64,39 @@ test('助手会话标签跟随当前会话而不是资源视图', async ({ elect
     )
     .toBe(true);
 });
+
+test('会话模式变更会发布到当前会话状态', async ({ shell }) => {
+  // 与「配置模型后仍显示未配置」同一类回归：改了会话状态必须重新发布，
+  // 否则订阅 /sessions/current 的界面会停在旧值上。
+  const readMode = () =>
+    shell.evaluate(async () => {
+      const current = await window.appBridge!.peek<{ id: string }>(
+        '/workspaces/current',
+      );
+      if (!current) return null;
+      const agent = await window.appBridge!.peek<{ steeringMode?: string }>(
+        `/workspaces/${current.id}/sessions/current`,
+      );
+      return agent?.steeringMode ?? null;
+    });
+
+  const before = await readMode();
+  const target = before === 'all' ? 'one-at-a-time' : 'all';
+
+  const set = (mode: string) =>
+    shell.evaluate(async (value) => {
+      const current = await window.appBridge!.peek<{ id: string }>(
+        '/workspaces/current',
+      );
+      return window.appBridge!.call(
+        `/workspaces/${current!.id}/sessions/steering/set`,
+        { mode: value },
+      );
+    }, mode);
+
+  await expect.poll(async () => (await set(target)).ok).toBe(true);
+  await expect.poll(readMode).toBe(target);
+
+  // 还原，避免影响同 worker 的后续用例。
+  if (before) await set(before);
+});
