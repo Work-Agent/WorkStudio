@@ -117,6 +117,10 @@ test('内容视图打开后立即有首帧（不是空白视图）', async ({
   electron,
   dataDir,
 }) => {
+  // 只守 Windows：「隐藏期间设过几何 → 再 show 不出首帧」是该平台合成器的行为。
+  // 另外 webContents.capturePage() 偶发返回整屏单色（而屏幕实际已画出来），
+  // 因此这里用「轮询到有色阶为止」判定：真回归时它会一直空白，不会假绿。
+  test.skip(!isWindows, '首帧空白只在 Windows 合成器上复现');
   const workspace = join(dataDir, 'fixtures', 'first-frame-workspace');
   mkdirSync(workspace, { recursive: true });
   const file = join(workspace, 'note.md');
