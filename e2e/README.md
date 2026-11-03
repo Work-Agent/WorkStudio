@@ -77,9 +77,9 @@ pnpm test:e2e:full
 - 核心契约：call 路由、state 回放、可视图事件 / 内部事件、请求中间件顺序与短路；
 - 会话流：PiEventFrame 归约为 SessionStreamState、受约束增量、校验器拒绝非法载荷。
 
-## Parity 矩阵
+## 覆盖矩阵
 
-见 [PARITY.md](PARITY.md)。
+见 [COVERAGE.md](COVERAGE.md)。[PARITY.md](PARITY.md) 保留历史矩阵。
 
 ## 重写时的原则
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   _electron as electron,
+  chromium,
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
@@ -10,10 +11,22 @@ import {
 export interface AppFixture {
   app: ElectronApplication;
   dataDir: string;
+  attached?: boolean;
 }
 
 /** 每个测试独立数据根，避免工作区、窗口状态、单实例互相污染。 */
 export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
+  if (process.env['E2E_ATTACH'] === '1') {
+    const browser = await chromium.connectOverCDP(
+      process.env['E2E_CDP_URL'] ?? 'http://127.0.0.1:9222',
+    );
+    // 只借用 dev 窗口的页面；不关闭浏览器，避免把 dev 窗口一起关掉。
+    const app = {
+      windows: () => browser.contexts().flatMap((context) => context.pages()),
+    } as unknown as ElectronApplication;
+    return { app, dataDir: '', attached: true };
+  }
+
   const dataDir =
     existingDataDir ?? mkdtempSync(join(tmpdir(), 'work-studio-e2e-'));
   const app = await electron.launch({
@@ -48,7 +61,13 @@ export async function windowByUrl(
 export async function shellWindow(app: ElectronApplication): Promise<Page> {
   // 页面可能先加载、后重建；轮询当前窗口，避免等待已销毁的 Page。
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const page = app.windows().find((item) => /index\.html/.test(item.url()));
+    const page = app
+      .windows()
+      .find((item) =>
+        /(?:^file:.*\/index\.html$|(?:localhost|127\.0\.0\.1):\d+\/index\.html$)/.test(
+          item.url(),
+        ),
+      );
     if (page) {
       const ready = await page
         .evaluate(() => typeof window.appBridge?.available === 'function')
@@ -64,6 +83,7 @@ export async function closeApp(
   fixture: AppFixture,
   cleanup = true,
 ): Promise<void> {
+  if (fixture.attached) return;
   await fixture.app.close();
   // before-quit 可能有 200ms 收尾；等进程释放单实例锁。
   await new Promise((resolve) => setTimeout(resolve, 300));

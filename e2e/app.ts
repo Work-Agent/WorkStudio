@@ -41,6 +41,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   reset: [
     async ({ electron, shell }, use) => {
+      if (electron.attached) {
+        await use();
+        return;
+      }
       for (const view of await viewList(shell)) {
         await closeView(shell, view.id);
       }

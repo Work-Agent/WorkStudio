@@ -1,8 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './app';
-import { openResource, switchWorkspace } from './commands';
-import { fileRef } from '../src/shared/ura';
+import { switchWorkspace } from './commands';
 import { windowByUrl } from './fixtures';
 
 test('打开工作区内的 Markdown 资源页', async ({ shell, electron, dataDir }) => {
@@ -15,7 +14,12 @@ test('打开工作区内的 Markdown 资源页', async ({ shell, electron, dataD
   await expect(shell.getByTestId('workspace-select')).toContainText(
     'resource-workspace',
   );
-  await openResource(shell, fileRef(file));
+  // 走真实侧栏点击，而不是直接调用 commands/cmd。
+  await shell
+    .getByTestId('sidebar-group')
+    .filter({ hasText: '本地文档' })
+    .click();
+  await shell.getByText('note.md', { exact: true }).click();
 
   const page = await windowByUrl(electron.app, /markdown-viewer\/index\.html/);
   await expect(page.getByRole('heading', { name: 'hello' })).toBeVisible();

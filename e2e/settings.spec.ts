@@ -15,3 +15,17 @@ test('通过 views.open 打开内置插件设置页', async ({ shell, electron }
     .poll(() => page.evaluate(() => typeof window.appBridge?.call))
     .toBe('function');
 });
+
+test('从侧栏设置列表点击打开设置页', async ({ shell }) => {
+  await shell.getByTestId('sidebar-nav-settings').click();
+  await shell.getByText('插件', { exact: true }).click();
+  await expect
+    .poll(async () =>
+      shell.evaluate(async () => {
+        const views =
+          await window.appBridge!.peek<Array<{ title: string }>>('/views');
+        return views?.some((view) => view.title === '插件') ?? false;
+      }),
+    )
+    .toBe(true);
+});
