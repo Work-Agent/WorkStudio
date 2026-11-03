@@ -393,6 +393,7 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 - **The ref carries its own scheme**: built-ins are `settings://<id>`, plugin settings pages are `settings://plugin.<id>`; the tab set, address bar and page sessions all recognise it by ref;
 - Physical loading shares the `app://page` protocol, preload bridge, theme broadcast and session lifecycle with plugin pages;
 - Adding a built-in page = one page + one list entry; plugin settings pages follow the plugin version; neither enters installation or trust flows on its own;
+- **Model and config page**: a newly added custom model is written with `compat.supportsDeveloperRole: false` by default, since third-party endpoints generally accept only the `system` instruction role; existing model entries are never rewritten or migrated.
 - Pages read only their own partition and whitelisted commands, never connecting to sources directly.
 
 ## 6. State and communication
