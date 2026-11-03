@@ -451,17 +451,20 @@ node node_modules/electron/install.js
 
 ### 7.2 常用脚本
 
-| 命令                 | 说明                                 |
-| -------------------- | ------------------------------------ |
-| `pnpm dev`           | 启动开发模式（支持 Vite HMR）        |
-| `pnpm run build`     | 仅编译三端产物到 `out/`（不打包）    |
-| `pnpm run preview`   | 用已编译产物启动应用（验证生产构建） |
-| `pnpm run package`   | 打包为未压缩应用目录，输出到 `dist/` |
-| `pnpm run make`      | 生成当前平台的安装包，输出到 `dist/` |
-| `pnpm run release`   | 构建并发布（需配置 publish 凭据）    |
-| `pnpm run typecheck` | TypeScript 类型检查                  |
-| `pnpm run lint`      | oxlint + oxfmt 代码检查              |
-| `pnpm run lint:fix`  | 自动修复代码风格                     |
+| 命令                 | 说明                                             |
+| -------------------- | ------------------------------------------------ |
+| `pnpm dev`           | 启动开发模式（支持 Vite HMR）                    |
+| `pnpm run build`     | 仅编译三端产物到 `out/`（不打包）                |
+| `pnpm run preview`   | 用已编译产物启动应用（验证生产构建）             |
+| `pnpm run package`   | 打包为未压缩应用目录，输出到 `dist/`             |
+| `pnpm run make`      | 生成当前平台的安装包，输出到 `dist/`             |
+| `pnpm run release`   | 构建并发布（需配置 publish 凭据）                |
+| `pnpm run typecheck` | TypeScript 类型检查                              |
+| `pnpm run lint`      | oxlint + oxfmt 代码检查                          |
+| `pnpm run lint:fix`  | 自动修复代码风格                                 |
+| `pnpm run verify`    | 一次性跑 CI 同款检查（typecheck / lint / build） |
+
+`pnpm verify` 按 `typecheck → lint → build` 顺序执行，与 CI 的 js job 同源。
 
 ### 7.3 项目结构
 

@@ -30,3 +30,10 @@
   - 作为可判别联合（discriminated union）的标签时，字段名写 `type`，取值用短名词。
 - 新增字段、类型、命令参数一律按此规范命名，避免新旧混用。
 - 对象已有 `type` 判别字段时（如 UI 对话框的 `type: 'dialog'`），子类型字段用 `<domain>Type`（如 `dialogType`），不引入第二个 `type`。
+
+## 改动后的自检
+
+- 改完代码（不是纯 `docs/**`、纯 `*.md`）执行 `pnpm verify`：`typecheck → lint → build`，与 CI 的 `js` job 一致。不通过就继续改，不提交、不宣称完成。
+- `lint` 是 `oxlint && oxfmt --check`：格式问题先 `pnpm lint:fix`，不要把格式问题留给 CI。
+- 失败若确认与本次改动无关（如依赖版本漂移），回复里指出是哪一步、什么错误，不要含糊带过。
+- 改 UI / 交互后按需跑 e2e（`dev_test`，或 `pnpm test:e2e` 做隔离回归）；CI 不含 e2e，CI 绿不能代替 e2e 通过。

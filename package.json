@@ -21,6 +21,7 @@
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck && pnpm lint && pnpm build",
     "test:e2e": "playwright test",
     "test:e2e:full": "pnpm build && playwright test",
     "test:e2e:last": "playwright test --last-failed",

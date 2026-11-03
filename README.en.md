@@ -463,6 +463,9 @@ node node_modules/electron/install.js
 | `pnpm run typecheck` | TypeScript type check                                       |
 | `pnpm run lint`      | oxlint + oxfmt checks                                       |
 | `pnpm run lint:fix`  | Auto-fix style issues                                       |
+| `pnpm run verify`    | Run the same checks as CI (typecheck / lint / build)        |
+
+`pnpm verify` runs `typecheck → lint → build`, the same order as the CI `js` job.
 
 ### 7.3 Project layout
 
