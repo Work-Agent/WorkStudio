@@ -2,12 +2,12 @@
 <!--
   模型设置页（设置能力页）—— architecture.md §5.3 / §6.4。
   数据面：
-    app:models.read       models.json 脱敏视图（自定义供应商 / 模型目录编辑）
-    app:models.providers  供应商目录 + 凭证状态（内置 + 自定义；凭证值不回传）
-    app:models.catalog    pi 组合后的模型目录（available = 供应商已认证）
-    app:models.login      登录（api_key 直传 / oauth 交互在浮层完成）→ 写 auth.json
-    app:models.logout     删除已存凭证
-    app:agent.configure   默认模型 / 思考档位（即时生效 + settings 落盘）
+    window.appBridge      /piconf/models/*：models.json 脱敏视图（自定义供应商 / 模型目录编辑）
+                          /piconf/models/providers：供应商目录 + 凭证状态
+                          /piconf/models/catalog：pi 组合后的模型目录
+                          /piconf/models/login：登录（API Key / OAuth 浮层）
+                          /piconf/models/logout：删除已存凭证
+                          /piconf/agent/configure：默认模型 / 思考档位
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -439,7 +439,21 @@
         expanded: {},
       };
 
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      async function agentStatus() {
+        const workspace = await bridge.peek('/workspaces/current');
+        if (!workspace) return null;
+        return bridge.peek(`/workspaces/${workspace.id}/sessions/current`);
+      }
+      async function modelsRead() {
+        const piconf = await bridge.peek('/piconf');
+        return piconf?.models ?? null;
+      }
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -776,7 +790,7 @@
             };
             const level = $('pick-thinking').value;
             if (level) payload.thinkingLevel = level;
-            state.status = await invoke('app:agent.configure', payload);
+            state.status = await call('/piconf/agent/configure', payload);
             render();
             toast('已应用默认模型');
           } else if (action === 'add-provider') {
@@ -786,7 +800,7 @@
               baseUrl: $('new-base').value.trim(),
               api: $('new-api').value,
             };
-            await invoke('app:models.saveProvider', { providerId: id, config });
+            await call('/piconf/models/save-provider', { providerId: id, config });
             $('new-id').value = $('new-name').value = $('new-base').value = '';
             await refresh();
             toast('已添加供应商 ' + id);
@@ -799,7 +813,7 @@
             if (!key) throw new Error('Key 为空');
             setBusy(btn, true, '登录中…');
             try {
-              await invoke('app:models.login', {
+              await call('/piconf/models/login', {
                 providerId: pid,
                 type: 'api_key',
                 apiKey: key,
@@ -812,7 +826,7 @@
           } else if (action === 'login-oauth') {
             setBusy(btn, true, '等待授权…');
             try {
-              await invoke('app:models.login', {
+              await call('/piconf/models/login', {
                 providerId: pid,
                 type: 'oauth',
               });
@@ -822,7 +836,7 @@
               setBusy(btn, false);
             }
           } else if (action === 'logout') {
-            await invoke('app:models.logout', { providerId: pid });
+            await call('/piconf/models/logout', { providerId: pid });
             await refresh();
             toast('已退出 ' + pid);
           } else if (action === 'save-provider') {
@@ -839,7 +853,7 @@
                 throw new Error('额外请求头不是合法 JSON');
               }
             }
-            await invoke('app:models.saveProvider', {
+            await call('/piconf/models/save-provider', {
               providerId: pid,
               config,
             });
@@ -852,15 +866,15 @@
               )
             )
               return;
-            await invoke('app:models.deleteProvider', { providerId: pid });
+            await call('/piconf/models/delete-provider', { providerId: pid });
             await refresh();
             toast('已删除供应商 ' + pid);
           } else if (action === 'use-model') {
-            await invoke('app:agent.configure', {
+            await call('/piconf/agent/configure', {
               provider: pid,
               modelId: btn.dataset.mid,
             });
-            state.status = await invoke('app:agent.status');
+            state.status = await agentStatus();
             render();
             toast('已设为默认模型');
           } else if (action === 'new-model') {
@@ -908,7 +922,7 @@
             model.input = form.querySelector('[data-mf="image"]').checked
               ? ['text', 'image']
               : ['text'];
-            await invoke('app:models.saveModel', { providerId: pid, model });
+            await call('/piconf/models/save-model', { providerId: pid, model });
             await refresh();
             toast('已保存模型 ' + model.id);
           } else if (action === 'delete-model') {
@@ -918,7 +932,7 @@
               )
             )
               return;
-            await invoke('app:models.deleteModel', {
+            await call('/piconf/models/delete-model', {
               providerId: pid,
               modelId: btn.dataset.mid,
             });
@@ -946,11 +960,11 @@
 
       async function refresh() {
         const [providers, catalog, status, levels, custom] = await Promise.all([
-          invoke('app:models.providers'),
-          invoke('app:models.catalog'),
-          invoke('app:agent.status'),
-          invoke('app:agent.thinkingLevels'),
-          invoke('app:models.read'),
+          call('/piconf/models/providers'),
+          call('/piconf/models/catalog'),
+          agentStatus(),
+          call('/piconf/agent/thinking-levels'),
+          modelsRead(),
         ]);
         state.providers = Array.isArray(providers) ? providers : [];
         state.catalog = Array.isArray(catalog) ? catalog : [];

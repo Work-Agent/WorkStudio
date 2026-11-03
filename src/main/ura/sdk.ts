@@ -12,7 +12,7 @@ import type {
   ViewAction,
 } from '../../shared/ura';
 import type { ListDefinition } from '../../shared/lists';
-import { listRegistry, type ListProvider } from '../app/lists/list-registry';
+import { listRegistry, type ListProvider } from '../service/lists/registry';
 import { uraRegistry } from './registry';
 
 export function registerTransport(transport: Transport): void {

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
+import { cmd } from '../../api/appCommands';
 import { setUiState, useUiStore } from '../../state/ui';
 import { useWorkspaceStore } from '../../state/workspace';
 import { FindList } from './FindList';
@@ -40,13 +41,12 @@ function iconOf(group: ListGroup): { Icon: LucideIcon; iconUrl?: string } {
 }
 
 async function openItem(item: ListItem): Promise<void> {
-  await window.workbench?.cmd('list.action', { action: 'open', item });
+  await cmd('list.action', { action: 'open', item });
 }
 
 async function closeItem(item: ListItem): Promise<void> {
   const viewId = item.meta?.['viewId'];
-  if (typeof viewId === 'string')
-    await window.workbench?.cmd('views.close', { id: viewId });
+  if (typeof viewId === 'string') await cmd('views.close', { id: viewId });
 }
 
 export function Sidebar() {

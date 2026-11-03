@@ -164,9 +164,20 @@
       <div id="toast"></div>
     </main>
     <script>
-      const invoke = (command, payload) =>
-        window.extension.invoke(command, payload);
-
+      const bridge = window.appBridge;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      async function workspace() {
+        const current = await bridge.peek('/workspaces/current');
+        if (!current) throw new Error('workspace is not ready');
+        return current;
+      }
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
+      const fileRef = (path) =>
+        `file://${path.startsWith('/') ? path : `/${path}`}`;
       const el = (id) => document.getElementById(id);
 
       let toastTimer;
@@ -183,7 +194,7 @@
         el('workspace-name').textContent = workspace
           ? workspace.name
           : '未打开工作区';
-        el('workspace-path').textContent = workspace ? workspace.path : '';
+        el('workspace-path').textContent = workspace ? shortPath(workspace.path) : '';
         el('new-file-section').hidden = !workspace;
         el('open-workspace').textContent = workspace
           ? '切换工作区'
@@ -214,7 +225,7 @@
 
       async function load() {
         try {
-          render(await invoke('app:welcome.state'));
+          render(await call('/piconf/welcome'));
         } catch (error) {
           toast(error && error.message ? error.message : String(error));
         }
@@ -222,11 +233,19 @@
 
       async function createFile(codec) {
         try {
-          const result = await invoke('app:welcome.createFile', {
-            mime: codec.mime,
-            extensions: codec.extensions,
+          const current = await workspace();
+          const path = await call('/native/save-file', {
+            defaultPath: `${current.path}/未命名.${codec.extensions[0]}`,
+            filters: [{ name: codec.mime, extensions: codec.extensions }],
           });
-          if (result) toast('已创建 ' + result.ref);
+          if (!path) return;
+          const ref = fileRef(path);
+          await call(`/workspaces/${current.id}/resources/write`, {
+            ref,
+            content: '',
+          });
+          await call(`/workspaces/${current.id}/resources/pages/open`, { ref });
+          toast('已创建 ' + ref);
         } catch (error) {
           toast(error && error.message ? error.message : String(error));
         }
@@ -234,9 +253,9 @@
 
       el('open-workspace').addEventListener('click', async () => {
         try {
-          const path = await invoke('app:workspaces.pick');
+          const path = await call('/native/pick-directory');
           if (!path) return;
-          await invoke('app:workspaces.switch', { path });
+          await call('/workspaces/open', { path });
         } catch (error) {
           toast(error && error.message ? error.message : String(error));
         }

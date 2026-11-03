@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import type { UiState } from '../../shared/types';
 
 /** 主进程桥：UI 状态以主进程为唯一真相源。 */
-const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
+import { cmd } from '../api/appCommands';
 
 const DEFAULTS: UiState = {
   __version__: 1,
@@ -41,7 +41,7 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 
   patch: (patch) => {
     set(patch as Partial<UiStoreState>);
-    void mainBridge?.cmd('ui.set', { patch });
+    void cmd('ui.set', { patch });
   },
 
   toggleTheme: () =>

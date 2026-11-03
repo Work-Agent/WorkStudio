@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { typeIcon } from '../resource/typeIcon';
 import { runViewCommand, useWorkspaceStore } from '../../state/workspace';
+import { displayPath } from '../../api/pathDisplay';
 import { FALLBACK_ACTION, TITLEBAR_ACTIONS } from './actions';
 import { rendererIcon } from './icons';
 
@@ -42,7 +43,7 @@ export function ResourceToolbar() {
 
   const loading =
     active.state !== 'ready' && active.state !== 'contentDelivered';
-  const url = active.url;
+  const url = displayAddress(active.tabKey, active.title, active.url);
   const actions: ToolbarAction[] = [];
 
   // 插件声明的声明式动作（manifest titlebarActions → 语义目录渲染）
@@ -119,7 +120,10 @@ export function ResourceToolbar() {
       ) : (
         <KindIcon className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
       )}
-      <span className="flex-1 min-w-0 text-[12px] font-mono text-zinc-700 dark:text-zinc-300 truncate select-text">
+      <span
+        className="flex-1 min-w-0 text-[12px] font-mono text-zinc-700 dark:text-zinc-300 truncate select-text"
+        title={url}
+      >
         {url}
       </span>
       {loading && (
@@ -145,4 +149,19 @@ export function ResourceToolbar() {
       ))}
     </div>
   );
+}
+
+/** 地址栏只展示逻辑地址或相对工作区路径，不暴露本机绝对路径。 */
+function displayAddress(tabKey: string, title: string, rawUrl: string): string {
+  if (tabKey.startsWith('/settings/page/')) {
+    return `settings://${tabKey.slice('/settings/page/'.length)}`;
+  }
+  if (tabKey.startsWith('/plugins/page/')) {
+    return `plugin://${tabKey.slice('/plugins/page/'.length)}`;
+  }
+  if (tabKey.startsWith('/plugins/settings/')) {
+    return `plugin://${tabKey.slice('/plugins/settings/'.length)}/settings`;
+  }
+  const candidate = title.startsWith('file://') ? title : rawUrl;
+  return displayPath(candidate);
 }

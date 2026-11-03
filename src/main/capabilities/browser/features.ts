@@ -13,9 +13,9 @@ import {
 } from '../../ura/sdk';
 import { MIME } from '../../../shared/ura';
 import type { ListDefinition } from '../../../shared/lists';
-import type { ListProvider } from '../../app/lists/list-registry';
-import { DOC_FIELDS, OPEN_ACTION } from '../../app/lists/builtins/common';
-import { mtimeOf } from '../../app/lists/builtins/file-time';
+import type { ListProvider } from '../../service/lists/registry';
+import { DOC_FIELDS, OPEN_ACTION } from '../../service/lists/builtins/common';
+import { mtimeOf } from '../../service/lists/builtins/file-time';
 
 const SITES_DIR = 'sites';
 

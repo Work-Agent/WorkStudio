@@ -1,31 +1,28 @@
 /**
- * 浮层视图 preload —— 对话框请求订阅 + 结构化应答（ui.respond）。
+ * 浮层视图 preload —— 仅暴露 appBridge 传输桥。
  */
 import { contextBridge, ipcRenderer } from 'electron';
-import { APP_CMD, CH_UI } from '../shared/channels';
-import type { AppCommand } from '../shared/app';
-import type {
-  CommandResponse,
-  UiDialogResponse,
-  UiRequest,
-} from '../shared/types';
 
-const api = {
-  onUi: (cb: (request: UiRequest) => void): (() => void) => {
-    const listener = (_e: unknown, request: UiRequest): void => cb(request);
-    ipcRenderer.on(CH_UI, listener);
-    return () => ipcRenderer.removeListener(CH_UI, listener);
+const appBridge = {
+  available: (): Promise<boolean> => ipcRenderer.invoke('appBridge:hello'),
+  call: (path: string, input?: unknown): Promise<unknown> =>
+    ipcRenderer.invoke('appBridge:call', path, input),
+  watch: (paths: string[]): Promise<{ granted: string[]; denied: string[] }> =>
+    ipcRenderer.invoke('appBridge:watch', paths),
+  emit: (path: string, value?: unknown): void => {
+    ipcRenderer.send('appBridge:emit', path, value);
   },
-  respond: (response: UiDialogResponse): Promise<CommandResponse> =>
-    ipcRenderer.invoke(APP_CMD, {
-      scope: 'ui',
-      action: 'ui.respond',
-      payload: { response },
-    } satisfies AppCommand),
+  peek: (path: string): Promise<unknown> =>
+    ipcRenderer.invoke('appBridge:peek', path),
+  on: (cb: (frame: unknown) => void): (() => void) => {
+    const listener = (_e: unknown, frame: unknown): void => cb(frame);
+    ipcRenderer.on('appBridge:frame', listener);
+    return () => ipcRenderer.removeListener('appBridge:frame', listener);
+  },
 };
 
 if (process.contextIsolated) {
-  contextBridge.exposeInMainWorld('overlay', api);
+  contextBridge.exposeInMainWorld('appBridge', appBridge);
 } else {
-  (window as unknown as { overlay: unknown }).overlay = api;
+  (window as unknown as { appBridge: unknown }).appBridge = appBridge;
 }

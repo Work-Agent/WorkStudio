@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   WorkStudio 插件页（设置能力页）。
-  数据面：app:plugins.sources / install / remove / list。
+  数据面：window.appBridge（/plugins/installed / runtime / catalog / install / remove）。
   来源：zip（带 sha256）/ 本地路径；本地直接加载，安装 / 卸载后重启生效。
 -->
 <html lang="zh-CN" data-theme="light">
@@ -247,7 +247,18 @@
     </script>
 
     <script>
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const app = window.appBridge;
+      async function peek(path) {
+        if (!app) throw new Error('app bridge unavailable');
+        return app.peek(path);
+      }
+      async function call(path, input) {
+        if (!app) throw new Error('app bridge unavailable');
+        const result = await app.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -291,7 +302,7 @@
         }
         el.innerHTML = sources
           .map((p) => {
-            const title = p.label || p.name || p.path || p.source;
+            const title = shortPath(p.label || p.name || p.path || p.source);
             const installed = Boolean(p.name);
             const action = installed
               ? '<button class="danger" data-remove="' +
@@ -316,7 +327,7 @@
               esc(installed ? '已安装' : p.type) +
               '</span></div>' +
               '<div class="meta">' +
-              esc(p.source) +
+              esc(shortPath(p.source)) +
               '</div></div>' +
               action +
               '</div>'
@@ -424,13 +435,13 @@
       async function load() {
         let runtime = [];
         try {
-          runtime = await invoke('app:plugins.sources');
+          runtime = (await peek('/plugins/installed')) || [];
         } catch {
           runtime = [];
         }
         sources = mergeSources(bakedRegistry(), runtime);
         try {
-          loaded = await invoke('app:plugins.list');
+          loaded = (await peek('/plugins/runtime')) || [];
         } catch {
           loaded = [];
         }
@@ -441,7 +452,10 @@
 
       async function loadCatalog(url) {
         try {
-          const res = await invoke('app:plugins.catalog', url ? { url } : {});
+          const res = await call(
+            '/plugins/catalog/refresh',
+            url ? { url } : {},
+          );
           catalog = res.entries || [];
           catalogUrl = res.url || '';
           catalogError = res.error || '';
@@ -465,8 +479,8 @@
         busy = true;
         renderSources();
         try {
-          const res = await invoke('app:plugins.install', { source: value });
-          sources = res.sources;
+          await call('/plugins/install', { source: value });
+          sources = (await peek('/plugins/installed')) || [];
           $('source').value = '';
           renderCatalog();
           toast('已安装 ' + value + '，重启应用后生效');
@@ -483,9 +497,8 @@
         busy = true;
         renderSources();
         try {
-          const res = await invoke('app:plugins.remove', { source });
-          if (!res.removed) throw new Error('未找到插件来源：' + source);
-          sources = res.sources;
+          await call('/plugins/remove', { source });
+          sources = (await peek('/plugins/installed')) || [];
           toast('已移除 ' + source + '，重启应用后生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);

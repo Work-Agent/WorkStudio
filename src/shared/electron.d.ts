@@ -1,106 +1,26 @@
-import type { AppEvent, AppSnapshot } from './app';
-import type {
-  AgentStatus,
-  CommandResponse,
-  InteractionBeginInput,
-  LayoutSnapshot,
-  UiDialogResponse,
-  UiRequest,
-} from './types';
+/** 新版传输帧：状态快照或受约束的事件增量。 */
+export type AppFrame<T = unknown> =
+  | { type: 'state'; path: string; value: T }
+  | { type: 'event'; path: string; seq: number; value: T };
 
-/** 工作台桥（preload/workbench.ts，window.workbench）。 */
-export interface WorkbenchBridge {
-  platform: string;
-  versions?: Record<string, string>;
-  openPath: (path: string) => Promise<string>;
-  cmd: <T = unknown>(
-    command: string,
-    params?: unknown,
-  ) => Promise<CommandResponse<T>>;
-  appSync: () => Promise<AppSnapshot>;
-  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
-  onAppEvent: (cb: (event: AppEvent) => void) => () => void;
-  onLayout: (cb: (layout: LayoutSnapshot) => void) => () => void;
-  onResources: (cb: (event: unknown) => void) => () => void;
-  /** 订阅一个资源（传空取消）；变更经 onUra 推送。 */
-  watchUra: (ref?: string) => Promise<{ ref: string } | null>;
-  onUra: (cb: (event: unknown) => void) => () => void;
-  onBus: (
-    cb: (message: { viewId: string; message: unknown }) => void,
-  ) => () => void;
-  onUi: (cb: (request: UiRequest) => void) => () => void;
-  onPopupSelect: (
-    cb: (event: { source: string; actionId: string }) => void,
-  ) => () => void;
-  onInteraction: (cb: (update: { preview: unknown }) => void) => () => void;
-  interaction: {
-    begin: (input: InteractionBeginInput) => Promise<{ ok: boolean }>;
-    move: () => Promise<{ ok: boolean }>;
-    end: () => Promise<{ ok: boolean }>;
-    cancel: () => Promise<{ ok: boolean }>;
-  };
-  ui: {
-    respond: (response: UiDialogResponse) => Promise<CommandResponse>;
-  };
-  shell: {
-    openPath: (path: string) => Promise<string>;
-    openExternal: (url: string) => Promise<void>;
-    pickDirectory: () => Promise<string | null>;
-    showPopup: (input: {
-      source: string;
-      items: Array<{ id: string; label: string; disabled?: boolean }>;
-    }) => Promise<boolean>;
-    closePopup: () => Promise<boolean>;
-  };
-}
-
-/** 助手视图桥（preload/assistant.ts，window.assistant）。 */
-export interface AssistantBridge {
-  platform: string;
-  cmd: <T = unknown>(
-    command: string,
-    params?: unknown,
-  ) => Promise<CommandResponse<T>>;
-  appSync: () => Promise<AppSnapshot>;
-  onAppSnapshot: (cb: (snapshot: AppSnapshot) => void) => () => void;
-  onAppEvent: (cb: (event: AppEvent) => void) => () => void;
-  onInteraction: (cb: (update: { preview: unknown }) => void) => () => void;
-  interaction: {
-    begin: (input: InteractionBeginInput) => Promise<{ ok: boolean }>;
-    move: () => Promise<{ ok: boolean }>;
-    end: () => Promise<{ ok: boolean }>;
-    cancel: () => Promise<{ ok: boolean }>;
-  };
-  ui: {
-    respond: (response: UiDialogResponse) => Promise<CommandResponse>;
-  };
-  onPopupSelect: (
-    cb: (event: { source: string; actionId: string }) => void,
-  ) => () => void;
-  shell: {
-    showPopup: (input: {
-      source: string;
-      items: Array<{ id: string; label: string; disabled?: boolean }>;
-    }) => Promise<boolean>;
-    closePopup: () => Promise<boolean>;
-  };
-}
-
-/** 浮层视图桥（preload/overlay.ts，window.overlay）。 */
-export interface OverlayBridge {
-  onUi: (cb: (request: UiRequest) => void) => () => void;
-  respond: (response: UiDialogResponse) => Promise<CommandResponse>;
+/** appBridge 传输桥（所有工作台 / 助手 / 浮层 / 插件页统一入口）。 */
+export interface AppBridge {
+  available: () => Promise<boolean>;
+  call: <T = unknown>(
+    path: string,
+    input?: unknown,
+  ) => Promise<
+    | { ok: true; data: T }
+    | { ok: false; error: { code: string; message: string } }
+  >;
+  watch: (paths: string[]) => Promise<{ granted: string[]; denied: string[] }>;
+  emit: (path: string, value?: unknown) => void;
+  on: (cb: (frame: AppFrame) => void) => () => void;
+  peek: <T = unknown>(path: string) => Promise<T | null>;
 }
 
 declare global {
   interface Window {
-    /** 新工作台桥（preload/workbench.ts）。 */
-    workbench?: WorkbenchBridge;
-    /** AI 助手视图桥。 */
-    assistant?: AssistantBridge;
-    /** 浮层视图桥。 */
-    overlay?: OverlayBridge;
+    appBridge?: AppBridge;
   }
 }
-
-export type { AgentStatus };

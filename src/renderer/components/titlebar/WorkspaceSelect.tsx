@@ -8,6 +8,7 @@
 import { useEffect } from 'react';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
+import { cmd } from '../../api/appCommands';
 import { electronAPI, popupMenu } from '../../api/runtime';
 import { useAppStore } from '../../state/app';
 import { runViewCommand } from '../../state/workspace';
@@ -23,25 +24,21 @@ export function WorkspaceSelect() {
     : '选择工作区';
 
   const pickWorkspace = async (): Promise<void> => {
-    const bridge = window.workbench;
-    const dir = bridge
-      ? await bridge
-          .cmd<string | null>('agent.pickWorkspace')
-          .then((r) => (r.ok ? r.data : null))
-      : null;
+    const dir = await cmd<string | null>('agent.pickWorkspace').then((r) =>
+      r.ok ? r.data : null,
+    );
     if (dir) {
       await useAppStore.getState().switchWorkspace(dir);
     }
   };
 
   const openMenu = (): void => {
-    void useAppStore.getState().refreshWorkspaces();
     const items: PopupMenuItem[] = [];
     const current = workspacePath;
     for (const ws of workspaces.slice(0, 8)) {
       items.push({
         id: `ws:${ws.path}`,
-        label: `${ws.current ? '✓ ' : ''}${ws.name} — ${ws.path}`,
+        label: `${ws.current ? '✓ ' : ''}${ws.name}`,
         disabled: ws.current,
       });
     }
@@ -80,7 +77,7 @@ export function WorkspaceSelect() {
       data-testid="workspace-select"
       onClick={openMenu}
       className="flex items-center gap-1.5 min-w-0 max-w-full rounded-md px-1.5 py-0.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-[#2f3233] transition-colors"
-      title={workspacePath ?? '选择工作目录'}
+      title={workspaceName}
     >
       <FolderOpen className="w-3 h-3 shrink-0 text-[#4F6BED]" />
       <span className="text-[12px] truncate">{workspaceName}</span>

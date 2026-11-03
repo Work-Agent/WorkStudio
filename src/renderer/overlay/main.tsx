@@ -9,11 +9,6 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { UiDialogRequest } from '../../shared/types';
 
-interface ResolvedMessage {
-  type: 'dialogResolved';
-  id: string;
-}
-
 interface Props {
   dialog: UiDialogRequest;
   onRespond: (response: {
@@ -117,31 +112,39 @@ function DialogCard({ dialog, onRespond }: Props) {
   );
 }
 
+interface DialogView {
+  id: string;
+  request: UiDialogRequest | null;
+  status: 'open' | 'resolved' | 'cancelled';
+}
+
 function Overlay() {
   const [dialogs, setDialogs] = useState<UiDialogRequest[]>([]);
 
   useEffect(() => {
-    const bridge = window.overlay;
+    const bridge = window.appBridge;
     if (!bridge) return;
-    return bridge.onUi((request) => {
-      if ((request as unknown as ResolvedMessage).type === 'dialogResolved') {
-        const id = (request as unknown as ResolvedMessage).id;
-        setDialogs((prev) => prev.filter((d) => d.id !== id));
-        return;
-      }
-      if (request.type === 'dialog') {
-        setDialogs((prev) =>
-          prev.some((d) => d.id === request.id) ? prev : [...prev, request],
-        );
-      }
+    const off = bridge.on((frame) => {
+      if (frame.type !== 'state' || frame.path !== '/dialogs') return;
+      const views = frame.value as DialogView[];
+      setDialogs(
+        views
+          .filter((view) => view.status === 'open' && view.request)
+          .map((view) => view.request as UiDialogRequest),
+      );
     });
+    void bridge.watch(['/dialogs']);
+    return off;
   }, []);
 
   const respond = (
     dialog: UiDialogRequest,
     response: { cancelled?: boolean; value?: string; confirmed?: boolean },
   ): void => {
-    void window.overlay?.respond({ id: dialog.id, ...response });
+    void window.appBridge?.call(
+      `/dialogs/${encodeURIComponent(dialog.id)}/respond`,
+      { response: { id: dialog.id, ...response } },
+    );
     setDialogs((prev) => prev.filter((d) => d.id !== dialog.id));
   };
 

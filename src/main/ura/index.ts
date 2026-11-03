@@ -3,13 +3,11 @@
 // 来源先注册，插件后装载，门面最后构造：注册表是应用级单例，
 // 运行期只查表，不再装载。
 
-import { registerBrowserFeatures } from '../capabilities/browser/features';
 import { BindingStore } from './bindings';
 import { PluginHost } from '../plugins/host';
 import { BUILTIN_PLUGINS } from '../plugins/builtin';
 import { ListContexts } from './contexts';
-import { listRegistry } from '../app/lists/list-registry';
-import { docsDefinition, docsProvider } from '../app/lists/builtins/docs';
+import { listRegistry } from '../service/lists/registry';
 import { Ura } from './facade';
 import { ResourcePipeline } from './pipeline';
 import { ResourceMap } from './resource-map';
@@ -31,6 +29,7 @@ export async function createUraRuntime(options: {
   dataRoot: string;
   bindingFile?: string;
   workspace: () => string;
+  registerFeatures?: () => void | Promise<void>;
 }): Promise<UraRuntime> {
   await uraRegistry.runAs('system', async () => {
     uraRegistry.registerTransport(new FileTransport());
@@ -45,12 +44,11 @@ export async function createUraRuntime(options: {
     registry: uraRegistry,
   });
   await host.start();
-  await uraRegistry.runAs('system', async () => {
-    listRegistry.register(docsDefinition, docsProvider, 'system');
-  });
-  await uraRegistry.runAs('browser', async () => {
-    registerBrowserFeatures();
-  });
+  if (options.registerFeatures) {
+    await uraRegistry.runAs('browser', async () => {
+      await options.registerFeatures?.();
+    });
+  }
 
   const bindingStore = options.bindingFile
     ? new BindingStore(options.bindingFile)

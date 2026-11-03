@@ -10,7 +10,7 @@ import { fileRef } from '../../shared/ura';
 import type { Ura } from '../ura/facade';
 import type { PluginHost } from '../plugins/host';
 import type { BrowserAutomationContract } from './browser-contract';
-import { SiteSnapshots } from '../capabilities/browser/snapshots';
+import { SiteSnapshots } from '../service/sites/snapshots';
 import { createBrowserTools } from './browser-tools';
 import { createUraTools } from './ura-tools';
 
@@ -26,15 +26,27 @@ export function createHarnessExtension(
   deps: HarnessBusinessDeps,
 ): InlineExtension {
   return (pi) => {
-    const browserAutomation = deps.getBrowserAutomation();
     const snapshots = new SiteSnapshots(deps.ura, deps.workspace);
+    const browser = (): BrowserAutomationContract => {
+      const automation = deps.getBrowserAutomation();
+      if (!automation) throw new Error('browser automation is not ready');
+      return automation;
+    };
+    const automation: BrowserAutomationContract = {
+      open: (...args) => browser().open(...args),
+      read: (...args) => browser().read(...args),
+      click: (...args) => browser().click(...args),
+      type: (...args) => browser().type(...args),
+      back: (...args) => browser().back(...args),
+      screenshot: (...args) => browser().screenshot(...args),
+      snapshot: (...args) => browser().snapshot(...args),
+      activeViewId: () => browser().activeViewId(),
+    };
     const tools = [
       ...createUraTools(deps.ura),
-      ...(browserAutomation
-        ? createBrowserTools(browserAutomation, {
-            capture: (page) => snapshots.capture(page),
-          })
-        : []),
+      ...createBrowserTools(automation, {
+        capture: (page) => snapshots.capture(page),
+      }),
     ];
     for (const tool of tools) {
       pi.registerTool(tool as never);

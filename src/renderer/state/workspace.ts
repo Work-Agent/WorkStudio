@@ -1,14 +1,14 @@
 /**
  * 工作区作用域 store —— layout / views / lists 的渲染层投影。
  *
- * 主进程是工作区现场的唯一真相源；渲染层只消费 AppSnapshot.workspace。
+ * 主进程是工作区现场的唯一真相源；渲染层只消费 appBridge 状态。
  * 布局矩形由主进程计算，DOM 各区域直接消费矩形，不自行分栏或丈量。
  */
 import { create } from 'zustand';
 import type { ListGroup } from '../../shared/lists';
 import type { LayoutSnapshot, ViewEntry } from '../../shared/types';
 
-const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
+import { cmd } from '../api/appCommands';
 
 interface WorkspaceState {
   /** 主进程布局快照（未水合前为 null）。 */
@@ -27,5 +27,5 @@ export const useWorkspaceStore = create<WorkspaceState>()(() => ({
 
 /** 视图命令唯一出口（失败静默：主进程广播会把事实收敛回来）。 */
 export function runViewCommand(command: string, params?: unknown): void {
-  void mainBridge?.cmd(command, params);
+  void cmd(command, params);
 }

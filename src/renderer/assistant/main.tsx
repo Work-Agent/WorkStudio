@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import type { ResizeDirection, ThinkingLevel } from '../../shared/types';
 import '../index.css';
-import { bridge, MENU_SOURCE } from './bridge';
+import { bridge } from './bridge';
 import { matchCommands, runBuiltinCommand, useCommands } from './commands';
 import { DockResizeHandle, MessageRow, ResizeHandles } from './components';
 import { formatTokens, tabLabel } from './format';
@@ -50,7 +50,9 @@ function Assistant() {
   const agent = useAgent();
   const ui = shell?.ui;
   const activePath = ui?.activePath ?? null;
-  const openPaths = ui?.openPaths ?? [];
+  const [closedPaths, setClosedPaths] = useState<Set<string>>(new Set());
+  const allOpenPaths = ui?.openPaths ?? [];
+  const openPaths = allOpenPaths.filter((path) => !closedPaths.has(path));
   const sessions = useSessions(openPaths);
   const {
     messages,
@@ -60,7 +62,7 @@ function Assistant() {
     clearNewTask,
   } = useMessages(activePath);
   const floating = ui?.aiFloating ?? false;
-  const inputExpanded = ui?.inputExpanded ?? false;
+  const [inputExpanded, setInputExpanded] = useState(false);
   const activeTokens = sessions.find((s) => s.path === activePath)?.tokens;
 
   const [text, setText] = useState('');
@@ -82,6 +84,7 @@ function Assistant() {
   const [skills, setSkills] = useState<
     Array<{ name: string; description: string }>
   >([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [acIdx, setAcIdx] = useState(0);
   const [acDismissed, setAcDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -175,6 +178,15 @@ function Assistant() {
     });
   }, [messages, messages.length]);
 
+  const closeTabs = (paths: string[]): void => {
+    setClosedPaths((previous) => {
+      const next = new Set(previous);
+      for (const path of paths) next.add(path);
+      return next;
+    });
+    void bridge?.cmd('session.closeTabs', { paths });
+  };
+
   const onScroll = (): void => {
     const el = scrollRef.current;
     if (!el) return;
@@ -183,26 +195,18 @@ function Assistant() {
   };
 
   // ── tab 右键菜单（原生 Menu.popup；关闭族语义与资源面板一致）──
-  useEffect(() => {
-    if (!bridge) return;
-    return bridge.onPopupSelect((e) => {
-      if (e.source !== MENU_SOURCE) return;
-      const [action, path] = e.actionId.split(':');
-      const state = openPaths;
-      const close = (paths: string[]): void => {
-        void bridge?.cmd('session.closeTabs', { paths });
-      };
-      if (action === 'close' && path) close([path]);
-      else if (action === 'closeOthers' && path)
-        close(state.filter((p) => p !== path));
-      else if (action === 'closeLeft' && path)
-        close(state.slice(0, state.indexOf(path)));
-      else if (action === 'closeRight' && path)
-        close(state.slice(state.indexOf(path) + 1));
-      else if (action === 'closeAll') close([...state]);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPaths.join('|')]);
+  const runTabAction = (actionId: string): void => {
+    const [action, path] = actionId.split(':');
+    const state = openPaths;
+    if (action === 'close' && path) closeTabs([path]);
+    else if (action === 'closeOthers' && path)
+      closeTabs(state.filter((p) => p !== path));
+    else if (action === 'closeLeft' && path)
+      closeTabs(state.slice(0, state.indexOf(path)));
+    else if (action === 'closeRight' && path)
+      closeTabs(state.slice(state.indexOf(path) + 1));
+    else if (action === 'closeAll') closeTabs([...state]);
+  };
 
   const openTabMenu = (anchor: string): void => {
     const idx = openPaths.indexOf(anchor);
@@ -221,7 +225,9 @@ function Assistant() {
       },
       { id: 'closeAll', label: '关闭全部' },
     ];
-    void bridge?.shell.showPopup({ source: MENU_SOURCE, items });
+    void bridge?.popupMenu({ items }).then((actionId) => {
+      if (actionId) runTabAction(actionId);
+    });
   };
 
   const submit = async (
@@ -262,7 +268,7 @@ function Assistant() {
     await api.cmd('session.prompt', {
       text: value,
       newSession: !activePath,
-      activeSkills: ui?.selectedSkills ?? [],
+      activeSkills: selectedSkills,
     });
   };
 
@@ -275,11 +281,11 @@ function Assistant() {
   };
 
   const toggleSkill = async (name: string): Promise<void> => {
-    const current = ui?.selectedSkills ?? [];
-    const next = current.includes(name)
-      ? current.filter((item) => item !== name)
-      : [...current, name];
-    await bridge?.cmd('skills.setActive', { names: next });
+    setSelectedSkills((current) =>
+      current.includes(name)
+        ? current.filter((item) => item !== name)
+        : [...current, name],
+    );
   };
 
   const [dragging, setDragging] = useState(false);
@@ -292,11 +298,11 @@ function Assistant() {
     // 发起方拥有拖拽序列（OS 语义：pointerdown 命中的视图持续收到 move/up）；
     // 这里不做按键过滤（不同平台/事件的 buttons 位不可靠），只上报“仍在拖”。
     let frame = 0;
-    const onMove = (): void => {
+    const onMove = (event: PointerEvent): void => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        void api.interaction.move();
+        void api.interaction.move(event.clientX, event.clientY);
       });
     };
     const stop = (): void => {
@@ -349,10 +355,7 @@ function Assistant() {
     });
   };
 
-  const setUi = (patch: {
-    aiFloating?: boolean;
-    inputExpanded?: boolean;
-  }): void => {
+  const setUi = (patch: { aiFloating?: boolean }): void => {
     void bridge?.cmd('ui.set', { patch });
   };
 
@@ -427,7 +430,7 @@ function Assistant() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    void bridge?.cmd('session.closeTabs', { paths: [path] });
+                    closeTabs([path]);
                   }}
                   className="absolute right-0.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="关闭标签（数据保留）"
@@ -704,7 +707,7 @@ function Assistant() {
               />
             </div>
             <button
-              onClick={() => setUi({ inputExpanded: !inputExpanded })}
+              onClick={() => setInputExpanded((value) => !value)}
               className="absolute right-1.5 top-1 p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] rounded transition-colors"
               title={inputExpanded ? '收起输入框' : '展开输入框'}
             >
@@ -781,7 +784,7 @@ function Assistant() {
               >
                 <BookOpen className="w-3 h-3" />
                 <span className="hidden whitespace-nowrap min-[380px]:inline">
-                  {(ui?.selectedSkills ?? []).length || '技能'}
+                  {selectedSkills.length || '技能'}
                 </span>
               </button>
               {menu === 'skills' && (
@@ -797,9 +800,7 @@ function Assistant() {
                       </div>
                     ) : (
                       skills.map((skill) => {
-                        const active = (ui?.selectedSkills ?? []).includes(
-                          skill.name,
-                        );
+                        const active = selectedSkills.includes(skill.name);
                         return (
                           <button
                             key={skill.name}

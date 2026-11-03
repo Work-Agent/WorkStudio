@@ -19,7 +19,7 @@ export interface ListActionSpec {
   label: string;
   icon?: string;
   scope: 'app' | 'workspace' | 'session' | 'ui';
-  /** AppCommand.action */
+  /** 列表动作命令 */
   action: string;
   confirm?: boolean;
 }

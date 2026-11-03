@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   存储与数据（设置能力页）。
-  数据面：app:storage.view / open + app:settings.setGlobal（sessionDir）。
+  数据面：window.appBridge（/settings/storage、/piconf/settings/set-global、/native/pick-directory）。
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -212,7 +212,7 @@
         <h1>存储与数据</h1>
         <p>
           全部应用数据落在应用自持目录（与用户全局 pi
-          隔离，不污染工作区）；会话与 ui-state 按工作区隔离；写入一律原子替换。
+          隔离，不污染工作区）；会话与场景（scene.json）按工作区隔离；写入一律原子替换。
         </p>
       </header>
 
@@ -230,7 +230,14 @@
 
     <script>
       const state = { view: null, editing: false, saving: false };
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      const peek = (path) => bridge.peek(path);
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -257,9 +264,9 @@
         '<div class="row"><div class="label">数据根<span>' +
         esc(ROOT_SOURCES[source] || source || '默认') +
         ' · 重启后生效</span></div><div class="path" title="' +
-        esc(path) +
+        esc(shortPath(path)) +
         '">' +
-        esc(path) +
+        esc(shortPath(path)) +
         '</div><button data-set-root="1">更改…</button></div>';
 
       const pathRow = (label, hint, path) =>
@@ -267,9 +274,9 @@
         esc(label) +
         (hint ? '<span>' + esc(hint) + '</span>' : '') +
         '</div><div class="path" title="' +
-        esc(path) +
+        esc(shortPath(path)) +
         '">' +
-        esc(path) +
+        esc(shortPath(path)) +
         '</div><button data-open="' +
         esc(path) +
         '">打开</button></div>';
@@ -288,7 +295,7 @@
           pathRow(
             '界面状态',
             '主题 / 栏宽 / 打开集合 / 会话现场',
-            v.uiStateFile,
+            v.sceneFile,
           ) +
           pathRow('站点快照', '白名单域归档（随内容版本管理）', v.sitesDir);
 
@@ -355,7 +362,7 @@
 
       async function refresh() {
         try {
-          state.view = await invoke('app:storage.view');
+          state.view = await peek('/settings/storage');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         }
@@ -366,7 +373,7 @@
         state.saving = true;
         render();
         try {
-          await invoke('app:settings.setGlobal', {
+          await call('/piconf/settings/set-global', {
             path: 'sessionDir',
             value: value === '' ? null : value,
           });
@@ -384,14 +391,18 @@
       document.addEventListener('click', (e) => {
         const open = e.target.closest('[data-open]');
         if (open) {
-          void invoke('app:storage.open', { path: open.dataset.open }).catch(
-            (err) =>
-              toast(err && err.message ? err.message : String(err), true),
+          void call('/settings/storage/open', {
+            path: open.dataset.open,
+          }).catch((err) =>
+            toast(err && err.message ? err.message : String(err), true),
           );
           return;
         }
         if (e.target.closest('[data-set-root]')) {
-          void invoke('app:storage.setDataRoot')
+          void call('/native/pick-directory')
+            .then((path) =>
+              path ? call('/settings/data-root/set', { path }) : null,
+            )
             .then(() => refresh())
             .catch((err) =>
               toast(err && err.message ? err.message : String(err), true),

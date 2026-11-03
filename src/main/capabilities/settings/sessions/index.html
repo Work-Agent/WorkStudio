@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   会话管理（设置能力页）。
-  数据面：app:session.list / openTab / delete / rename / abort / new + app:ui.get（激活位）。
+  数据面：window.appBridge（/workspaces/:wsId/sessions/*；当前会话来自 sessions/current）。
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -282,7 +282,18 @@
 
     <script>
       const state = { sessions: [], activePath: null, streaming: false, q: '' };
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      async function workspace() {
+        const current = await bridge.peek('/workspaces/current');
+        if (!current) throw new Error('workspace is not ready');
+        return current;
+      }
+      const sessionPath = (path) => encodeURIComponent(path || '');
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -382,14 +393,14 @@
 
       async function refresh() {
         try {
-          const [sessions, ui, agent] = await Promise.all([
-            invoke('app:session.list'),
-            invoke('app:ui.get'),
-            invoke('app:agent.status'),
+          const current = await workspace();
+          const [sessions, agent] = await Promise.all([
+            bridge.peek(`/workspaces/${current.id}/sessions`),
+            bridge.peek(`/workspaces/${current.id}/sessions/current`),
           ]);
-          state.sessions = sessions;
-          state.activePath = ui.activePath;
-          state.streaming = agent.isStreaming === true;
+          state.sessions = sessions || [];
+          state.activePath = agent?.sessionFile ?? null;
+          state.streaming = agent?.isStreaming === true;
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         }
@@ -398,7 +409,7 @@
 
       $('new').onclick = async () => {
         try {
-          await invoke('app:session.new');
+          await call(`/workspaces/${(await workspace()).id}/sessions/new`);
           toast('已开始新任务');
           await refresh();
         } catch (e) {
@@ -416,7 +427,9 @@
         if (abort) {
           e.stopPropagation();
           try {
-            await invoke('app:session.abort');
+            await call(
+              `/workspaces/${(await workspace()).id}/sessions/current/abort`,
+            );
             toast('已停止执行');
           } catch (err) {
             toast(err && err.message ? err.message : String(err), true);
@@ -432,7 +445,11 @@
           const next = window.prompt('重命名会话', current);
           if (next == null || next.trim() === '' || next === current) return;
           try {
-            await invoke('app:session.rename', { path, name: next.trim() });
+            const current = await workspace();
+            await call(
+              `/workspaces/${current.id}/sessions/${sessionPath(path)}/rename`,
+              { name: next.trim() },
+            );
             toast('已重命名');
           } catch (err) {
             toast(err && err.message ? err.message : String(err), true);
@@ -446,7 +463,10 @@
           if (!window.confirm('删除该会话？会话文件将被移除，不可恢复。'))
             return;
           try {
-            await invoke('app:session.delete', { path });
+            const current = await workspace();
+            await call(
+              `/workspaces/${current.id}/sessions/${sessionPath(path)}/delete`,
+            );
             toast('已删除');
           } catch (err) {
             toast(err && err.message ? err.message : String(err), true);
@@ -456,7 +476,10 @@
         const item = e.target.closest('[data-path]');
         if (item) {
           try {
-            await invoke('app:session.openTab', { path: item.dataset.path });
+            const current = await workspace();
+            await call(`/workspaces/${current.id}/sessions/current/open`, {
+              sessionId: sessionPath(item.dataset.path),
+            });
             await refresh();
           } catch (err) {
             toast(err && err.message ? err.message : String(err), true);

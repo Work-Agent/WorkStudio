@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { ChevronLeft, ChevronRight, Pin, Plus, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../shared/types';
 import { popupMenu } from '../../api/runtime';
+import { displayPath } from '../../api/pathDisplay';
 
 export interface TabsBarItem {
   id: string;
@@ -198,7 +199,7 @@ export function TabsBar({
                 e.preventDefault();
                 openMenu(item.id);
               }}
-              title={item.label}
+              title={displayPath(item.label)}
               className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors min-w-0 max-w-32 ${
                 isActive
                   ? 'bg-zinc-50 dark:bg-[#1E2021] text-zinc-900 dark:text-zinc-100'
@@ -233,7 +234,7 @@ export function TabsBar({
                     title="加载失败，点击重试"
                   />
                 )}
-                <span className="truncate">{item.label}</span>
+                <span className="truncate">{displayPath(item.label)}</span>
                 {(item.badge ?? 0) > 0 && (
                   <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[#4F6BED] text-white rounded-full shrink-0">
                     {item.badge}

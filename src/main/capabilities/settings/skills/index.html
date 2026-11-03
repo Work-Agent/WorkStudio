@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   技能（设置能力页）。
-  数据面：app:skills.view / reload（清单 + 装载诊断 + 当前启用集合）+ app:storage.open（打开 SKILL.md）。
+  数据面：window.appBridge（/piconf/skills/view|reload）+ /settings/storage/open。
   装载链归 pi（additionalSkillPaths + ResourceLoader）；本页只读展示，不新增第二套语义。
 -->
 <html lang="zh-CN" data-theme="light">
@@ -293,7 +293,13 @@
         q: '',
         loading: false,
       };
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -368,9 +374,9 @@
                   ? '<p class="desc">' + esc(s.description) + '</p>'
                   : '') +
                 '<div class="path"><span title="' +
-                esc(s.path || '') +
+                esc(shortPath(s.path || '')) +
                 '">' +
-                esc(s.path || '（路径未知）') +
+                esc(shortPath(s.path || '（路径未知）')) +
                 '</span>' +
                 (s.path
                   ? '<button class="mini" data-open="' +
@@ -417,8 +423,8 @@
         $('reload').disabled = true;
         $('reload').textContent = reload ? '装载中…' : '读取中…';
         try {
-          const res = await invoke(
-            reload ? 'app:skills.reload' : 'app:skills.view',
+          const res = await call(
+            reload ? '/piconf/skills/reload' : '/piconf/skills/view',
           );
           state.skills = res.skills ?? [];
           state.diagnostics = res.diagnostics ?? [];
@@ -442,9 +448,10 @@
       document.addEventListener('click', (e) => {
         const open = e.target.closest('[data-open]');
         if (open) {
-          void invoke('app:storage.open', { path: open.dataset.open }).catch(
-            (err) =>
-              toast(err && err.message ? err.message : String(err), true),
+          void call('/settings/storage/open', {
+            path: open.dataset.open,
+          }).catch((err) =>
+            toast(err && err.message ? err.message : String(err), true),
           );
         }
       });

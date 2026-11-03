@@ -105,7 +105,8 @@ export interface StorageView {
   defaultSessionsDir: string;
   /** settings.json 里显式配置的 sessionDir（null = 未配置）。 */
   sessionsDirConfigured: string | null;
-  uiStateFile: string;
+  sceneFile: string;
+  appPath: string;
   /** 站点快照目录（落在用户工作区内，跟随内容）。 */
   sitesDir: string;
   pluginsDirs: string[];
@@ -619,6 +620,8 @@ export interface Rect {
 
 /** 布局引擎输出（DOM 条带与原生 bounds 共用）。 */
 export interface LayoutSnapshot {
+  /** 助手形态：dock 占据右侧，floating 使用浮动几何。 */
+  assistantMode: 'dock' | 'floating';
   window: { width: number; height: number };
   titlebar: Rect;
   workbench: Rect;

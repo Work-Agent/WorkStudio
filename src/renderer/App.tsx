@@ -13,6 +13,7 @@ import { Sidebar } from './components/sidebar/Sidebar';
 import { ToastHost } from './components/ToastHost';
 import { TitleBar } from './components/titlebar/TitleBar';
 import { useUiStore } from './state/ui';
+import { cmd } from './api/appCommands';
 
 export function App() {
   const theme = useUiStore((s) => s.theme);
@@ -25,7 +26,7 @@ export function App() {
   // 页面视口上报：docked DevTools 会把页面变小，主进程据此收缩原生视图（浏览器语义）。
   useEffect(() => {
     const report = (): void => {
-      void window.workbench?.cmd('debug.viewport', {
+      void cmd('debug.viewport', {
         width: window.innerWidth,
         height: window.innerHeight,
       });

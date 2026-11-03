@@ -9,8 +9,6 @@
  */
 import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 
-const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
-
 export function PaneSplitter() {
   const [active, setActive] = useState(false);
 
@@ -45,23 +43,30 @@ function beginPaneDrag(
   setActive: (active: boolean) => void,
 ): void {
   e.preventDefault();
-  if (!mainBridge) return;
+  const bridge = window.appBridge;
+  if (!bridge) return;
   setActive(true);
-  void mainBridge.interaction.begin({
+  const begin = {
     type: 'pane-resize',
-    target: 'left',
-    anchor: { x: e.clientX, y: e.clientY },
-  });
+    side: 'left',
+    pointerX: e.clientX,
+    pointerY: e.clientY,
+  };
+  void bridge.call('/interaction/begin', begin);
   let frame = 0;
-  const onMove = (): void => {
+  const onMove = (event: MouseEvent): void => {
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      void mainBridge.interaction.move();
+      void bridge.call('/interaction/move', {
+        ...begin,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+      });
     });
   };
   const onUp = (): void => {
-    void mainBridge.interaction.end();
+    void bridge.call('/interaction/end', begin);
     cleanup();
   };
   const cleanup = (): void => {

@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
+import { cmd } from '../../api/appCommands';
 import { useUiStore } from '../../state/ui';
 import { rendererIcon } from '../titlebar/icons';
 import { EmptyState, SubListView } from './SubListView';
@@ -26,7 +27,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 async function activate(item: ListItem): Promise<void> {
-  await window.workbench?.cmd('list.action', { action: 'open', item });
+  await cmd('list.action', { action: 'open', item });
 }
 
 function itemTime(item: ListItem): number {

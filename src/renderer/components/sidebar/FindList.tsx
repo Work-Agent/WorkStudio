@@ -6,10 +6,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { ListItem } from '../../../shared/lists';
+import { displayPath } from '../../api/pathDisplay';
 import type { ListEntry } from '../../../shared/ura';
+import { cmd } from '../../api/appCommands';
 import { setUiState } from '../../state/ui';
-
-const mainBridge = typeof window !== 'undefined' ? window.workbench : undefined;
 
 interface Hit {
   ref: string;
@@ -27,14 +27,12 @@ export function FindList() {
 
   useEffect(() => {
     inputRef.current?.focus();
-    if (!mainBridge) return;
-    void mainBridge.cmd<{ root: string }>('ura.workspace').then((res) => {
+    void cmd<{ root: string }>('ura.workspace').then((res) => {
       if (res.ok && res.data?.root) setRoot(res.data.root.replace(/\/$/, ''));
     });
   }, []);
 
   useEffect(() => {
-    if (!mainBridge) return;
     if (!query.trim()) {
       setHits([]);
       return;
@@ -43,8 +41,7 @@ export function FindList() {
     timer.current = setTimeout(() => {
       const pattern = query.includes('*') ? query.trim() : `*${query.trim()}*`;
       setLoading(true);
-      void mainBridge
-        .cmd<ListEntry[]>('ura.find', { pattern, limit: 200 })
+      void cmd<ListEntry[]>('ura.find', { pattern, limit: 200 })
         .then((res) => {
           const items = res.ok ? res.data : [];
           setHits(
@@ -81,7 +78,7 @@ export function FindList() {
       title: name,
       meta: { ref },
     };
-    void mainBridge?.cmd('list.action', { action: 'open', item });
+    void cmd('list.action', { action: 'open', item });
   };
 
   return (
@@ -120,7 +117,7 @@ export function FindList() {
           <div
             key={row.ref}
             data-testid="sidebar-find-item"
-            title={row.ref}
+            title={displayPath(row.ref)}
             onClick={() => open(row.ref, row.name)}
             className="flex items-start gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors"
           >

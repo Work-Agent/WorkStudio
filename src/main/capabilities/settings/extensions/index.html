@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   扩展管理（设置能力页）。
-  数据面：app:packages.*（社区目录 / 已配置清单 / 安装 / 卸载）+ app:plugins.list（本机内置插件）。
+  数据面：window.appBridge（/piconf/packages/* 社区目录 / 已配置清单 / 安装 / 卸载）。
   目录来源：主进程抓 pi.dev 包目录 SSR 页面（无公开 JSON API）；安装走 pi DefaultPackageManager。
 -->
 <html lang="zh-CN" data-theme="light">
@@ -391,7 +391,13 @@
         busy: {},
       };
 
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -551,7 +557,7 @@
               esc(p.source) +
               '</span>' +
               (p.installedPath
-                ? '<span title="' + esc(p.installedPath) + '">已落盘</span>'
+                ? '<span title="' + esc(shortPath(p.installedPath)) + '">已落盘</span>'
                 : '') +
               '</div>' +
               '</div>' +
@@ -599,9 +605,9 @@
               (e.hidden ? '<span class="badge">隐藏</span>' : '') +
               '</div>' +
               '<div class="meta"><span title="' +
-              esc(e.path) +
+              esc(shortPath(e.path)) +
               '">' +
-              esc(e.path) +
+              esc(shortPath(e.path)) +
               '</span>' +
               (caps.length
                 ? '<span>' + esc(caps.join(' · ')) + '</span>'
@@ -630,6 +636,78 @@
         renderCatalog();
         renderConfigured();
         renderLoaded();
+      }
+
+      async function loadConfigured() {
+        try {
+          const [configured, loaded] = await Promise.all([
+            call('/piconf/packages/list'),
+            call('/piconf/packages/loaded'),
+          ]);
+          state.configured = configured || [];
+          state.loaded = loaded || null;
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        }
+        render();
+      }
+
+      async function loadCatalog(more) {
+        if (state.loading) return;
+        state.loading = true;
+        if (!more) {
+          state.packages = [];
+          state.page = 0;
+        }
+        render();
+        try {
+          const result = await call('/piconf/packages/catalog', {
+            ...(state.query ? { query: state.query } : {}),
+            ...(state.type ? { type: state.type } : {}),
+            page: more ? state.page + 1 : 1,
+          });
+          state.packages = more
+            ? [...state.packages, ...(result.packages || [])]
+            : result.packages || [];
+          state.total = result.total || 0;
+          state.page = result.page || 1;
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          state.loading = false;
+          render();
+        }
+      }
+
+      async function install(name) {
+        state.busy['install:' + name] = true;
+        render();
+        try {
+          await call('/piconf/packages/install', { name });
+          toast('已安装 ' + name);
+          await loadConfigured();
+          await loadCatalog(false);
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          delete state.busy['install:' + name];
+          render();
+        }
+      }
+
+      async function remove(source, scope) {
+        state.busy['remove:' + source] = true;
+        render();
+        try {
+          await call('/piconf/packages/remove', { source, scope });
+          toast('已卸载 ' + source);
+          await loadConfigured();
+        } catch (e) {
+          toast(e && e.message ? e.message : String(e), true);
+        } finally {
+          delete state.busy['remove:' + source];
+          render();
+        }
       }
 
       // ── 交互 ────────────────────────────────────────────

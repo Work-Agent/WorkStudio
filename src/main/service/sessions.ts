@@ -1,0 +1,431 @@
+/**
+ * 会话业务：持有会话状态与操作，不认路径、不碰 ctx。
+ *
+ * 状态与操作在类上；路径绑定在 routes.ts。
+ */
+
+import type { AgentHost } from '../agent/agent-host';
+import type {
+  AgentSnapshot,
+  ModelOption,
+  ParsedMessage,
+  PiEventFrame,
+  PiSessionEvent,
+  SessionMeta,
+} from '../../shared/types';
+
+export interface SessionListItem extends SessionMeta {
+  id: string;
+}
+
+export interface PromptInput {
+  text: string;
+  newSession?: boolean;
+  activeSkills?: string[];
+}
+
+export interface SessionToolState {
+  id: string;
+  name: string;
+  args: unknown;
+  result: unknown;
+  isError: boolean;
+  done: boolean;
+}
+
+/** 当前回复的完整投影：状态是权威，事件是增量提示。 */
+export interface SessionStreamState {
+  streaming: boolean;
+  text: string;
+  thinking: string;
+  tools: SessionToolState[];
+}
+
+/** 受约束的流式增量：type 是唯一判别字段，channel 是封闭枚举。 */
+export type SessionStreamEvent =
+  | { type: 'message-start'; role: string }
+  | { type: 'message-end'; role: string }
+  | { type: 'append'; channel: 'text' | 'thinking'; delta: string }
+  | { type: 'tool-start'; id: string; name: string; args: unknown }
+  | { type: 'tool-end'; id: string; result: unknown; isError: boolean }
+  | { type: 'settled' };
+
+export function isSessionStreamEvent(
+  value: unknown,
+): value is SessionStreamEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Record<string, unknown>;
+  switch (event['type']) {
+    case 'message-start':
+    case 'message-end':
+      return typeof event['role'] === 'string';
+    case 'append':
+      return (
+        (event['channel'] === 'text' || event['channel'] === 'thinking') &&
+        typeof event['delta'] === 'string'
+      );
+    case 'tool-start':
+      return (
+        typeof event['id'] === 'string' && typeof event['name'] === 'string'
+      );
+    case 'tool-end':
+      return (
+        typeof event['id'] === 'string' && typeof event['isError'] === 'boolean'
+      );
+    case 'settled':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function idleStream(): SessionStreamState {
+  return { streaming: false, text: '', thinking: '', tools: [] };
+}
+
+const idOf = (path: string): string => encodeURIComponent(path);
+const pathOf = (id: string): string => decodeURIComponent(id);
+
+export class SessionsService {
+  private listView: SessionListItem[] = [];
+  private currentView: AgentSnapshot | null = null;
+  private readonly messageViews = new Map<string, ParsedMessage[]>();
+  private readonly changeListeners = new Set<() => void>();
+  private readonly streamListeners = new Set<
+    (sessionId: string, state: SessionStreamState) => void
+  >();
+  private readonly streamEventListeners = new Set<
+    (sessionId: string, event: SessionStreamEvent) => void
+  >();
+  private readonly streamViews = new Map<string, SessionStreamState>();
+
+  constructor(private readonly agent: AgentHost) {}
+
+  get list(): SessionListItem[] {
+    return this.listView;
+  }
+
+  get current(): AgentSnapshot | null {
+    return this.currentView;
+  }
+
+  messages(sessionId: string): ParsedMessage[] {
+    return this.messageViews.get(sessionId) ?? [];
+  }
+
+  models(): ModelOption[] {
+    return this.agent.getModels();
+  }
+
+  commands(): Array<{ name: string; description: string; source: string }> {
+    return this.agent.getCommands();
+  }
+
+  stream(sessionId: string): SessionStreamState {
+    return this.streamViews.get(sessionId) ?? idleStream();
+  }
+
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  onStream(
+    listener: (sessionId: string, state: SessionStreamState) => void,
+  ): () => void {
+    this.streamListeners.add(listener);
+    return () => this.streamListeners.delete(listener);
+  }
+
+  onStreamEvent(
+    listener: (sessionId: string, event: SessionStreamEvent) => void,
+  ): () => void {
+    this.streamEventListeners.add(listener);
+    return () => this.streamEventListeners.delete(listener);
+  }
+
+  async start(): Promise<void> {
+    this.currentView = this.agent.getSnapshot();
+    await this.refresh();
+    await this.loadMessages();
+    this.emitChange();
+  }
+
+  async refresh(): Promise<void> {
+    const items = await this.agent.listSessions();
+    this.listView = items.map((item) => ({ ...item, id: idOf(item.path) }));
+    this.emitChange();
+  }
+
+  /** 工作区换代：重新绑定当前会话、列表与消息。 */
+  async reloadWorkspace(): Promise<void> {
+    this.currentView = this.agent.getSnapshot();
+    this.messageViews.clear();
+    this.streamViews.clear();
+    await this.refresh();
+    await this.loadMessages();
+    this.emitChange();
+  }
+
+  async newSession(): Promise<void> {
+    await this.agent.newSession();
+    this.currentView = this.agent.getSnapshot();
+    this.resetStream(this.currentView.sessionFile);
+    await this.loadMessages();
+    await this.refresh();
+    this.emitChange();
+  }
+
+  async openSession(sessionId: string): Promise<void> {
+    const path = pathOf(sessionId);
+    await this.agent.switchSession(path);
+    this.currentView = this.agent.getSnapshot();
+    this.resetStream(this.currentView.sessionFile);
+    await this.loadMessages(path);
+    await this.refresh();
+    this.emitChange();
+  }
+
+  async prompt(input: PromptInput): Promise<void> {
+    await this.agent.prompt(input);
+    this.currentView = this.agent.getSnapshot();
+    await this.refresh();
+    this.emitChange();
+  }
+
+  async steer(text: string): Promise<void> {
+    await this.agent.steer(text);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  async followUp(text: string): Promise<void> {
+    await this.agent.followUp(text);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  async abort(): Promise<void> {
+    await this.agent.abort();
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  async compact(instructions?: string): Promise<void> {
+    await this.agent.compact(instructions);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  async fork(
+    entryId: string,
+    position?: 'before' | 'at',
+  ): Promise<{ cancelled: boolean }> {
+    const result = await this.agent.fork(entryId, position);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+    return result;
+  }
+
+  rename(sessionId: string, name: string): void {
+    this.agent.renameSession(pathOf(sessionId), name);
+    this.currentView = this.agent.getSnapshot();
+    void this.refresh();
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.agent.deleteSession(pathOf(sessionId));
+    this.streamViews.delete(sessionId);
+    this.currentView = this.agent.getSnapshot();
+    await this.refresh();
+    this.emitChange();
+  }
+
+  async setModel(provider: string, modelId: string): Promise<void> {
+    await this.agent.setModel(provider, modelId);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  setThinking(level: string): void {
+    this.agent.setThinkingLevel(level);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  setSteeringMode(mode: 'all' | 'one-at-a-time'): void {
+    this.agent.setSteeringMode(mode);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  setFollowUpMode(mode: 'all' | 'one-at-a-time'): void {
+    this.agent.setFollowUpMode(mode);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  setAutoCompaction(enabled: boolean): void {
+    this.agent.setAutoCompaction(enabled);
+    this.currentView = this.agent.getSnapshot();
+    this.emitChange();
+  }
+
+  reloadResources(): void {
+    void this.agent.reloadResources();
+  }
+
+  /** 组合根把 AgentHost 的帧送进来；归约成当前回复状态，并发出受约束的增量。 */
+  receiveFrame(frame: PiEventFrame): void {
+    const snapshot = this.agent.getSnapshot();
+    this.currentView = snapshot;
+    const file = snapshot.sessionFile;
+    if (!file) return;
+
+    const sessionId = idOf(file);
+    const prev = this.stream(sessionId);
+    let next: SessionStreamState | null = null;
+    let event: SessionStreamEvent | null = null;
+
+    switch (frame.event.type) {
+      case 'message_start': {
+        next = { streaming: true, text: '', thinking: '', tools: [] };
+        this.emitChange();
+        event = {
+          type: 'message-start',
+          role: frame.event.message.role,
+        };
+        break;
+      }
+      case 'message_update': {
+        const inner = frame.event.assistantMessageEvent;
+        if (inner.type === 'text_delta' && inner.delta) {
+          next = {
+            ...prev,
+            streaming: true,
+            text: prev.text + inner.delta,
+          };
+          event = { type: 'append', channel: 'text', delta: inner.delta };
+        } else if (inner.type === 'thinking_delta' && inner.delta) {
+          next = {
+            ...prev,
+            streaming: true,
+            thinking: prev.thinking + inner.delta,
+          };
+          event = {
+            type: 'append',
+            channel: 'thinking',
+            delta: inner.delta,
+          };
+        }
+        break;
+      }
+      case 'tool_execution_start': {
+        const ev = frame.event as Extract<
+          PiSessionEvent,
+          { type: 'tool_execution_start' }
+        >;
+        next = {
+          ...prev,
+          streaming: true,
+          tools: [
+            ...prev.tools,
+            {
+              id: ev.toolCallId,
+              name: ev.toolName,
+              args: ev.args,
+              result: null,
+              isError: false,
+              done: false,
+            },
+          ],
+        };
+        event = {
+          type: 'tool-start',
+          id: ev.toolCallId,
+          name: ev.toolName,
+          args: ev.args,
+        };
+        break;
+      }
+      case 'tool_execution_end': {
+        const ev = frame.event as Extract<
+          PiSessionEvent,
+          { type: 'tool_execution_end' }
+        >;
+        next = {
+          ...prev,
+          tools: prev.tools.map((tool) =>
+            tool.id === ev.toolCallId
+              ? {
+                  ...tool,
+                  result: ev.result,
+                  isError: ev.isError,
+                  done: true,
+                }
+              : tool,
+          ),
+        };
+        event = {
+          type: 'tool-end',
+          id: ev.toolCallId,
+          result: ev.result,
+          isError: ev.isError,
+        };
+        break;
+      }
+      case 'message_end':
+        event = {
+          type: 'message-end',
+          role: frame.event.message.role,
+        };
+        this.emitChange();
+        void this.syncMessages();
+        break;
+      case 'agent_settled':
+        next = { ...prev, streaming: false };
+        event = { type: 'settled' };
+        this.emitChange();
+        void this.syncMessages();
+        break;
+      default:
+        break;
+    }
+
+    if (next) {
+      this.streamViews.set(sessionId, next);
+      for (const listener of this.streamListeners) listener(sessionId, next);
+    }
+    if (event) {
+      for (const listener of this.streamEventListeners) {
+        listener(sessionId, event);
+      }
+    }
+  }
+
+  private resetStream(file: string | null): void {
+    if (!file) return;
+    const sessionId = idOf(file);
+    const state = idleStream();
+    this.streamViews.set(sessionId, state);
+    for (const listener of this.streamListeners) listener(sessionId, state);
+  }
+
+  private async syncMessages(): Promise<void> {
+    const file =
+      this.currentView?.sessionFile ?? this.agent.getSnapshot().sessionFile;
+    if (!file) return;
+    this.messageViews.set(idOf(file), await this.agent.getMessages(file));
+    this.emitChange();
+  }
+
+  private async loadMessages(path?: string): Promise<void> {
+    const file = path ?? this.agent.getSnapshot().sessionFile ?? '';
+    if (!file) return;
+    this.messageViews.set(idOf(file), await this.agent.getMessages(file));
+  }
+
+  private emitChange(): void {
+    for (const listener of this.changeListeners) listener();
+  }
+}

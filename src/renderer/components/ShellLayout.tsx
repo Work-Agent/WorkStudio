@@ -1,7 +1,7 @@
 /**
  * 壳层几何同步：把主进程 layout 写成 CSS 变量。
  *
- * 拖拽 / 窗口缩放时 AppSnapshot 不重建，只有这一条订阅在跑；
+ * 拖拽 / 窗口缩放时只有 layout 状态更新，不被业务快照重建打断；
  * App、Sidebar、列表、标签栏都不因几何变化重渲染。
  */
 import { useLayoutEffect } from 'react';
@@ -30,12 +30,8 @@ export function ShellLayout() {
     const unsubscribe = useWorkspaceStore.subscribe((state, prev) => {
       if (state.layout !== prev.layout) applyGeometry(state.layout);
     });
-    const off = window.workbench?.onLayout((layout) => {
-      useWorkspaceStore.setState({ layout });
-    });
     return () => {
       unsubscribe();
-      off?.();
     };
   }, []);
   return null;

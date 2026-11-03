@@ -38,11 +38,14 @@ import type { PluginHost } from '../plugins/host';
 import { DialogHost, makeUiContext } from './ui-context';
 import { EventBridge } from './event-bridge';
 import { SettingsService } from './config-service';
+import { modelCatalog, providerCatalog } from './model-catalog';
+import { loadedResources } from './resources-view';
+import { loginProvider as loginProviderWith } from './model-auth';
+import { listSessions } from './session-list';
 import { AppSpaceSettingsStorage } from './settings-storage';
 import {
   deleteSessionFile,
   readSessionMessages,
-  readSessionMeta,
   readSessionTokens,
 } from './session-index';
 import {
@@ -406,28 +409,7 @@ export class AgentHost {
   }
 
   async listSessions(): Promise<SessionMeta[]> {
-    const infos = await SessionManager.list(
-      this.workspacePath,
-      this.resolveSessionsDir(),
-    );
-    return infos
-      .map((info) => {
-        const meta = readSessionMeta(info.path);
-        return {
-          path: info.path,
-          name:
-            info.name ??
-            (meta.name ||
-              (info.firstMessage
-                ? `${info.firstMessage.slice(0, 30)}…`
-                : '未命名会话')),
-          createdAt: info.created.getTime(),
-          preview: meta.preview || info.firstMessage,
-          ...(meta.tokens ? { tokens: meta.tokens } : {}),
-          messageCount: info.messageCount,
-        };
-      })
-      .sort((a, b) => b.createdAt - a.createdAt);
+    return listSessions(this.workspacePath, this.resolveSessionsDir());
   }
 
   async deleteSession(path: string): Promise<void> {
@@ -547,72 +529,12 @@ export class AgentHost {
 
   /** 供应商目录 + 凭证状态（凭证值不出主进程）。 */
   getProviderCatalog(customProviderIds: string[]): ProviderInfoView[] {
-    const runtime = this.modelRuntime;
-    const custom = new Set(customProviderIds);
-    const available = new Set(
-      runtime.getAvailableSnapshot().map((m) => `${m.provider}/${m.id}`),
-    );
-    const list = runtime.getProviders().map((p): ProviderInfoView => {
-      const status = runtime.getProviderAuthStatus(p.id);
-      const models = p.getModels();
-      return {
-        id: p.id,
-        name: p.name,
-        builtin: !custom.has(p.id),
-        ...(p.baseUrl ? { baseUrl: p.baseUrl } : {}),
-        configured: status.configured,
-        ...(status.source ? { authSource: status.source } : {}),
-        ...(status.label ? { authLabel: status.label } : {}),
-        hasApiKeyAuth: !!p.auth.apiKey,
-        hasOAuthAuth: !!p.auth.oauth,
-        canApiKeyLogin: !!p.auth.apiKey?.login,
-        canOAuthLogin: !!p.auth.oauth?.login,
-        modelCount: models.length,
-        availableModelCount: models.filter((m) =>
-          available.has(`${p.id}/${m.id}`),
-        ).length,
-      };
-    });
-    // 已配置在前，其次内置-名称排序（自定义沉底）。
-    return list.sort((a, b) => {
-      if (a.configured !== b.configured) return a.configured ? -1 : 1;
-      if (a.builtin !== b.builtin) return a.builtin ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+    return providerCatalog(this.modelRuntime, customProviderIds);
   }
 
   /** 模型目录（全部供应商；available = 供应商凭证已配置）。 */
   getModelCatalog(): ModelCatalogItem[] {
-    const runtime = this.modelRuntime;
-    const available = new Set(
-      runtime.getAvailableSnapshot().map((m) => `${m.provider}/${m.id}`),
-    );
-    const out: ModelCatalogItem[] = [];
-    for (const p of runtime.getProviders()) {
-      for (const m of p.getModels()) {
-        out.push({
-          provider: p.id,
-          modelId: m.id,
-          label: m.name ?? m.id,
-          reasoning: m.reasoning,
-          ...(m.input ? { input: [...m.input] } : {}),
-          ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-          ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
-          ...(m.cost
-            ? {
-                cost: {
-                  input: m.cost.input,
-                  output: m.cost.output,
-                  cacheRead: m.cost.cacheRead,
-                  cacheWrite: m.cost.cacheWrite,
-                },
-              }
-            : {}),
-          available: available.has(`${p.id}/${m.id}`),
-        });
-      }
-    }
-    return out;
+    return modelCatalog(this.modelRuntime);
   }
 
   /**
@@ -624,97 +546,18 @@ export class AgentHost {
     type: 'api_key' | 'oauth';
     apiKey?: string;
   }): Promise<void> {
-    const runtime = this.modelRuntime;
-    const provider = runtime.getProvider(input.providerId);
-    if (!provider) throw new Error(`未知供应商：${input.providerId}`);
-    let keyConsumed = false;
-    const infoCards: string[] = [];
-
-    const interaction = {
-      prompt: async (prompt: {
-        type: string;
-        message: string;
-        placeholder?: string;
-        options?: readonly {
-          id: string;
-          label: string;
-          description?: string;
-        }[];
-      }): Promise<string> => {
-        if (prompt.type === 'secret' && input.apiKey && !keyConsumed) {
-          keyConsumed = true;
-          return input.apiKey;
-        }
-        if (prompt.type === 'select' && prompt.options) {
-          const labels = prompt.options.map((o) =>
-            o.description ? `${o.label} — ${o.description}` : o.label,
-          );
-          const value = await this.askDialog('select', {
-            title: `登录 ${provider.name}`,
-            message: prompt.message,
-            options: labels,
-          });
-          const idx = labels.indexOf(String(value ?? ''));
-          if (idx < 0) throw new Error('登录已取消');
-          return prompt.options[idx]!.id;
-        }
-        const value = await this.askDialog('input', {
-          title: `登录 ${provider.name}`,
-          message: prompt.message,
-          ...(prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
-          ...(prompt.type === 'secret' ? { secret: true } : {}),
-        });
-        if (typeof value !== 'string' || value.length === 0)
-          throw new Error('登录已取消');
-        return value;
+    await loginProviderWith(
+      {
+        runtime: () => this.modelRuntime,
+        askDialog: (type, fields) => this.askDialog(type, fields),
+        dialogHost: () => this.dialogHost,
+        notify: (message, level, source) =>
+          this.deps.ui.onNotify(message, level, source),
+        openExternal: this.deps.openExternal,
+        emitStatus: () => this.emitStatus(),
       },
-      notify: (event: {
-        type: string;
-        message?: string;
-        url?: string;
-        instructions?: string;
-        userCode?: string;
-        verificationUri?: string;
-      }): void => {
-        if (event.type === 'auth_url' && event.url) {
-          this.deps.ui.onNotify(
-            `请在浏览器完成 ${provider.name} 授权`,
-            'info',
-            '模型登录',
-          );
-          void this.deps.openExternal?.(event.url);
-          return;
-        }
-        if (
-          event.type === 'device_code' &&
-          event.userCode &&
-          event.verificationUri
-        ) {
-          const id = this.dialogHost?.info({
-            title: `登录 ${provider.name}`,
-            message: `请在浏览器中输入授权码：\n\n    ${event.userCode}\n\n页面：${event.verificationUri}\n（授权完成后本卡片自动关闭）`,
-          });
-          if (id) infoCards.push(id);
-          void this.deps.openExternal?.(event.verificationUri);
-          return;
-        }
-        if (event.message)
-          this.deps.ui.onNotify(event.message, 'info', '模型登录');
-      },
-    };
-
-    try {
-      await runtime.login(input.providerId, input.type, interaction as never, {
-        agentName: 'WorkStudio',
-      });
-      await runtime.refresh({
-        providers: [input.providerId],
-        allowNetwork: true,
-      });
-      this.emitStatus();
-    } finally {
-      for (const id of infoCards) this.dialogHost?.dismiss(id);
-    }
+      input,
+    );
   }
 
   /** 删除已存凭证（环境变量 / models.json 中的 key 不受影响）。 */
@@ -726,33 +569,7 @@ export class AgentHost {
 
   /** 已加载资源投影（扩展 / 技能 / 提示词 / 主题 + 装载错误）。 */
   getLoadedResources(): LoadedResourcesView {
-    const loader = this.services.resourceLoader;
-    const ext = loader.getExtensions();
-    const skills = loader.getSkills();
-    const prompts = loader.getPrompts();
-    const themes = loader.getThemes();
-    return {
-      extensions: ext.extensions.map((e) => ({
-        path: e.resolvedPath || e.path,
-        hidden: e.hidden === true,
-        tools: [...e.tools.keys()],
-        commands: [...e.commands.keys()],
-      })),
-      skills: skills.skills.map((s) => ({
-        name: s.name,
-        description: s.description,
-        path: s.filePath,
-      })),
-      prompts: prompts.prompts.map((p) => ({
-        name: p.name,
-        path: p.filePath,
-      })),
-      themes: themes.themes.map((t) => ({
-        name: (t as { name?: string }).name ?? '',
-        path: (t as { filePath?: string }).filePath ?? '',
-      })),
-      errors: ext.errors.map((e) => ({ path: e.path, message: e.error })),
-    };
+    return loadedResources(this.services.resourceLoader);
   }
 
   /** 资源热重载（安装 / 卸载 pi 包后调用；流式中不打断，等下一轮）。 */

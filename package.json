@@ -20,11 +20,21 @@
     "release": "pnpm build && electron-builder --publish always",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:full": "pnpm build && playwright test",
+    "test:e2e:last": "playwright test --last-failed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:dev": "pnpm build && E2E_DEV=1 playwright test",
+    "test:e2e:dev:last": "pnpm build && E2E_DEV=1 playwright test --last-failed",
+    "test:e2e:dev:ui": "pnpm build && E2E_DEV=1 playwright test --ui",
+    "test:e2e:dev:run": "E2E_DEV=1 playwright test",
+    "test:e2e:dev:full": "pnpm build && E2E_DEV=1 playwright test"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
     "@floating-ui/react": "^0.27.20",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

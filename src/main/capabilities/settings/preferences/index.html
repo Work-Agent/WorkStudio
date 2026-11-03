@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   偏好设置页（设置能力页）—— architecture.md §5.3 / §6.4。
-  数据面：window.extension.invoke('app:settings.*')；两层：App 默认 / 本工作区。
+  数据面：window.appBridge（/piconf settings / ura）；两层：App 默认 / 本工作区。
   值语义：null = 删除该键（回落继承 / pi 默认）；未列出的字段原样保真。
 -->
 <html lang="zh-CN" data-theme="light">
@@ -432,7 +432,13 @@
 
       let view = null;
 
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s).replace(
@@ -575,8 +581,8 @@
       }
 
       function render() {
-        $('path-global').textContent = view.paths.global;
-        $('path-project').textContent = view.paths.project;
+        $('path-global').textContent = shortPath(view.paths.global);
+        $('path-project').textContent = shortPath(view.paths.project);
         renderScope('global', view.global, view.effective);
         renderScope('project', view.project, view.effective);
       }
@@ -613,13 +619,13 @@
           toast('没有改动');
           return;
         }
-        const cmd =
+        const path =
           scope === 'global'
-            ? 'app:settings.setGlobal'
-            : 'app:settings.setProject';
+            ? '/piconf/settings/set-global'
+            : '/piconf/settings/set-project';
         try {
           for (const change of changes) {
-            view = await invoke(cmd, change);
+            view = await call(path, change);
           }
           render();
           toast(
@@ -635,7 +641,7 @@
 
       async function load() {
         try {
-          view = await invoke('app:settings.view');
+          view = (await bridge.peek('/piconf'))?.settings ?? null;
           render();
         } catch (e) {
           toast('读取失败：' + (e && e.message ? e.message : e), true);
@@ -738,15 +744,17 @@
 
       async function addBinding() {
         try {
-          await invoke('app:ura.bindings.set', {
-            transport: $('b-transport').value.trim() || '*',
-            mime: $('b-mime').value.trim() || '*',
-            ...($('b-codec').value.trim()
-              ? { codec: $('b-codec').value.trim() }
-              : {}),
-            ...($('b-presenter').value.trim()
-              ? { presenter: $('b-presenter').value.trim() }
-              : {}),
+          await call('/piconf/ura/bindings/set', {
+            binding: {
+              transport: $('b-transport').value.trim() || '*',
+              mime: $('b-mime').value.trim() || '*',
+              ...($('b-codec').value.trim()
+                ? { codec: $('b-codec').value.trim() }
+                : {}),
+              ...($('b-presenter').value.trim()
+                ? { presenter: $('b-presenter').value.trim() }
+                : {}),
+            },
           });
           $('b-transport').value = '';
           $('b-mime').value = '';
@@ -761,7 +769,7 @@
 
       async function removeBinding(transport, mime) {
         try {
-          await invoke('app:ura.bindings.remove', { transport, mime });
+          await call('/piconf/ura/bindings/remove', { transport, mime });
           await loadRegistry();
           toast('绑定已删除');
         } catch (e) {
@@ -771,7 +779,7 @@
 
       async function loadRegistry() {
         try {
-          renderRegistry(await invoke('app:ura.registry'));
+          renderRegistry(await call('/piconf/ura/registry'));
         } catch (e) {
           toast('注册项读取失败：' + (e && e.message ? e.message : e), true);
         }

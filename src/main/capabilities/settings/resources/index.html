@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   资源索引（设置能力页）。
-  数据面：app:ura.tree / app:views.openResource（在资源面板新标签打开）。
+  数据面：window.appBridge（resources/tree、resources/pages/open）。
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -247,7 +247,20 @@
         data: '业务数据',
       };
       const state = { documents: [], groups: [], q: '', syncing: false };
-      const invoke = (cmd, payload) => window.extension.invoke(cmd, payload);
+      const bridge = window.appBridge;
+      async function call(path, input) {
+        const result = await bridge.call(path, input);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.data;
+      }
+      async function workspace() {
+        const current = await bridge.peek('/workspaces/current');
+        if (!current) throw new Error('workspace is not ready');
+        return current;
+      }
+      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
+      const fileRef = (path) =>
+        `file://${path.startsWith('/') ? path : `/${path}`}`;
       const $ = (id) => document.getElementById(id);
       const esc = (s) =>
         String(s ?? '').replace(
@@ -307,7 +320,7 @@
                   (group ? '<span>' + esc(group) + '</span>' : '') +
                   '</div>' +
                   '<div class="meta">' +
-                  esc(d.path ?? d.id) +
+                  esc(shortPath(d.path ?? d.id)) +
                   ' · ' +
                   esc(d.type) +
                   ' · ' +
@@ -341,7 +354,10 @@
 
       async function refresh() {
         try {
-          const tree = await invoke('app:ura.tree');
+          const current = await workspace();
+          const tree = await call(`/workspaces/${current.id}/resources/tree`, {
+            ref: fileRef(current.path),
+          });
           state.documents = tree
             .filter((item) => item.type === 'file')
             .map((item) => ({
@@ -384,9 +400,12 @@
       $('groups').addEventListener('click', (e) => {
         const item = e.target.closest('[data-id]');
         if (!item) return;
-        void invoke('app:views.openResource', {
-          ref: item.dataset.id,
-        }).catch((err) =>
+        void (async () => {
+          const current = await workspace();
+          return call(`/workspaces/${current.id}/resources/pages/open`, {
+            ref: item.dataset.id,
+          });
+        })().catch((err) =>
           toast(err && err.message ? err.message : String(err), true),
         );
       });
