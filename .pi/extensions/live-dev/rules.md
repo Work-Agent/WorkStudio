@@ -64,7 +64,7 @@
 ## 目录
 
 ```
-.pi/extensions/dev-mode/     # 本扩展（已入仓；.pi 其余内容仍忽略）
+.pi/extensions/live-dev/     # 本扩展（已入仓；.pi 其余内容仍忽略）
 ├── index.ts                 # /dev、资源准备与回收、dev_shot / dev_test、规则注入
 └── rules.md                 # 模式开启期间注入 system prompt 的开发规则
 e2e/

@@ -1,5 +1,5 @@
 /**
- * Dev Mode —— live-dev 资源准备与连接（模式 = 系统提示状态）
+ * Live Dev —— live-dev 资源准备与连接（模式 = 系统提示状态）
  *
  * 只做一件事：维护一个带 CDP 的常驻 dev 窗口（WorkStudio），供调试/验证 attach。
  * 开启 = 扩展直接确保窗口就绪（在线复用 / 离线后台拉起并轮询到就绪）；
@@ -14,7 +14,7 @@
  *   /dev status     查看当前状态
  *   Ctrl+Alt+D      等同 /dev
  *   pi --dev        启动即进入模式
- *   dev_mode 工具   供 LLM 在用户说「启动dev/结束开发」时调用（软入口桥）
+ *   live_dev 工具   供 LLM 在用户说「启动dev/结束开发」时调用（软入口桥）
  *   dev_shot 工具   截取 dev 窗口当前界面（CDP 截图，可先执行 JS 操作页面）
  *   dev_test 工具   在常驻 dev 窗口执行共享 e2e case（CDP，不启动 Playwright）
  *
@@ -48,8 +48,9 @@ import { Type } from 'typebox';
 const CDP_URL = 'http://127.0.0.1:9222/json/list';
 const DEV_LOG = '/tmp/work-studio-dev.log';
 const DEFAULT_SHOT_PATH = '/tmp/work-studio-shot.png';
-const STATUS_KEY = 'dev-mode';
-const STATE_TYPE = 'dev-mode-state'; // appendEntry 持久化（不进 LLM 上下文）
+const STATUS_KEY = 'live-dev';
+const STATE_TYPE = 'live-dev-state'; // appendEntry 持久化（不进 LLM 上下文）
+const LEGACY_STATE_TYPE = 'dev-mode-state'; // 兼容 rename 前的会话状态
 const RULES_URL = new URL('./rules.md', import.meta.url);
 const execAsync = promisify(exec);
 
@@ -58,7 +59,7 @@ interface DevModeState {
 }
 
 // rules.md 缺失/不可读时的最小内联回退
-const FALLBACK_RULES = `# [DEV MODE] Live Dev（回退规则，完整版 rules.md 读取失败）
+const FALLBACK_RULES = `# [LIVE DEV] Live Dev（回退规则，完整版 rules.md 读取失败）
 
 dev 窗口（CDP 9222）的拉起与回收由扩展自动完成，无需管理其生命周期。
 1. 复用唯一常驻 dev 窗口（WA_DEBUG_PORT=9222 pnpm dev），绝不重复拉起；窗口离线时直接后台拉起恢复，无需询问。
@@ -506,7 +507,7 @@ function renderDevFooter(
 // 扩展主体
 // ---------------------------------------------------------------------------
 
-export default function devModeExtension(pi: ExtensionAPI): void {
+export default function liveDevExtension(pi: ExtensionAPI): void {
   let enabled = false;
   let windowOnline = false;
   let footerInstalled = false;
@@ -764,16 +765,16 @@ export default function devModeExtension(pi: ExtensionAPI): void {
     default: false,
   });
 
-  // ---- dev_mode 工具：LLM 的软入口桥 --------------------------------------
+  // ---- live_dev 工具：LLM 的软入口桥 --------------------------------------
 
   pi.registerTool({
-    name: 'dev_mode',
-    label: 'Dev Mode',
+    name: 'live_dev',
+    label: 'Live Dev',
     description:
       '开启/关闭 live-dev 开发模式（dev 窗口资源准备与连接）。开启时扩展自动确保 dev 窗口就绪（CDP 9222），关闭时自动回收资源——两者均不经 LLM，无需执行任何拉起/清理命令。开发规则会注入系统提示。用户说「启动dev/开始开发」时用 action=on；「结束开发/关闭dev」时用 action=off。',
     promptSnippet: '开启/关闭 live-dev 开发模式（资源准备与回收全自动）',
     promptGuidelines: [
-      '当用户要求进入或退出 live-dev 开发模式（如「启动 dev」「开始开发」「结束开发」「关闭 dev」）时，调用 dev_mode 工具切换模式即可：开启后等待第一个开发需求（dev 窗口由扩展自动确保就绪）；关闭时资源回收由扩展自动完成。两种情况都不要执行拉起/清理命令，也不要向用户复述这些步骤。',
+      '当用户要求进入或退出 live-dev 开发模式（如「启动 dev」「开始开发」「结束开发」「关闭 dev」）时，调用 live_dev 工具切换模式即可：开启后等待第一个开发需求（dev 窗口由扩展自动确保就绪）；关闭时资源回收由扩展自动完成。两种情况都不要执行拉起/清理命令，也不要向用户复述这些步骤。',
     ],
     parameters: Type.Object({
       action: StringEnum(['on', 'off'] as const),
@@ -783,8 +784,8 @@ export default function devModeExtension(pi: ExtensionAPI): void {
         const { changed, online } = await setMode(true, ctx);
         const text = changed
           ? online
-            ? 'live-dev 模式已开启，dev 窗口已由扩展确保就绪（CDP 127.0.0.1:9222 在线，勿重复拉起）。开发规则已注入系统提示 [DEV MODE] 部分，等待第一个开发需求即可。'
-            : 'live-dev 模式已开启，但 dev 窗口拉起超时（日志：/tmp/work-studio-dev.log）。可先开始不受影响的工作，或按 [DEV MODE] 规则自行拉起恢复联通。'
+            ? 'live-dev 模式已开启，dev 窗口已由扩展确保就绪（CDP 127.0.0.1:9222 在线，勿重复拉起）。开发规则已注入系统提示 [LIVE DEV] 部分，等待第一个开发需求即可。'
+            : 'live-dev 模式已开启，但 dev 窗口拉起超时（日志：/tmp/work-studio-dev.log）。可先开始不受影响的工作，或按 [LIVE DEV] 规则自行拉起恢复联通。'
           : `live-dev 模式已处于开启状态（dev 窗口${online ? '在线' : '离线'}），无需重复开启。`;
         return {
           content: [{ type: 'text', text }],
@@ -1057,9 +1058,9 @@ export default function devModeExtension(pi: ExtensionAPI): void {
     await refreshWindowState(ctx);
     const rules = loadRules();
     const block =
-      `[DEV MODE ACTIVE — 以下为 live-dev 开发模式完整规则，硬性遵守]\n\n` +
+      `[LIVE DEV ACTIVE — 以下为 live-dev 开发模式完整规则，硬性遵守]\n\n` +
       `${rules}\n\n` +
-      `[DEV MODE 状态] dev 窗口（CDP 127.0.0.1:9222）：` +
+      `[LIVE DEV 状态] dev 窗口（CDP 127.0.0.1:9222）：` +
       `${windowOnline ? '在线——复用，勿重复拉起' : '离线——需要时拉起保持联通'}（此后以你的工具调用结果为准）`;
     return {
       systemPrompt: `${event.systemPrompt}\n\n${block}`,
@@ -1080,7 +1081,8 @@ export default function devModeExtension(pi: ExtensionAPI): void {
     const stateEntry = entries
       .filter(
         (e: { type: string; customType?: string }) =>
-          e.type === 'custom' && e.customType === STATE_TYPE,
+          e.type === 'custom' &&
+          (e.customType === STATE_TYPE || e.customType === LEGACY_STATE_TYPE),
       )
       .pop() as { data?: DevModeState } | undefined;
     if (stateEntry?.data && typeof stateEntry.data.enabled === 'boolean') {

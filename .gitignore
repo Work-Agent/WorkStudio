@@ -161,8 +161,8 @@ dist/
 .pi/*
 !.pi/extensions/
 .pi/extensions/*
-!.pi/extensions/dev-mode/
-!.pi/extensions/dev-mode/**
+!.pi/extensions/live-dev/
+!.pi/extensions/live-dev/**
 
 
 # macOS
