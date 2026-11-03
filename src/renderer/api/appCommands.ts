@@ -60,7 +60,8 @@ async function appCommand<T>(
       if (type === 'plugin') {
         return call('/plugins/open', {
           pluginId: String(input['pluginId'] ?? ''),
-          settings: input['settings'] === true,
+          // 插件出口必须显式：page = 文档查看器，settings = 配置面。
+          surface: input['surface'] === 'page' ? 'page' : 'settings',
         });
       }
       if (type === 'browser') {

@@ -1,3 +1,4 @@
+import { RouteFailure } from '../../core/failure';
 import type { ListItem, ListSnapshot } from '../../../shared/lists';
 import type { RouteCall } from '../../core/types';
 import type { ListsService } from '../../service/lists';
@@ -51,7 +52,15 @@ export function routesLists(r: Router, service: ListsService): void {
     if (item.itemType === 'plugin') {
       const pluginId = String(meta['pluginId'] ?? '');
       if (!pluginId) return { ok: true };
-      return r.call('/plugins/open', { pluginId });
+      // 插件行是「配置入口」：只开配置页。渲染页是文档查看器出口（带文档、带页面
+      // 会话），单独打开没有内容可渲染，因此缺配置页的插件不提供此入口。
+      if (meta['hasConfig'] !== true) {
+        throw new RouteFailure(
+          'failed',
+          `插件没有配置页：${pluginId}（仅作为文档查看器）`,
+        );
+      }
+      return r.call('/plugins/open', { pluginId, surface: 'settings' });
     }
 
     if (item.itemType === 'session') {

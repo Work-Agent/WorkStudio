@@ -40,12 +40,14 @@ export class PluginsService {
     return this.deps.host.pluginInfoList();
   }
 
-  page(pluginId: string, settings = false): PluginPageEntry | null {
-    const page = this.deps.host.getPage(pluginId);
-    if (!page) return null;
-    const selected = settings ? page.settings : (page.page ?? page.settings);
-    if (!selected) return null;
-    return { ...page, page: selected };
+  /**
+   * 插件页面出口（未做选择）：调用方按自己的入口取 page / settings。
+   *
+   * 不做「缺哪个就用另一个」的兜底——查看器出口与配置面出口语义不同，
+   * 静默兜底会把插件入口导向无文档的渲染页（历史回归点）。
+   */
+  entry(pluginId: string): PluginPageEntry | null {
+    return this.deps.host.getPage(pluginId);
   }
 
   async install(source: string): Promise<PluginSource> {

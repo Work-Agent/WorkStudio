@@ -17,12 +17,19 @@ export interface BuiltinLoader {
   load: () => Promise<unknown>;
 }
 
+/**
+ * 插件页面出口。
+ *
+ * page    = 文档查看器出口：由资源管道按 MIME 装载，必须带文档内容与页面会话。
+ * settings = 配置面出口：由插件入口打开，无文档依赖。
+ * 两种出口至少存在一个，且都只由各自的入口使用。
+ */
 export interface PluginPageEntry {
   id: string;
   label: string;
   icon?: string;
   version: string;
-  page: string;
+  page?: string;
   settings?: string;
   iconUrl?: string;
 }
@@ -48,7 +55,15 @@ export class PluginHost {
     (globalThis as { __workstudioSdk?: typeof uraSdk }).__workstudioSdk =
       uraSdk;
     const scanned = await scanPluginPackages(this.options.roots);
-    for (const pkg of scanned) this.packages.set(pkg.id, pkg);
+    for (const pkg of scanned) {
+      this.packages.set(pkg.id, pkg);
+      // 两个出口都没有：插件能注册能力，但没有可打开的页面（不视为装载失败）。
+      if (!pkg.page && !pkg.settings) {
+        this.diagnostics.push(
+          `插件没有声明页面：${pkg.id}（既无 page 也无 settings）`,
+        );
+      }
+    }
 
     for (const builtin of this.options.builtins) {
       try {
@@ -79,18 +94,17 @@ export class PluginHost {
   /** 插件页面解析（views.open 与页面白名单共用）。 */
   getPage(id: string): PluginPageEntry | null {
     const pkg = this.packages.get(id);
-    if (pkg?.page) {
-      return {
-        id: pkg.id,
-        label: pkg.label,
-        ...(pkg.icon ? { icon: pkg.icon } : {}),
-        version: pkg.version,
-        page: pkg.page,
-        ...(pkg.settings ? { settings: pkg.settings } : {}),
-        ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
-      };
-    }
-    return null;
+    // 只有配置页（没有渲染页）的插件同样可打开：出口选择交给调用方。
+    if (!pkg || (!pkg.page && !pkg.settings)) return null;
+    return {
+      id: pkg.id,
+      label: pkg.label,
+      ...(pkg.icon ? { icon: pkg.icon } : {}),
+      version: pkg.version,
+      ...(pkg.page ? { page: pkg.page } : {}),
+      ...(pkg.settings ? { settings: pkg.settings } : {}),
+      ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
+    };
   }
 
   list(): PluginPackage[] {

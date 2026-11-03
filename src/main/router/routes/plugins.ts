@@ -6,6 +6,39 @@ import type { Router } from '../router';
 
 // ─── plugins ────────────────────────────────────────────
 
+/** 插件页面出口：文档查看器（page）/ 配置面（settings）。入口必须显式指定。 */
+export type PluginSurface = 'page' | 'settings';
+
+const SURFACE_LABEL: Record<PluginSurface, string> = {
+  page: '页面',
+  settings: '配置页',
+};
+
+function surfaceOf(value: unknown): PluginSurface {
+  if (value === 'page' || value === 'settings') return value;
+  throw new RouteFailure('invalid', 'surface 必须是 page 或 settings');
+}
+
+/** 按出口取页面文件；未知插件与缺该出口分别报错，不做兜底。 */
+function pageFileOf(
+  service: PluginsService,
+  pluginId: string,
+  surface: PluginSurface,
+): { label: string; id: string; file: string } {
+  const entry = service.entry(pluginId);
+  if (!entry) {
+    throw new RouteFailure('unknown', `未知插件：${pluginId}`);
+  }
+  const file = surface === 'settings' ? entry.settings : entry.page;
+  if (!file) {
+    throw new RouteFailure(
+      'failed',
+      `插件没有${SURFACE_LABEL[surface]}：${pluginId}`,
+    );
+  }
+  return { id: entry.id, label: entry.label, file };
+}
+
 export function routesPlugins(r: Router, service: PluginsService): void {
   const installed = r.state('/installed');
   const runtime = r.state('/runtime');
@@ -48,27 +81,20 @@ export function routesPlugins(r: Router, service: PluginsService): void {
   );
   r.handle(
     '/open',
-    async (call: RouteCall<{ pluginId: string; settings?: boolean }>) => {
-      const target = service.page(
-        call.input.pluginId,
-        call.input.settings === true,
-      );
-      if (!target) {
-        throw new RouteFailure(
-          'unknown',
-          `unknown plugin page: ${call.input.pluginId}`,
-        );
-      }
-      const path = call.input.settings
-        ? r.at('/settings/:pluginId', { pluginId: target.id })
-        : r.at('/page/:pluginId', { pluginId: target.id });
+    async (call: RouteCall<{ pluginId: string; surface: PluginSurface }>) => {
+      const surface = surfaceOf(call.input.surface);
+      const target = pageFileOf(service, call.input.pluginId, surface);
+      const path =
+        surface === 'settings'
+          ? r.at('/settings/:pluginId', { pluginId: target.id })
+          : r.at('/page/:pluginId', { pluginId: target.id });
       return r.call<{ id: string }>('/views/open', { path });
     },
   );
 
   const resolvePlugin = (
     pluginId: string,
-    settings: boolean,
+    surface: PluginSurface,
   ): {
     type: 'page';
     url: string;
@@ -76,14 +102,11 @@ export function routesPlugins(r: Router, service: PluginsService): void {
     preload: 'page';
     grants: { call: string[]; watch: string[] };
   } => {
-    const target = service.page(pluginId, settings);
-    if (!target) {
-      throw new RouteFailure('unknown', `unknown plugin page: ${pluginId}`);
-    }
+    const target = pageFileOf(service, pluginId, surface);
     return {
       type: 'page',
-      url: appPageUrl(target.page),
-      title: settings ? `${target.label} 设置` : target.label,
+      url: appPageUrl(target.file),
+      title: surface === 'settings' ? `${target.label} 设置` : target.label,
       preload: 'page',
       grants: {
         call: [
@@ -106,10 +129,11 @@ export function routesPlugins(r: Router, service: PluginsService): void {
 
   r.view({
     path: '/plugins/page/:pluginId',
-    resolve: (call) => resolvePlugin(String(call.params['pluginId']), false),
+    resolve: (call) => resolvePlugin(String(call.params['pluginId']), 'page'),
   });
   r.view({
     path: '/plugins/settings/:pluginId',
-    resolve: (call) => resolvePlugin(String(call.params['pluginId']), true),
+    resolve: (call) =>
+      resolvePlugin(String(call.params['pluginId']), 'settings'),
   });
 }

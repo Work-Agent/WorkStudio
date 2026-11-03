@@ -275,13 +275,16 @@ export class ListsService {
         key: plugin.id,
         itemType: definition.itemType,
         title: plugin.name,
-        subtitle: `v${plugin.version}`,
+        subtitle: `v${plugin.version} · ${plugin.hasConfig ? '可配置' : '仅查看器'}`,
         ...(plugin.iconUrl ? { icon: plugin.iconUrl } : {}),
         meta: {
           pluginId: plugin.id,
           version: plugin.version,
           builtin: plugin.builtin,
+          hasConfig: plugin.hasConfig,
         },
+        // 没有配置页就没有可打开的入口：置灰而不是点开一个空白渲染页。
+        ...(plugin.hasConfig ? {} : { state: { disabled: true } }),
       }));
     return {
       id: 'plugins',
