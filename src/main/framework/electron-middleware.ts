@@ -16,17 +16,19 @@ import {
   shell,
   type App as ElectronApp,
   type MenuItemConstructorOptions,
+  type Rectangle,
   type Session,
+  type TitleBarOverlay,
   type WebContents,
 } from 'electron';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import type { LayoutSnapshot } from '../../shared/types';
 import {
   TITLEBAR_HEIGHT,
   TITLEBAR_OVERLAY_COLORS,
 } from '../../shared/titlebar';
+import type { LayoutSnapshot } from '../../shared/types';
 import { preloadPath } from '../capabilities/webview/presets';
 import { initDataRoot } from '../data-root';
 import { rendererFile } from '../paths';
@@ -132,11 +134,6 @@ interface ViewEntry {
   type: string;
 }
 
-/** Win/Linux 窗口控件覆盖层参数：配色与标题栏高度共用同一契约。 */
-function titleBarOverlay(theme: Theme) {
-  return { ...TITLEBAR_OVERLAY_COLORS[theme], height: TITLEBAR_HEIGHT };
-}
-
 export class ElectronCapability implements Capability {
   readonly id = 'electron';
   readonly env: AppEnv;
@@ -220,10 +217,7 @@ export class ElectronCapability implements Capability {
         const wc = this.viewsById.get(viewId)?.view.webContents;
         if (wc && !wc.isDestroyed()) wc.send(channel, payload);
       },
-      setVisible: (viewId, visible) => {
-        const entry = this.viewsById.get(viewId);
-        if (entry) entry.view.setVisible(visible);
-      },
+      setVisible: (viewId, visible) => this.setViewVisible(viewId, visible),
       webContents: (viewId) =>
         this.viewsById.get(viewId)?.view.webContents ?? null,
     };
@@ -369,9 +363,11 @@ export class ElectronCapability implements Capability {
       show: false,
       backgroundColor: this.currentTheme === 'light' ? '#f4f4f5' : '#1a1c1d',
       titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+      // 三键 / 红绿灯由系统绘制：macOS 走 hiddenInset + 位置微调；Windows / Linux
+      // 隐藏标题栏后必须挂 WCO 覆盖层，否则连最小化 / 最大化 / 关闭都不存在。
       ...(isMac
         ? { trafficLightPosition: { x: 16, y: 12 } }
-        : { titleBarOverlay: titleBarOverlay(this.currentTheme) }),
+        : { titleBarOverlay: this.titleBarOverlay() }),
       webPreferences: {
         preload: preloadPath('workbench'),
         contextIsolation: true,
@@ -407,6 +403,7 @@ export class ElectronCapability implements Capability {
       },
     });
     this.win.contentView.addChildView(view);
+    // 内容视图（页面 / 网页）底色透明：页面首帧之前看到的是壳层底色，不是白闪。
     if (
       input.type === 'page' ||
       input.type === 'web' ||
@@ -414,11 +411,21 @@ export class ElectronCapability implements Capability {
       input.type === 'capture'
     ) {
       view.setBackgroundColor('#00000000');
+    }
+    // 系统视图（对话框覆盖层 / 指针捕获层）按需出现：初始隐藏。
+    // 内容视图不做初始隐藏——「隐藏 → 写几何 → 显示」会让 Windows 的原生视图
+    // 失去首帧（见 setViewVisible）。
+    if (input.type === 'overlay' || input.type === 'capture') {
       view.setVisible(false);
     }
-    this.viewsById.set(input.viewId, { view, type: input.type });
+    const entry: ViewEntry = { view, type: input.type };
+    this.viewsById.set(input.viewId, entry);
     if (hooks) this.hooksById.set(input.viewId, hooks);
-    view.webContents.on('did-finish-load', () => hooks?.onReady?.());
+    view.webContents.on('did-finish-load', () => {
+      // 首帧兜底：加载完成后再写一次几何（隐藏期设过几何的视图尤其需要）。
+      if (this.viewsById.get(input.viewId) === entry) this.reapplyBounds(entry);
+      hooks?.onReady?.();
+    });
     view.webContents.on('render-process-gone', () => hooks?.onCrash?.());
     void view.webContents.loadURL(input.url);
     if (this.layout) this.applyLayout(this.layout);
@@ -439,31 +446,58 @@ export class ElectronCapability implements Capability {
   private activateView(viewId: string): void {
     for (const [id, entry] of this.viewsById) {
       if (entry.type === 'page' || entry.type === 'web') {
-        entry.view.setVisible(id === viewId);
+        this.setViewVisible(id, id === viewId);
       }
     }
     this.viewsById.get(viewId)?.view.webContents.focus();
   }
 
+  /**
+   * 显示 / 隐藏原生视图。
+   *
+   * 可见后补写一次几何：Windows 上「隐藏期间设过 bounds → 再 show」的原生视图
+   * 不会重建合成面，表现为视图可见、几何正确却永远空白，直到下一次几何变化
+   * （拖分隔条 / 改窗口大小）才出画面。macOS / Linux 在 show 时会重新合成，
+   * 因此只有 Windows 会空白；这里补写几何对三者都无害。
+   */
+  private setViewVisible(viewId: string, visible: boolean): void {
+    const entry = this.viewsById.get(viewId);
+    if (!entry) return;
+    entry.view.setVisible(visible);
+    if (visible) this.reapplyBounds(entry);
+  }
+
   private applyLayout(next: LayoutSnapshot): void {
     this.layout = next;
     for (const entry of this.viewsById.values()) {
-      const rect =
-        entry.type === 'assistant'
-          ? next.assistantMode === 'floating'
-            ? next.assistantFloating
-            : next.assistantDock
-          : entry.type === 'overlay' || entry.type === 'capture'
-            ? next.overlay
-            : next.resourceContent;
-      const bounds = {
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      };
-      entry.view.setBounds(bounds);
+      const bounds = this.boundsFor(entry);
+      if (bounds) entry.view.setBounds(bounds);
     }
+  }
+
+  private reapplyBounds(entry: ViewEntry): void {
+    const bounds = this.boundsFor(entry);
+    if (bounds) entry.view.setBounds(bounds);
+  }
+
+  /** 视图在当前布局下的几何：类型决定取哪块区域。 */
+  private boundsFor(entry: ViewEntry): Rectangle | null {
+    const layout = this.layout;
+    if (!layout) return null;
+    const rect =
+      entry.type === 'assistant'
+        ? layout.assistantMode === 'floating'
+          ? layout.assistantFloating
+          : layout.assistantDock
+        : entry.type === 'overlay' || entry.type === 'capture'
+          ? layout.overlay
+          : layout.resourceContent;
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
   }
 
   private preloadFor(preload: ViewPreload | undefined): string | undefined {
@@ -490,9 +524,29 @@ export class ElectronCapability implements Capability {
     if (this.win && !this.win.isDestroyed()) {
       this.win.setBackgroundColor(next === 'light' ? '#f4f4f5' : '#1a1c1d');
       // 原生三键由覆盖层绘制，配色不随 nativeTheme 自动更新，需显式同步。
-      if (process.platform !== 'darwin') {
-        this.win.setTitleBarOverlay(titleBarOverlay(next));
-      }
+      this.applyTitleBarOverlay(this.win);
+    }
+  }
+
+  /** WCO 覆盖层参数：配色与渲染层标题栏同源，高度与 DOM 标题栏同高。 */
+  private titleBarOverlay(): TitleBarOverlay {
+    const colors =
+      this.currentTheme === 'light'
+        ? TITLEBAR_OVERLAY_COLORS.light
+        : TITLEBAR_OVERLAY_COLORS.dark;
+    return { ...colors, height: TITLEBAR_HEIGHT };
+  }
+
+  /**
+   * 重设覆盖层（macOS 无覆盖层，红绿灯由系统跟随 nativeTheme）。
+   * 桌面环境不支持 WCO 时不抛错：渲染层按 TITLEBAR_FALLBACK_INSET 排布留白。
+   */
+  private applyTitleBarOverlay(target: BrowserWindow): void {
+    if (process.platform === 'darwin') return;
+    try {
+      target.setTitleBarOverlay(this.titleBarOverlay());
+    } catch {
+      /* 平台 / 桌面环境不支持 WCO */
     }
   }
 
