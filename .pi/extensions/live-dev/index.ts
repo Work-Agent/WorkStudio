@@ -25,10 +25,17 @@
  *       dev 窗口在线时重复拉起（重启流程——命令自带 kill+拉起，或实时探测已离线——自动放行）
  */
 
-import { exec } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { promisify } from 'node:util';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   isToolCallEventType,
@@ -45,14 +52,19 @@ import { Type } from 'typebox';
 // 常量
 // ---------------------------------------------------------------------------
 
-const CDP_URL = 'http://127.0.0.1:9222/json/list';
-const DEV_LOG = '/tmp/work-studio-dev.log';
-const DEFAULT_SHOT_PATH = '/tmp/work-studio-shot.png';
+const CDP_PORT = 9222;
+const CDP_URL = `http://127.0.0.1:${CDP_PORT}/json/list`;
+const IS_WIN = process.platform === 'win32';
+/** 临时产物一律走系统 temp 目录：`/tmp` 在 Windows 上是「当前盘符根 + \\tmp」，未必存在。 */
+const TMP_DIR = tmpdir();
+const DEV_LOG = join(TMP_DIR, 'work-studio-dev.log');
+const DEV_PID = join(TMP_DIR, 'work-studio-dev.pid');
+const DEV_TEST_SHOT_PATH = join(TMP_DIR, 'work-studio-dev-test-failure.png');
+const DEFAULT_SHOT_PATH = join(TMP_DIR, 'work-studio-shot.png');
 const STATUS_KEY = 'live-dev';
 const STATE_TYPE = 'live-dev-state'; // appendEntry 持久化（不进 LLM 上下文）
 const LEGACY_STATE_TYPE = 'dev-mode-state'; // 兼容 rename 前的会话状态
 const RULES_URL = new URL('./rules.md', import.meta.url);
-const execAsync = promisify(exec);
 
 interface DevModeState {
   enabled: boolean;
@@ -62,7 +74,7 @@ interface DevModeState {
 const FALLBACK_RULES = `# [LIVE DEV] Live Dev（回退规则，完整版 rules.md 读取失败）
 
 dev 窗口（CDP 9222）的拉起与回收由扩展自动完成，无需管理其生命周期。
-1. 复用唯一常驻 dev 窗口（WA_DEBUG_PORT=9222 pnpm dev），绝不重复拉起；窗口离线时直接后台拉起恢复，无需询问。
+1. 复用唯一常驻 dev 窗口，绝不重复拉起；窗口离线时用 dev 工具恢复联通，无需询问。
 2. 改 src/main.ts / preload 或依赖后直接重启窗口（kill + 拉起同条命令），无需确认。
 3. 开发中只做本轮定向验证：pnpm typecheck + pnpm lint；页面改动用 dev_shot 工具截图目视。
 4. 共享 e2e case 在 e2e/cases；开发时优先用 dev_test 执行单个 case，提交前用 pnpm test:e2e 跑 Playwright 隔离回归。
@@ -213,6 +225,7 @@ async function captureFromTarget(
       { format: 'png' },
       15000,
     )) as { data: string };
+    mkdirSync(dirname(outPath), { recursive: true }); // 输出目录可能不存在（自定义 path）
     writeFileSync(outPath, Buffer.from(shot.data, 'base64'));
     return { ok: true, path: outPath, target: targetLabel };
   } catch (e) {
@@ -262,15 +275,15 @@ interface Guard {
 /** 再拉起一个 dev 进程（pnpm dev / pnpm start / electron-vite dev；不含 dev:xxx 这类脚本名） */
 function isStartDev(command: string): boolean {
   return (
-    /(?:pnpm|npm|yarn|bun)(?:\s+run)?\s+(?:dev|start)(?!\s*[\w:-])/.test(
+    /(?:pnpm|npm|yarn|bun)(?:\.cmd|\.exe)?(?:\s+run)?\s+(?:dev|start)(?![\w:-])/.test(
       command,
     ) || /(?:electron-vite\s+dev|electron-forge\s+start)\b/.test(command)
   );
 }
 
-/** kill 类动作（pkill/killall/kill <pid>）。与 isStartDev 同命令出现即「杀掉重拉」的重启流程 */
+/** kill 类动作（POSIX pkill/killall/kill、Windows taskkill/Stop-Process）。与 isStartDev 同命令出现即「杀掉重拉」的重启流程 */
 function isKillAction(command: string): boolean {
-  return /\b(?:pkill|killall|kill)\b/.test(command);
+  return /\b(?:pkill|killall|kill|taskkill|Stop-Process)\b/i.test(command);
 }
 
 function classify(command: string, windowOnline: boolean): Guard | null {
@@ -351,10 +364,8 @@ function renderDevFooter(
   footerData: ReadonlyFooterDataProvider,
 ): string[] {
   // ---- 行 1：cwd (+ branch + session name) + 扩展状态内联 ----
-  let pwd = formatCwdForFooter(
-    ctx.sessionManager.getCwd(),
-    process.env.HOME || process.env.USERPROFILE,
-  );
+  // 不能用 HOME：Git-Bash / MSYS 下 HOME 是 /c/Users/x 这类非原生路径，resolve 后会算错
+  let pwd = formatCwdForFooter(ctx.sessionManager.getCwd(), homedir());
   const branch = footerData.getGitBranch();
   if (branch) pwd = `${pwd} (${branch})`;
   const sessionName = ctx.sessionManager.getSessionName();
@@ -528,43 +539,120 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
   }
 
   async function refreshWindowState(ctx: ExtensionContext): Promise<boolean> {
-    windowOnline = await probeWindow();
-    updateStatus(ctx);
-    return windowOnline;
+    const online = await probeWindow();
+    // 拉起轮询是 150ms 级：状态未变就不重写，避免 TUI 反复重绘
+    if (online !== windowOnline) {
+      windowOnline = online;
+      updateStatus(ctx);
+    }
+    return online;
+  }
+
+  /** 拉起时记录的进程树根 pid（回收与重启清残留都靠它，不靠命令行匹配） */
+  function readPid(): number | undefined {
+    try {
+      const pid = Number(readFileSync(DEV_PID, 'utf-8').trim());
+      return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
-   * 清掉可能占着单实例锁的旧实例。
+   * 杀掉整棵 dev 进程树（electron-vite + Electron 主 + renderer + GPU + esbuild）。
    *
-   * 探活只能看到「有 CDP 的窗口」；一个没开 CDP 的 dev 实例（手动 pnpm dev、
-   * 上次异常退出残留）拿不到锁会让新实例静默退出，表现为「拉起超时」。
-   * 只杀本仓库 node_modules 下的进程，不影响其他应用的 Electron。
+   * Windows 用 `taskkill /T`；POSIX 杀拉起时 `detached` 建出的进程组。
+   * 回收也能兼作「清掉占着单实例锁的旧实例」：探活只能看到带 CDP 的窗口，
+   * 一个没开 CDP 的 dev 实例（手动 pnpm dev、上次异常退出残留）拿不到锁会让新实例静默退出。
    */
-  async function killStaleInstances(ctx: ExtensionContext): Promise<void> {
-    const cwd = ctx.sessionManager.getCwd();
-    const pattern = cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const run = (command: string) =>
-      execAsync(command, { cwd }).catch(() => {
-        /* 无匹配进程时 pkill 退出码非 0，属预期 */
-      });
-    await run(`pkill -9 -f "${pattern}/node_modules/\\.bin/electron-vite"`);
-    await run(`pkill -9 -f "${pattern}/node_modules.*[Ee]lectron"`);
-    // 等锁释放（Electron 退出后单实例锁才从数据根移除）
-    await new Promise((r) => setTimeout(r, 500));
+  function killDev(): void {
+    const pid = readPid();
+    if (pid) {
+      try {
+        if (IS_WIN) {
+          spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], {
+            windowsHide: true,
+          });
+        } else {
+          process.kill(-pid, 'SIGKILL');
+        }
+      } catch {
+        /* 进程已退出：属预期 */
+      }
+    }
+    rmSync(DEV_PID, { force: true });
   }
 
-  /** 确保窗口就绪：在线复用；离线则清理旧实例后后台拉起，轮询到 CDP 就绪（最长约 20s） */
+  /**
+   * 兜底：清掉「不是本扩展拉起、却占着单实例锁」的 dev 实例（手工 `pnpm dev`、上次异常退出残留）。
+   *
+   * 探活只能看到带 CDP 的窗口，这种实例会抢走锁让新实例静默退出（表现为拉起超时）。
+   * 按「命令行含本仓库路径 + electron」限定范围，不伤其他项目的 Electron。
+   * 只在拉起超时后调一次，正常路径不付代价（Windows 上 PowerShell 查询约 0.5s）。
+   */
+  function killOrphanDev(cwd: string): void {
+    try {
+      if (IS_WIN) {
+        const escaped = cwd.replace(/'/g, "''");
+        const script =
+          `Get-CimInstance Win32_Process | Where-Object { ` +
+          `$_.ProcessId -ne $PID -and $_.Name -notmatch '^(powershell|pwsh)' -and ` +
+          `$_.CommandLine -and $_.CommandLine.Contains('${escaped}') -and ` +
+          `$_.CommandLine -match 'electron' } | ` +
+          `ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+        spawnSync(
+          'powershell',
+          ['-NoProfile', '-NonInteractive', '-Command', script],
+          { windowsHide: true, timeout: 15_000 },
+        );
+      } else {
+        const pattern = cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        spawnSync(
+          'pkill',
+          ['-9', '-f', `${pattern}/node_modules.*[Ee]lectron`],
+          {
+            timeout: 15_000,
+          },
+        );
+      }
+    } catch {
+      /* 无匹配进程：属预期 */
+    }
+  }
+
+  /** 后台拉起 `pnpm dev`（带 CDP 端口），pid 落盘供回收用 */
+  function startDev(cwd: string): void {
+    const log = openSync(DEV_LOG, 'w'); // 句柄直接交给子进程，不经过 shell 重定向
+    const child = spawn('pnpm', ['dev'], {
+      cwd,
+      detached: true, // POSIX 建进程组（供 killDev 整组回收）
+      shell: IS_WIN, // Windows 上 pnpm 是 .cmd，不能直接 spawn
+      windowsHide: true,
+      stdio: ['ignore', log, log], // 环境变量显式传递：Windows 没有 `env VAR=x cmd` 这种写法
+      env: { ...process.env, WA_DEBUG_PORT: String(CDP_PORT) },
+    });
+    closeSync(log); // 子进程已继承，父进程这边立即关掉
+    child.unref();
+    if (child.pid) writeFileSync(DEV_PID, String(child.pid));
+  }
+
+  /** 确保窗口就绪：在线复用；离线则清残留后后台拉起，轮询到 CDP 就绪（最长约 60s） */
   async function ensureDevWindow(ctx: ExtensionContext): Promise<boolean> {
     if (await refreshWindowState(ctx)) return true;
-    await killStaleInstances(ctx);
-    await execAsync(
-      `nohup env WA_DEBUG_PORT=9222 pnpm dev > ${DEV_LOG} 2>&1 &`,
-      {
-        cwd: ctx.sessionManager.getCwd(),
-      },
-    ).catch(() => undefined);
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 500));
+    const cwd = ctx.sessionManager.getCwd();
+    killDev(); // 无残留时为空操作
+    startDev(cwd);
+    let retried = false;
+    // 前 12s 细粒度（150ms）抢冷启动尾巴，之后放粗；上限 60s（Windows 冷启动 + 杀软扫盘偏慢）
+    for (let i = 0; i < 400; i++) {
+      await new Promise((r) => setTimeout(r, i < 80 ? 150 : 500));
+      // 12s 仍未就绪：多半是另一个实例占着单实例锁（本扩展拉起的已由 killDev 处理）
+      if (i === 80 && !retried) {
+        retried = true;
+        killOrphanDev(cwd);
+        killDev();
+        startDev(cwd);
+      }
       if (await refreshWindowState(ctx)) return true;
     }
     return false;
@@ -611,17 +699,15 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
 
   // ---- 关闭时直接回收资源（不经 LLM，无额外对话轮次） ----------------------
 
-  /** 杀 dev 窗口进程 + 清临时文件，返回 true 表示 CDP 已无响应（回收完成） */
-  async function cleanupDevResources(ctx: ExtensionContext): Promise<boolean> {
-    const run = (command: string) =>
-      execAsync(command, { cwd: ctx.sessionManager.getCwd() }).catch(() => {
-        /* pkill 无匹配进程时退出码非 0，属预期 */
-      });
-    await run('pkill -f "[r]emote-debugging-port"');
-    await new Promise((r) => setTimeout(r, 1000)); // 给优雅停机留时间，再清残留
-    await run('pkill -9 -f "[e]lectron-(forge|vite)"');
-    await run('pkill -9 -f "WorkStudio/node_modules.*[Ee]lectron"');
-    await run(`rm -f ${DEV_LOG}`);
+  /** 杀整棵 dev 进程树 + 清临时文件，返回 true 表示 CDP 已无响应（回收完成） */
+  async function cleanupDevResources(_ctx: ExtensionContext): Promise<boolean> {
+    killDev();
+    // 给进程退出留时间（最多 2s），再确认连通性
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (!(await probeWindow())) break;
+    }
+    rmSync(DEV_LOG, { force: true });
     windowOnline = await probeWindow();
     return !windowOnline;
   }
@@ -631,7 +717,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
       ctx,
       online
         ? 'live-dev 模式已开启，dev 窗口已就绪（CDP 9222 在线）。'
-        : 'live-dev 模式已开启，但 dev 窗口拉起超时，详见 /tmp/work-studio-dev.log。',
+        : `live-dev 模式已开启，但 dev 窗口拉起超时，详见 ${DEV_LOG}。`,
     );
   }
 
@@ -640,7 +726,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
       ctx,
       cleaned
         ? 'live-dev 模式已关闭，dev 资源已回收（窗口进程停止，CDP 9222 无响应）。'
-        : 'live-dev 模式已关闭，但 CDP 9222 仍有响应，可能有残留进程（ps aux | grep [e]lectron 检查后 kill -9）。',
+        : 'live-dev 模式已关闭，但 CDP 9222 仍有响应，可能有残留进程（可重新 /dev off 重试，或自行结束占用 9222 端口的进程）。',
     );
   }
 
@@ -653,6 +739,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
     const changed = enabled !== on;
     enabled = on;
     persistState();
+    updateStatus(ctx); // 先按当前已知状态落一次（拉起期间显示「离线」）
     let online = windowOnline;
     let cleaned = false;
     if (on) {
@@ -785,7 +872,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
         const text = changed
           ? online
             ? 'live-dev 模式已开启，dev 窗口已由扩展确保就绪（CDP 127.0.0.1:9222 在线，勿重复拉起）。开发规则已注入系统提示 [LIVE DEV] 部分，等待第一个开发需求即可。'
-            : 'live-dev 模式已开启，但 dev 窗口拉起超时（日志：/tmp/work-studio-dev.log）。可先开始不受影响的工作，或按 [LIVE DEV] 规则自行拉起恢复联通。'
+            : `live-dev 模式已开启，但 dev 窗口拉起超时（日志：${DEV_LOG}）。可先开始不受影响的工作，或按 [LIVE DEV] 规则自行恢复联通。`
           : `live-dev 模式已处于开启状态（dev 窗口${online ? '在线' : '离线'}），无需重复开启。`;
         return {
           content: [{ type: 'text', text }],
@@ -797,7 +884,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
       const text = changed
         ? cleaned
           ? 'live-dev 模式已关闭，dev 资源已由扩展直接回收（窗口进程停止、临时文件已清理、CDP 9222 无响应）。无需任何收尾操作，向用户简报一句即可。'
-          : 'live-dev 模式已关闭，回收已执行，但 CDP 9222 仍有响应——可能存在残留进程（ps aux | grep [e]lectron 检查后 kill -9）。除告知用户外无需其他收尾操作。'
+          : 'live-dev 模式已关闭，回收已执行，但 CDP 9222 仍有响应——可能存在残留进程（可重新 /dev off 重试，或自行结束占用 9222 端口的进程）。除告知用户外无需其他收尾操作。'
         : 'live-dev 模式当前未开启，无需关闭。';
       return {
         content: [{ type: 'text', text }],
@@ -885,7 +972,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
           content: [
             {
               type: 'text',
-              text: 'dev 窗口离线；dev_test 不负责启动/重启，请先运行 WA_DEBUG_PORT=9222 pnpm dev。',
+              text: 'dev 窗口离线；dev_test 不负责启动/重启，请先恢复 dev 窗口（扩展会在 dev 模式开启时自动拉起）。',
             },
           ],
           details: undefined,
@@ -902,7 +989,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
         };
         const results = await runCdpFilter(filter, {
           allowMutating: params.allowMutating === true,
-          screenshotPath: '/tmp/work-studio-dev-test-failure.png',
+          screenshotPath: DEV_TEST_SHOT_PATH,
           session,
         });
         if (results.length === 0) {
@@ -955,8 +1042,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
     parameters: Type.Object({
       path: Type.Optional(
         Type.String({
-          description:
-            '输出路径（相对路径按工作目录解析）；默认 /tmp/work-studio-shot.png',
+          description: `输出路径（相对路径按工作目录解析）；默认 ${DEFAULT_SHOT_PATH}`,
         }),
       ),
       eval: Type.Optional(
