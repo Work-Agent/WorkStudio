@@ -477,6 +477,16 @@
         renderCatalog();
       }
 
+      /** 已加载插件（当前启动）：热装卸会改变运行时列表，装 / 卸后同步。 */
+      async function refreshLoaded() {
+        try {
+          loaded = (await peek('/plugins/runtime')) || [];
+        } catch {
+          loaded = [];
+        }
+        renderPlugins();
+      }
+
       async function install(source) {
         const value = String(source ?? $('source').value).trim();
         if (!value || busy) return;
@@ -487,6 +497,7 @@
           sources = (await peek('/plugins/installed')) || [];
           $('source').value = '';
           renderCatalog();
+          await refreshLoaded();
           toast('已安装 ' + value + '，已即时生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
@@ -503,6 +514,7 @@
         try {
           await call('/plugins/remove', { source });
           sources = (await peek('/plugins/installed')) || [];
+          await refreshLoaded();
           toast('已移除 ' + source + '，已即时生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
