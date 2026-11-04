@@ -382,7 +382,7 @@ plugin-docx.zip
 - **Zip is self-contained**: dependencies are bundled into `dist` or shipped inside the zip as `node_modules`; nothing runs npm at install time.
 - **No auto-update**: change the catalog URL / hash, rebuild and reinstall; updates are never silent.
 - **Assembly at startup, hot install at runtime**: at startup scan local paths and `installed/` → import `./ura` → register → build pages; install / uninstall take effect immediately — uninstall revokes registrations by owner and closes plugin pages; the ESM module body stays in process memory, a known limitation.
-- **Local sources are not copied**: loaded in place during development, effective after a restart.
+- **Local sources are not copied**: loaded in place during development; reinstalling the source makes changes effective without a restart.
 
 ### 5.4 Settings: endpoint only
 

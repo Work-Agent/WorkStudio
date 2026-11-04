@@ -27,6 +27,21 @@ const MAX_ZIP_BYTES = 64 * 1024 * 1024;
 const SUPPORTED_API_VERSION = 1;
 const ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
+/** Windows 上进程可能短暂持有插件文件句柄：删除失败时稍候重试。 */
+async function rmTree(target: string): Promise<void> {
+  const retryable = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EACCES']);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (attempt >= 4 || !code || !retryable.has(code)) throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
+    }
+  }
+}
+
 interface InstalledEntry {
   id: string;
   version: string;
@@ -154,10 +169,7 @@ export class PluginService {
       ([key, value]) => key !== source && value.id === installed.id,
     );
     if (!shared) {
-      await rm(join(this.installedRoot(), installed.id), {
-        recursive: true,
-        force: true,
-      });
+      await rmTree(join(this.installedRoot(), installed.id));
     }
     delete this.installed[source];
     await this.persistInstalled();
@@ -180,7 +192,7 @@ export class PluginService {
     try {
       const manifest = await extractZip(bytes, staging);
       const target = join(this.installedRoot(), manifest.id);
-      await rm(target, { recursive: true, force: true });
+      await rmTree(target);
       await rename(staging, target);
       const label = entry.label ?? manifest.label;
       const sha256 = entry.sha256 ?? hash;

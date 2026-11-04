@@ -49,6 +49,7 @@ export class PluginHost {
   private readonly packages = new Map<string, PluginPackage>();
   private readonly diagnostics: string[] = [];
   private readonly settings = new Map<string, Record<string, unknown>>();
+  private importEpoch = 0;
 
   constructor(private readonly options: PluginHostOptions) {}
 
@@ -89,7 +90,11 @@ export class PluginHost {
   private async loadPackage(pkg: PluginPackage): Promise<void> {
     if (!pkg.uraEntry) return;
     try {
-      const url = pathToFileURL(pkg.uraEntry).href;
+      // ESM 按 URL 缓存模块；安装目录固定（installed/<id> 或原地目录），
+      // 卸载重装 / 覆盖安装会命中旧缓存导致注册代码不再执行——
+      // 用递增 query 保证每次激活都是全新求值。
+      this.importEpoch += 1;
+      const url = `${pathToFileURL(pkg.uraEntry).href}?v=${this.importEpoch}`;
       await this.registry.runAs(pkg.id, () => import(url));
     } catch (error) {
       this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
@@ -107,8 +112,8 @@ export class PluginHost {
     const scanned = await scanPluginPackages([root]);
     const pkg = scanned.find((item) => item.root === root) ?? scanned[0];
     if (!pkg) return null;
-    // 覆盖安装：先撤下旧注册面，再装新版本（同路径重装受 ESM 缓存限制，重启后完整生效）。
-    if (this.packages.has(pkg.id)) this.revoke(pkg.id);
+    // 覆盖安装：撤下旧注册面并关闭旧版本页面，再装新版本。
+    if (this.packages.has(pkg.id)) this.deactivate(pkg.id);
     this.packages.set(pkg.id, pkg);
     if (!pkg.page && !pkg.settings) {
       this.diagnostics.push(
