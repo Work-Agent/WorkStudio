@@ -157,6 +157,12 @@ out/
 # Electron：electron-builder 打包产物
 dist/
 
+# local plugins
+src/plugins/*
+!src/plugins/html-viewer/
+!src/plugins/markdown-viewer/
+!src/plugins/text-editor/
+
 # pi (local agent tooling)
 .pi/*
 !.pi/extensions/
