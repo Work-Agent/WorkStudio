@@ -270,7 +270,6 @@
         </div>
         <div class="row-end">
           <span class="hint" id="hint"></span>
-          <button onclick="openFile()">打开安装包</button>
           <button onclick="download()" id="btn-download">下载安装包</button>
           <button class="primary" onclick="check()" id="btn-check">
             检查更新
@@ -279,8 +278,8 @@
       </section>
 
       <p class="foot">
-        下载完成后安装包在系统下载目录，点击「打开安装包」按平台流程安装 （mac
-        挂载 dmg / win 运行安装器 / linux 运行 AppImage）。
+        下载完成后自动打开安装包，按平台流程完成安装 （mac 挂载 dmg / win
+        运行安装器 / linux 运行 AppImage）；安装包保留在系统下载目录。
       </p>
     </div>
     <div class="toast" id="toast"></div>
@@ -312,7 +311,7 @@
         current: '已是最新版本',
         available: '有新版本可用',
         downloading: '正在下载…',
-        ready: '下载完成',
+        ready: '下载完成，安装包已打开',
         error: '出错',
       };
       const MB = 1024 * 1024;
@@ -371,34 +370,39 @@
       }
 
       async function check() {
+        // 即时反馈：不等主进程返回，先进入检查中状态并开始轮询
+        $('btn-check').disabled = true;
+        $('btn-check').textContent = '检查中…';
+        $('hint').textContent = '正在检查最新版本…';
+        poll(true);
         try {
-          status = await call('/updates/check');
-          render();
-          if (status.phase === 'available')
-            toast('发现新版本 ' + status.latest);
-          if (status.phase === 'current') toast('当前已是最新版本');
+          await call('/updates/check');
         } catch (e) {
-          await refresh();
           toast('检查失败：' + (e && e.message ? e.message : e), true);
+        } finally {
+          $('btn-check').textContent = '检查更新';
+          await refresh();
+          if (status?.phase === 'available')
+            toast('发现新版本 ' + status.latest);
+          if (status?.phase === 'current') toast('当前已是最新版本');
         }
       }
 
       async function download() {
+        // 即时反馈：立刻显示进度条并轮询，下载完成主进程会自动打开安装包
+        $('btn-download').disabled = true;
+        $('btn-download').textContent = '下载中…';
+        $('hint').textContent = '正在下载安装包…';
+        $('progress').classList.add('show');
+        poll(true);
         try {
-          status = await call('/updates/download');
-          render();
-          toast('下载完成');
+          await call('/updates/download');
+          toast('下载完成，正在打开安装包');
         } catch (e) {
-          await refresh();
           toast('下载失败：' + (e && e.message ? e.message : e), true);
-        }
-      }
-
-      async function openFile() {
-        try {
-          await call('/updates/open', { path: status?.file ?? undefined });
-        } catch (e) {
-          toast((e && e.message) || '打开失败', true);
+        } finally {
+          $('btn-download').textContent = '下载安装包';
+          await refresh();
         }
       }
 

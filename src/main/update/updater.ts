@@ -3,14 +3,14 @@
  *
  * 检查：releases/latest API 拿 tag 与资产，按平台 / 架构匹配安装包名，
  * semver 与当前版本比对；有新版才进入下载。下载走共享代理链路
- * （net/proxy），流式写 <下载目录>/<资产名>.part 后原子改名，落定后由
- * 设置页经 /native/open-path 打开安装包（不静默替换应用：mac ad-hoc
- * 签名不支持 Squirrel 静默更新，各平台统一「下载 → 打开安装包」）。
+ * （net/proxy），流式写 <下载目录>/<资产名>.part 后原子改名，落定后自动
+ * 打开安装包（不静默替换应用：mac ad-hoc 签名不支持 Squirrel 静默更新，
+ * 各平台统一「下载 → 自动打开安装包」）。
  */
+import { app, shell } from 'electron';
 import { createWriteStream } from 'node:fs';
 import { chmod, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { app } from 'electron';
 import { fetch as undiciFetch } from 'undici';
 import { createLogger } from '../log';
 import { ensureProxy } from '../net/proxy';
@@ -201,6 +201,15 @@ export class UpdateService {
       if (process.platform === 'linux') await chmod(target, 0o755);
       log.info('update downloaded', target);
       this.patch({ phase: 'ready', received, total, file: target });
+      // 下载完自动打开安装包（mac 挂载 dmg / win 运行安装器 / linux 运行 AppImage）
+      void shell.openPath(target).then((openError) => {
+        if (openError) {
+          log.warn('update auto open failed', openError);
+          this.patch({
+            message: `安装包已下载到下载目录，自动打开失败：${openError}`,
+          });
+        }
+      });
       return this.currentStatus();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
