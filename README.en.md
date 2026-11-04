@@ -446,7 +446,7 @@ export ELECTRON_MIRROR=<your mirror>
 pnpm install
 ```
 
-If `Error: Electron uninstall` appears, or `node_modules/electron/path.txt` is empty, postinstall did not run; re-run it from the local cache:
+If `Error: Electron uninstall` appears, or `node_modules/electron/path.txt` is empty, the binary provisioning step was skipped (e.g. `--ignore-scripts`). Electron 44 no longer ships its own install script, so the download is handled by this project's `postinstall`; re-run it once:
 
 ```bash
 node node_modules/electron/install.js

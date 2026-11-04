@@ -445,7 +445,7 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/          # 镜像
 export https_proxy=http://127.0.0.1:7890 ELECTRON_GET_USE_PROXY=true   # 代理
 ```
 
-出现 `Error: Electron uninstall`、或 `node_modules/electron/path.txt` 为空，说明 postinstall 未执行，从本地缓存补跑一次即可：
+出现 `Error: Electron uninstall`、或 `node_modules/electron/path.txt` 为空，说明二进制补齐步骤被跳过（如 `--ignore-scripts`）。Electron 44 起上游不再自带安装脚本，下载由本项目的 `postinstall` 负责，补跑一次即可：
 
 ```bash
 node node_modules/electron/install.js

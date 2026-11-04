@@ -31,7 +31,8 @@
     "test:e2e:dev:ui": "pnpm build && E2E_DEV=1 playwright test --ui",
     "test:e2e:dev:run": "E2E_DEV=1 playwright test",
     "test:e2e:dev:full": "pnpm build && E2E_DEV=1 playwright test",
-    "paths:smoke": "node --experimental-strip-types scripts/paths-smoke.ts"
+    "paths:smoke": "node --experimental-strip-types scripts/paths-smoke.ts",
+    "postinstall": "install-electron"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
