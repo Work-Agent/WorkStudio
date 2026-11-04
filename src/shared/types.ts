@@ -622,6 +622,8 @@ export interface Rect {
 export interface LayoutSnapshot {
   /** 助手形态：dock 占据右侧，floating 使用浮动几何。 */
   assistantMode: 'dock' | 'floating';
+  /** 助手是否显示（收起时 dock / floating 均隐藏）。 */
+  assistantVisible: boolean;
   window: { width: number; height: number };
   titlebar: Rect;
   workbench: Rect;

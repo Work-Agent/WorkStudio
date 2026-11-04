@@ -1,10 +1,15 @@
 /** 原生现场 / 布局 / 交互：scene、viewport、拖拽预览与 layout 状态。 */
+import { CH_CAPTURE } from '../../../shared/channels';
 import {
   clampFloating,
   computeLayout,
   defaultFloating,
 } from '../../../shared/layout-engine';
-import type { InteractionPreview, LayoutSnapshot } from '../../../shared/types';
+import type {
+  InteractionPreview,
+  LayoutSnapshot,
+  ResizeDirection,
+} from '../../../shared/types';
 import type { StateHandle } from '../../core/handles';
 import type { GlobalRegistration } from '../middleware';
 import {
@@ -20,6 +25,9 @@ import type { Theme } from '../../core/types';
 export interface InteractionInput {
   type: 'pane-resize' | 'view-move' | 'view-resize' | 'tab-reorder';
   side?: 'left' | 'right';
+  /** 交互目标（助手缩放把手上报 target=assistant / 右栏上报表 right）。 */
+  target?: string;
+  direction?: ResizeDirection;
   pointerX?: number;
   pointerY?: number;
   tabKey?: string;
@@ -30,12 +38,29 @@ interface InteractionSession {
   input: InteractionInput;
   widths: { left: number; right: number };
   floating: { x: number; y: number; width: number; height: number } | null;
-  startX: number;
-  startY: number;
+  /** 起点用窗口坐标的屏幕光标（client 坐标在视图移动后会失真）。 */
+  startCursor: { x: number; y: number };
 }
 
 const MIN_PANE = 120;
 const MAX_PANE = 720;
+
+/** 缩放方向 → CSS 光标名。 */
+function resizeCursor(direction: ResizeDirection): string {
+  switch (direction) {
+    case 'n':
+    case 's':
+      return 'ns-resize';
+    case 'e':
+    case 'w':
+      return 'ew-resize';
+    case 'ne':
+    case 'sw':
+      return 'nesw-resize';
+    default:
+      return 'nwse-resize';
+  }
+}
 
 export class SceneController {
   private viewport: { width: number; height: number } | null = null;
@@ -50,6 +75,8 @@ export class SceneController {
   constructor(
     private readonly electron: ElectronCapability,
     private readonly theme: () => Theme,
+    /** 指针捕获层视图 id（系统视图就绪后才有值）。 */
+    private readonly captureId: () => string | undefined,
   ) {}
 
   install(global: GlobalRegistration): void {
@@ -72,6 +99,17 @@ export class SceneController {
         call.input as InteractionInput,
       ),
     );
+    // 捕获层接管拖拽期间的指针事件：发起视图在指针移出后收不到 move/up。
+    this.electron.views.onCapture((message) => {
+      if (!this.session) return;
+      if (message.type === 'move') this.applyPreview();
+      else if (message.type === 'up') this.commitInteraction();
+      else this.cancelInteraction();
+    });
+    // 焦点离开窗口时指针序列已断：按松手提交，避免交互悬挂。
+    this.electron.window.onBlur(() => {
+      if (this.session) this.commitInteraction();
+    });
     this.interactionState.publish(null);
   }
 
@@ -88,6 +126,7 @@ export class SceneController {
     this.currentWsId = next;
     this.preview = null;
     this.session = null;
+    this.detachCapture();
     this.interactionState.publish(null);
     if (next) this.sceneState.publish({ wsId: next }, this.sceneFor(next));
     this.publishLayout();
@@ -120,38 +159,45 @@ export class SceneController {
           input,
           widths: this.currentScene().paneWidths,
           floating: this.currentScene().floating,
-          startX: Number(input.pointerX ?? 0),
-          startY: Number(input.pointerY ?? 0),
+          startCursor: this.electron.window.cursor() ?? {
+            x: Number(input.pointerX ?? 0),
+            y: Number(input.pointerY ?? 0),
+          },
         };
-        this.applyPreview(input);
+        this.attachCapture();
+        this.applyPreview();
         break;
       case 'move':
-        this.applyPreview(input);
+        this.applyPreview();
         break;
       case 'end':
         this.commitInteraction();
         break;
       case 'cancel':
-        this.session = null;
-        this.setPreview(null);
+        this.cancelInteraction();
         break;
     }
     return null;
   }
 
-  private applyPreview(input: InteractionInput): void {
+  /** 指针几何始终以窗口坐标的屏幕光标为准，忽略渲染层上报的 client 坐标。 */
+  private applyPreview(): void {
     const session = this.session;
     if (!session) return;
+    const input = session.input;
     const layout = this.computeLayout();
-    if (input.type === 'pane-resize' && input.side) {
-      const pointerX = Number(input.pointerX ?? session.startX);
+    const cursor = this.electron.window.cursor() ?? session.startCursor;
+    const dx = cursor.x - session.startCursor.x;
+    const dy = cursor.y - session.startCursor.y;
+    if (input.type === 'pane-resize') {
+      const side = input.side ?? (input.target === 'right' ? 'right' : 'left');
       const desired =
-        input.side === 'left' ? pointerX : layout.window.width - pointerX;
+        side === 'left' ? cursor.x : layout.window.width - cursor.x;
       const clamped = Math.min(Math.max(desired, MIN_PANE), MAX_PANE);
       this.setPreview({
         type: 'pane-resize',
-        side: input.side,
-        ...(input.side === 'left'
+        side,
+        ...(side === 'left'
           ? {
               sidebarCollapsed: clamped < 160,
               paneWidths: {
@@ -167,23 +213,32 @@ export class SceneController {
             }),
       });
     } else if (input.type === 'view-move' || input.type === 'view-resize') {
-      const pointerX = Number(input.pointerX ?? session.startX);
-      const pointerY = Number(input.pointerY ?? session.startY);
       const start = session.floating ?? defaultFloating(layout.resourcePane);
-      const dx = pointerX - session.startX;
-      const dy = pointerY - session.startY;
+      if (input.type === 'view-move') {
+        this.setPreview({
+          type: 'view-move',
+          floating: clampFloating(
+            { ...start, x: start.x + dx, y: start.y + dy },
+            layout.resourcePane,
+          ),
+        });
+        return;
+      }
+      // 八向：只动被拖的边/角（对边保持不动），再整体夹回面板内。
+      const d = input.direction ?? 'se';
+      const box = {
+        x: start.x + (d.includes('w') ? dx : 0),
+        y: start.y + (d.includes('n') ? dy : 0),
+        width:
+          start.width + (d.includes('e') ? dx : 0) - (d.includes('w') ? dx : 0),
+        height:
+          start.height +
+          (d.includes('s') ? dy : 0) -
+          (d.includes('n') ? dy : 0),
+      };
       this.setPreview({
-        type: input.type,
-        floating: clampFloating(
-          input.type === 'view-move'
-            ? { ...start, x: start.x + dx, y: start.y + dy }
-            : {
-                ...start,
-                width: Math.max(300, start.width + dx),
-                height: Math.max(360, start.height + dy),
-              },
-          layout.resourcePane,
-        ),
+        type: 'view-resize',
+        floating: clampFloating(box, layout.resourcePane),
       });
     } else if (input.type === 'tab-reorder') {
       this.setPreview({
@@ -209,7 +264,39 @@ export class SceneController {
       this.applyScene(this.currentWsId, { floating: preview.floating });
     }
     this.session = null;
+    this.detachCapture();
     this.setPreview(null);
+  }
+
+  private cancelInteraction(): void {
+    this.session = null;
+    this.detachCapture();
+    this.setPreview(null);
+  }
+
+  /** 交互期间挂上全窗捕获层：指针移出发起视图后仍需 move/up。 */
+  private attachCapture(): void {
+    const id = this.captureId();
+    if (!id) return;
+    const input = this.session?.input;
+    this.electron.views.setVisible(id, true);
+    this.electron.views.focus(id);
+    this.electron.views.send(id, CH_CAPTURE, {
+      type: 'cursor',
+      cursor:
+        input?.type === 'pane-resize'
+          ? 'col-resize'
+          : input?.type === 'view-resize'
+            ? resizeCursor(input.direction ?? 'se')
+            : input?.type === 'tab-reorder'
+              ? 'grabbing'
+              : 'move',
+    });
+  }
+
+  private detachCapture(): void {
+    const id = this.captureId();
+    if (id) this.electron.views.setVisible(id, false);
   }
 
   private setPreview(preview: InteractionPreview | null): void {

@@ -1,4 +1,5 @@
 /** shell / assistant / overlay / capture 系统视图的创建与重建。 */
+import { CAPTURE_PAGE_URL } from '../../capabilities/webview/presets';
 import type { Grant } from '../../core/types';
 import type { ElectronCapability, PreloadName } from '../electron-middleware';
 import type { ViewRecord, ViewRegistry } from '../views';
@@ -18,6 +19,10 @@ export class SystemViews {
 
   overlayId(): string | undefined {
     return this.systemViews.get('overlay');
+  }
+
+  captureId(): string | undefined {
+    return this.systemViews.get('capture');
   }
 
   ensure(): void {
@@ -59,7 +64,7 @@ export class SystemViews {
   private ensureSystemViews(): void {
     this.ensureSystemView({
       type: 'assistant',
-      page: 'assistant.html',
+      url: this.electron.rendererUrl('assistant.html'),
       preload: 'assistant',
       grants: {
         call: [
@@ -67,7 +72,7 @@ export class SystemViews {
           '/theme',
           '/layout',
           '/scene/**',
-          '/interaction',
+          '/interaction/**',
           '/dialogs/**',
           '/notices',
           '/notify',
@@ -80,7 +85,7 @@ export class SystemViews {
           '/theme',
           '/layout',
           '/scene/**',
-          '/interaction',
+          '/interaction/**',
           '/dialogs/**',
           '/notices',
           '/piconf',
@@ -92,7 +97,7 @@ export class SystemViews {
     });
     this.ensureSystemView({
       type: 'overlay',
-      page: 'overlay.html',
+      url: this.electron.rendererUrl('overlay.html'),
       preload: 'overlay',
       grants: {
         call: ['/dialogs/**', '/views/self/**'],
@@ -101,7 +106,7 @@ export class SystemViews {
     });
     this.ensureSystemView({
       type: 'capture',
-      page: 'overlay.html',
+      url: CAPTURE_PAGE_URL,
       preload: 'capture',
       grants: {},
     });
@@ -109,7 +114,7 @@ export class SystemViews {
 
   private ensureSystemView(input: {
     type: 'assistant' | 'overlay' | 'capture';
-    page: string;
+    url: string;
     preload: PreloadName;
     grants: Grant;
   }): void {
@@ -117,7 +122,7 @@ export class SystemViews {
     const record = this.createView({
       type: input.type,
       title: input.type,
-      url: this.electron.rendererUrl(input.page),
+      url: input.url,
       preload: input.preload,
       grants: input.grants,
     });

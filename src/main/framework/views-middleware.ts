@@ -58,8 +58,6 @@ export class ViewsCapability implements Capability {
     this.providers = ctx.providers;
     this.global = ctx.global;
     this.theme = this.electron.theme.read();
-    this.scene = new SceneController(this.electron, () => this.theme);
-    this.scene.install(this.global);
     this.runtime = new ViewRuntime(
       this.viewRegistry,
       this.electron,
@@ -68,6 +66,12 @@ export class ViewsCapability implements Capability {
     this.system = new SystemViews(this.electron, this.viewRegistry, (input) =>
       this.createView(input),
     );
+    this.scene = new SceneController(
+      this.electron,
+      () => this.theme,
+      () => this.system.captureId(),
+    );
+    this.scene.install(this.global);
     this.register();
     this.dialogs = new DialogsController({
       overlay: () => this.electron.views,

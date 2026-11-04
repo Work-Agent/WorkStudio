@@ -294,11 +294,11 @@ function Assistant() {
     // 发起方拥有拖拽序列（OS 语义：pointerdown 命中的视图持续收到 move/up）；
     // 这里不做按键过滤（不同平台/事件的 buttons 位不可靠），只上报“仍在拖”。
     let frame = 0;
-    const onMove = (event: PointerEvent): void => {
+    const onMove = (): void => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        void api.interaction.move(event.clientX, event.clientY);
+        void api.interaction.move();
       });
     };
     const stop = (): void => {
