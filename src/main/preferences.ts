@@ -18,13 +18,22 @@ const NAMESPACE = 'workspaceStudio';
 export interface UserPreferences {
   theme: 'light' | 'dark';
   locale: string | null;
+  /** 网络代理（http://127.0.0.1:7890），null = 未设置走环境变量 / 直连。 */
+  proxy: string | null;
+  /** GitHub 访问令牌（私有仓库读 Releases 用），null = 未配置。 */
+  githubToken: string | null;
 }
 
 export interface WorkspacePolicy {
   browser: { allowlist: string[] };
 }
 
-const DEFAULT_USER: UserPreferences = { theme: 'dark', locale: null };
+const DEFAULT_USER: UserPreferences = {
+  theme: 'dark',
+  locale: null,
+  proxy: null,
+  githubToken: null,
+};
 const DEFAULT_POLICY: WorkspacePolicy = { browser: { allowlist: [] } };
 
 /** 用户级设置文件（同时是 pi 的 global settings）。 */
@@ -45,6 +54,14 @@ export function readUserPreferences(): UserPreferences {
         ? raw['theme']
         : DEFAULT_USER.theme,
     locale: typeof raw['locale'] === 'string' ? raw['locale'] : null,
+    proxy:
+      typeof raw['proxy'] === 'string' && raw['proxy'].trim()
+        ? raw['proxy'].trim()
+        : null,
+    githubToken:
+      typeof raw['githubToken'] === 'string' && raw['githubToken'].trim()
+        ? raw['githubToken'].trim()
+        : null,
   };
 }
 

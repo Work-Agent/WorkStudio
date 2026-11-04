@@ -3,7 +3,8 @@
 // 可安装清单随源码维护（PLUGINS.md），构建期解析成静态数组
 // （virtual:plugin-registry）：运行期只读数据，不读、不写 Markdown。
 // 远程只接受 zip，必须带 sha256；本地 zip 路径同一套解压流程；
-// 本地目录原地加载（不复制）。下载读 https_proxy 环境变量走代理。
+// 本地目录原地加载（不复制）。下载代理见 net/proxy.ts（用户设置优先，
+// 其次 https_proxy 环境变量，都没有则直连）。
 // 安装状态由 installed/ 与 installed.json 得出；临时来源只记安装状态。
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -12,7 +13,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { unzipSync } from 'fflate';
-import { fetch as undiciFetch, ProxyAgent, setGlobalDispatcher } from 'undici';
+import { fetch as undiciFetch } from 'undici';
 import { PLUGIN_REGISTRY } from 'virtual:plugin-registry';
 import {
   describePluginSource,
@@ -21,6 +22,7 @@ import {
   type PluginSourceType,
 } from '../../shared/plugin-registry';
 import { createLogger } from '../log';
+import { ensureProxy } from '../net/proxy';
 
 const log = createLogger('plugin-sources');
 const MAX_ZIP_BYTES = 64 * 1024 * 1024;
@@ -329,37 +331,12 @@ export class PluginService {
 
 // ─── zip 安装 ─────────────────────────────────────────────
 
-let proxyApplied = false;
-
-/** 终端导出的 https_proxy / http_proxy（仅 HTTP 代理；socks 端口通常同服，改写协议即可用）。 */
-function applyProxy(): void {
-  if (proxyApplied) return;
-  proxyApplied = true;
-  const raw = (
-    process.env.https_proxy ??
-    process.env.HTTPS_PROXY ??
-    process.env.http_proxy ??
-    process.env.HTTP_PROXY ??
-    ''
-  )
-    .trim()
-    .replace(/^socks\d+:\/\//, 'http://');
-  if (!raw) return;
-  try {
-    // H2 经代理易断流，锁定 HTTP/1.1；npm undici 的全局调度器不影响 Node 内建 fetch
-    setGlobalDispatcher(new ProxyAgent({ uri: raw, allowH2: false }));
-    log.info('plugin download via proxy', raw);
-  } catch (error) {
-    log.warn('invalid proxy url, direct fetch', error);
-  }
-}
-
 /** 统一下载：单次 5 分钟超时（大包慢网）、64MB 上限、代理链路瞬断重试一次。 */
 async function fetchBytes(
   url: string,
   headers: Record<string, string>,
 ): Promise<Uint8Array> {
-  applyProxy();
+  ensureProxy();
   const fetchOnce = async (): Promise<Uint8Array> => {
     const response = await undiciFetch(url, {
       headers,

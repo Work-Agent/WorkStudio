@@ -57,6 +57,10 @@ import { createUraRuntime, type UraRuntime } from './ura';
 import { PageSessions } from './ura/page-sessions';
 import { PluginService } from './plugins/service';
 import { PluginCatalogService } from './plugins/catalog';
+import { readUserPreferences } from './preferences';
+import { setProxySource } from './net/proxy';
+import { UpdateService } from './update/updater';
+import { UpdatesService } from './service/updates';
 import {
   pluginCatalogFile,
   pluginCatalogUrlFile,
@@ -90,6 +94,7 @@ export class App {
   private piconf!: PiConfService;
   private settings!: SettingsService;
   private sites!: SitesService;
+  private updates!: UpdatesService;
   private viewsCapability!: ViewsCapability;
   private browserAutomation: BrowserAutomation | null = null;
   private agentHost: AgentHost | null = null;
@@ -141,6 +146,7 @@ export class App {
     const initial = workspaces.restore();
     let workspacePath = initial.path;
 
+    setProxySource(() => readUserPreferences().proxy);
     const pluginService = new PluginService({
       root: pluginsRoot(),
       cwd: () => workspacePath,
@@ -305,6 +311,9 @@ export class App {
       ura: ura.ura,
       workspace: () => workspacePath,
     });
+    this.updates = new UpdatesService(
+      new UpdateService({ token: () => readUserPreferences().githubToken }),
+    );
 
     // ─── 中间件与路由 ──────────────────────────────────
     const ctx: MiddlewareContext = {
@@ -333,6 +342,7 @@ export class App {
       piconf: this.piconf,
       settings: this.settings,
       sites: this.sites,
+      updates: this.updates,
     });
     this.host.useCall(this.middlewares);
 
