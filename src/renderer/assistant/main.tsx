@@ -31,7 +31,7 @@ import { matchCommands, runBuiltinCommand, useCommands } from './commands';
 import { DockResizeHandle, MessageRow, ResizeHandles } from './components';
 import { formatTokens, tabLabel } from './format';
 import { useMessages } from './messages';
-import { useAgent, useSessions, useShell } from './session';
+import { useAgent, useModels, useSessions, useShell } from './session';
 
 // 浮动圆角依赖视图透明：页面画布与 body 不得有底色（面板底色由根容器负责）。
 document.documentElement.style.background = 'transparent';
@@ -74,9 +74,8 @@ function Assistant() {
     Record<string, string[] | undefined>
   >({});
   const [workingMessage, setWorkingMessage] = useState<string | undefined>();
-  const [models, setModels] = useState<
-    Array<{ provider: string; modelId: string; label: string }>
-  >([]);
+  // 模型列表来自状态路径订阅：设置页增删模型后面板立即跟随，不依赖当前模型变化。
+  const models = useModels();
   const [thinkingLevels, setThinkingLevels] = useState<ThinkingLevel[]>([]);
   const [menu, setMenu] = useState<'model' | 'thinking' | 'skills' | null>(
     null,
@@ -152,9 +151,6 @@ function Assistant() {
   }, []);
 
   useEffect(() => {
-    void bridge?.cmd('agent.models').then((r) => {
-      if (r.ok) setModels((r.data as typeof models) ?? []);
-    });
     void bridge?.cmd('agent.thinkingLevels').then((r) => {
       if (r.ok) setThinkingLevels((r.data as ThinkingLevel[]) ?? []);
     });
@@ -843,7 +839,6 @@ function Assistant() {
               <button
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] max-w-32"
                 onClick={() => setMenu(menu === 'model' ? null : 'model')}
-                disabled={models.length === 0}
                 title="切换模型"
               >
                 <span className="truncate">
@@ -859,6 +854,13 @@ function Assistant() {
                     onClick={() => setMenu(null)}
                   />
                   <div className="absolute bottom-7 right-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                    {models.length === 0 && (
+                      <div className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        还没有可用模型
+                        <br />
+                        在「设置 → 模型」中添加或登录
+                      </div>
+                    )}
                     {models.map((m) => (
                       <button
                         key={`${m.provider}/${m.modelId}`}

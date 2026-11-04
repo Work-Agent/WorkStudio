@@ -89,12 +89,6 @@ export async function appAssistantCommand<T = unknown>(
       return call(`/workspaces/${wsId}/sessions/thinking/set`, input);
     case 'agent.thinkingLevels':
       return { ok: true, data: ['off', 'low', 'medium', 'high'] as T };
-    case 'agent.models':
-      return {
-        ok: true,
-        data: ((await bridge?.peek(`/workspaces/${wsId}/sessions/models`)) ??
-          []) as T,
-      };
     case 'agent.status': {
       const snapshot = await bridge?.peek<AgentSnapshot>(
         `/workspaces/${wsId}/sessions/current`,

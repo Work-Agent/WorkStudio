@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { WorkspaceMeta } from '../../shared/app';
 import type {
   AgentSnapshot,
+  ModelOption,
   ParsedBlock,
   ParsedMessage,
   SessionMeta,
@@ -85,6 +86,32 @@ export function useAppAgent(): AgentSnapshot | null {
   }, [available, workspace?.id]);
 
   return available ? agent : null;
+}
+
+/**
+ * 可选模型列表（状态路径订阅）。
+ *
+ * 必须走订阅而不是一次性读取：模型在设置页增删时当前模型并不变化，
+ * 用「当前模型变化时重取」的写法会让切换器一直停在旧列表上。
+ */
+export function useAppModels(): ModelOption[] | null {
+  const available = useAppAvailable();
+  const workspace = useWorkspace(available);
+  const [models, setModels] = useState<ModelOption[] | null>(null);
+
+  useEffect(() => {
+    if (!available || !window.appBridge || !workspace) return;
+    const path = `/workspaces/${workspace.id}/sessions/models`;
+    const off = window.appBridge.on((frame) => {
+      if (frame.type === 'state' && frame.path === path) {
+        setModels((frame.value as ModelOption[] | null) ?? []);
+      }
+    });
+    void window.appBridge.watch([path]);
+    return off;
+  }, [available, workspace?.id]);
+
+  return available ? models : null;
 }
 
 export function useAppSessions(): SessionMeta[] | null {
