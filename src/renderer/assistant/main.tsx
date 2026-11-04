@@ -164,6 +164,17 @@ function Assistant() {
       });
   }, [activePath]);
 
+  // 从会话列表重新打开已关闭的标签时恢复显示。
+  useEffect(() => {
+    if (!activePath) return;
+    setClosedPaths((previous) => {
+      if (!previous.has(activePath)) return previous;
+      const next = new Set(previous);
+      next.delete(activePath);
+      return next;
+    });
+  }, [activePath]);
+
   // 自动滚动：距底 <80px 才跟随
   useEffect(() => {
     const el = scrollRef.current;
@@ -175,12 +186,27 @@ function Assistant() {
   }, [messages, messages.length]);
 
   const closeTabs = (paths: string[]): void => {
+    const closing = new Set(paths);
+    const remaining = openPaths.filter((path) => !closing.has(path));
     setClosedPaths((previous) => {
       const next = new Set(previous);
       for (const path of paths) next.add(path);
       return next;
     });
     void bridge?.cmd('session.closeTabs', { paths });
+    if (!activePath || !closing.has(activePath)) return;
+    // 关闭活跃标签：优先右侧相邻，其次左侧；全部关闭回到新会话。
+    const index = openPaths.indexOf(activePath);
+    const nextActive =
+      remaining.length > 0
+        ? remaining[Math.min(index, remaining.length - 1)]
+        : null;
+    if (nextActive) {
+      void bridge?.cmd('session.openTab', { path: nextActive });
+    } else {
+      clearNewTask();
+      void bridge?.cmd('session.new');
+    }
   };
 
   const onScroll = (): void => {
@@ -253,8 +279,9 @@ function Assistant() {
     }
     setText('');
     setCommandTag(null);
-    pushOptimistic(value);
-    if (streaming || agent?.isStreaming) {
+    const queued = streaming || Boolean(agent?.isStreaming);
+    pushOptimistic(value, queued);
+    if (queued) {
       await api.cmd(
         mode === 'followUp' ? 'session.followUp' : 'session.steer',
         { text: value },
@@ -395,6 +422,10 @@ function Assistant() {
           {openPaths.map((path) => {
             const isActive = path === activePath;
             const isStreaming = isActive && (streaming || agent?.isStreaming);
+            const label =
+              isActive && !sessions.some((session) => session.path === path)
+                ? '新任务'
+                : tabLabel(sessions, path);
             return (
               <div
                 key={path}
@@ -404,7 +435,7 @@ function Assistant() {
                   e.preventDefault();
                   openTabMenu(path);
                 }}
-                title={tabLabel(sessions, path)}
+                title={label}
                 className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors max-w-32 min-w-0 ${
                   isActive
                     ? 'bg-white dark:bg-[#262829] text-zinc-900 dark:text-zinc-100'
@@ -421,7 +452,7 @@ function Assistant() {
                   />
                 )}
                 <span className="text-[12px] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                  {tabLabel(sessions, path)}
+                  {label}
                 </span>
                 <button
                   onClick={(e) => {
@@ -511,13 +542,6 @@ function Assistant() {
         {messages.map((message, i) => (
           <MessageRow key={i} message={message} />
         ))}
-        {optimisticText && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-lg bg-[#4F6BED] text-white px-2.5 py-1.5 whitespace-pre-wrap">
-              {optimisticText}
-            </div>
-          </div>
-        )}
       </div>
 
       {(workingMessage ||

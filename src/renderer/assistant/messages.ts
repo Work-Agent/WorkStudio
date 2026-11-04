@@ -6,7 +6,7 @@ export interface MessagesView {
   messages: ParsedMessage[];
   streaming: boolean;
   optimistic: string | undefined;
-  pushOptimistic: (text: string) => void;
+  pushOptimistic: (text: string, queued?: boolean) => void;
   clearNewTask: () => void;
 }
 

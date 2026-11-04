@@ -3,8 +3,8 @@
  *
  * 线格式：pi 事件直接结构化克隆回渲染层，唯一瘦身点是 message_update 的累积快照
  * （partial / message）：delta-only 后帧体积恒定，避免平方放大。
- * 合帧：16ms 冲刷窗口；可合并事件（message_update / tool_execution_update /
- * bash_execution_update）窗口内只保留最新帧；定序事件不合并。
+ * 合帧：16ms 冲刷窗口；快照型事件窗口内只保留最新帧；message_update 是增量语义，
+ * 逐帧发送。
  * 序号：每帧单调递增 seq；渲染层检测缺口 → app.sync 快照重建。
  */
 import type {
@@ -21,8 +21,6 @@ const FLUSH_INTERVAL_MS = 16;
 
 function mergeKey(event: { type: string }): string | null {
   switch (event.type) {
-    case 'message_update':
-      return 'message_update';
     case 'tool_execution_update':
       return `tool_execution_update:${(event as { toolCallId?: string }).toolCallId ?? ''}`;
     case 'bash_execution_update':

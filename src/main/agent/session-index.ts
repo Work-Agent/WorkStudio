@@ -18,6 +18,7 @@ type JsonlMessage = Record<string, unknown>;
 type ContentBlock = {
   type: string;
   text?: string;
+  thinking?: string;
   id?: string;
   name?: string;
   input?: unknown;
@@ -79,8 +80,8 @@ function extractBlocks(
   for (const c of content) {
     if (c.type === 'text' && typeof c.text === 'string') {
       blocks.push({ type: 'text', text: c.text });
-    } else if (c.type === 'thinking' && typeof c.text === 'string') {
-      blocks.push({ type: 'thinking', text: c.text });
+    } else if (c.type === 'thinking' && typeof c.thinking === 'string') {
+      blocks.push({ type: 'thinking', text: c.thinking });
     } else if (c.type === 'toolCall' || c.type === 'tool_use') {
       const id = String(c.id ?? '');
       blocks.push({

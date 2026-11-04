@@ -489,7 +489,12 @@ export type PiSessionEvent =
   | { type: 'message_start'; message: { role: string; content?: unknown } }
   | {
       type: 'message_update';
-      assistantMessageEvent: { type: string; delta?: string };
+      assistantMessageEvent: {
+        type: string;
+        delta?: string;
+        content?: string;
+        contentIndex?: number;
+      };
     }
   | { type: 'message_end'; message: { role: string; content?: unknown } }
   | {
