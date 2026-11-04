@@ -4,7 +4,7 @@
  * 页面只通过 window.appBridge.call/peek 访问主进程；window.extension 仅保留
  * 资源页面会话与内容总线契约。
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import scrollbarCss from '../shared/styles/scrollbar.css?raw';
 import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels';
 import type { AppBridge } from '../shared/electron';
@@ -110,6 +110,14 @@ async function refreshPathRoots(): Promise<void> {
 const pathDisplay = { format: formatPath };
 
 const api = {
+  /** 拖放的 File 对象 → 绝对路径（Chromium 已移除 File.path）。 */
+  filePath: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
+  },
   /** 资源页面契约：会话由主进程持有，页面只拿 id / 入口 / 数据。 */
   ura: {
     page: {

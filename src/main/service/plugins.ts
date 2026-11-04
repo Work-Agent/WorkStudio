@@ -52,11 +52,20 @@ export class PluginsService {
 
   async install(source: string): Promise<PluginSource> {
     const entry = await this.deps.service.install(source);
+    // 热安装：装入运行时并执行注册入口，失败只进诊断（文件已落盘，重启后仍会装载）。
+    const root = this.deps.service.installRootOf(entry.source);
+    if (root) await this.deps.host.activate(root);
     this.emitChange();
     return entry;
   }
 
   async remove(source: string): Promise<boolean> {
+    // 热卸载：先撤销注册面并关闭插件视图，再删安装目录。
+    // 同 id 还被其他来源安装时不撤运行时（插件仍处于安装状态）。
+    const pluginId = this.deps.service.installedIdOf(source);
+    if (pluginId && !this.deps.service.isSharedId(pluginId, source)) {
+      this.deps.host.deactivate(pluginId);
+    }
     const removed = await this.deps.service.remove(source);
     this.emitChange();
     return removed;

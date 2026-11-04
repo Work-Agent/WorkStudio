@@ -189,6 +189,19 @@ export class ViewsCapability implements Capability {
     this.viewsState.publish(this.viewRegistry.list());
   }
 
+  /** 热卸载：关闭某插件的全部已打开视图（页面 / 配置页）。 */
+  closePluginViews(pluginId: string): void {
+    const targets = new Set([
+      `/plugins/page/${pluginId}`,
+      `/plugins/settings/${pluginId}`,
+    ]);
+    for (const view of this.viewRegistry.list()) {
+      if (view.contentPath && targets.has(view.contentPath)) {
+        this.runtime.close(view.id);
+      }
+    }
+  }
+
   // ─── 视图 ─────────────────────────────────────────────
 
   getWebContents(viewId: string): import('electron').WebContents | null {

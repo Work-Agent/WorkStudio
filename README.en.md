@@ -357,10 +357,11 @@ plugin-docx.zip
 └── node_modules/        # optional; the plugin bundles its own dependencies
 ```
 
-| Source | Syntax                              | Where it lands                      |
-| ------ | ----------------------------------- | ----------------------------------- |
-| zip    | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
-| Local  | Absolute path / `./plugins/csv`     | Loaded in place, not copied         |
+| Source       | Syntax                              | Where it lands                      |
+| ------------ | ----------------------------------- | ----------------------------------- |
+| Remote zip   | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
+| Local zip    | `~/Downloads/plugin.zip`            | `<appData>/plugins/installed/<id>/` |
+| Local folder | Absolute path / `./plugins/csv`     | Loaded in place, not copied         |
 
 **The install catalog is a Markdown file kept in source** ([PLUGINS.md](PLUGINS.md)), one source per line; it is parsed at build time into a static list inlined into the main process and the plugin settings page, and Markdown is no longer read at runtime:
 
@@ -375,12 +376,12 @@ plugin-docx.zip
 - **The catalog is a compile-time asset**: adding or removing a plugin means editing this file and rebuilding; the runtime neither parses nor rewrites it, and an invalid catalog fails the build.
 - **Rendered from build data**: the plugin settings page receives the catalog inlined at build time and never reads Markdown at runtime.
 - **Installed state is tracked apart**: installed = found under `installed/` and registered successfully; uninstalling only deletes `installed/<id>`, the catalog entry remains.
-- **Ad-hoc installs only record state**: manual URLs and community-catalog installs are recorded in the local install index, not in the catalog.
+- **Ad-hoc installs only record state**: manual URLs, dragged-in zips or folders, and community-catalog installs are recorded in the local install index, not in the catalog.
 - **One plugin directory**: `<appData>/plugins/` holds `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
-- **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `apiVersion` → atomically replace `installed/<id>`.
+- **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `apiVersion` → atomically replace `installed/<id>`; local zips follow the same extraction flow (nothing to compare a remote hash against, so only the content hash is recorded).
 - **Zip is self-contained**: dependencies are bundled into `dist` or shipped inside the zip as `node_modules`; nothing runs npm at install time.
 - **No auto-update**: change the catalog URL / hash, rebuild and reinstall; updates are never silent.
-- **One assembly pass**: at startup scan local paths and `installed/` → import `./ura` → register → build pages; install / uninstall take effect on restart.
+- **Assembly at startup, hot install at runtime**: at startup scan local paths and `installed/` → import `./ura` → register → build pages; install / uninstall take effect immediately — uninstall revokes registrations by owner and closes plugin pages; the ESM module body stays in process memory, a known limitation.
 - **Local sources are not copied**: loaded in place during development, effective after a restart.
 
 ### 5.4 Settings: endpoint only

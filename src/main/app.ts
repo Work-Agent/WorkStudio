@@ -157,6 +157,8 @@ export class App {
       bindingFile: uraBindingsFile(),
       workspace: () => workspacePath,
       registerFeatures: registerBrowserFeatures,
+      onDeactivate: (pluginId) =>
+        this.viewsCapability?.closePluginViews(pluginId),
       pluginRoots: [
         ...pluginService.roots(),
         join(env.appPath, 'src', 'plugins'),

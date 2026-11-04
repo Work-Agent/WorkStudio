@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { uraRegistry, type UraRegistry } from '../ura/registry';
 import { isWithin } from '../paths';
 import * as uraSdk from '../ura/sdk';
+import { listRegistry } from '../service/lists/registry';
 import type { PluginInfo } from '../../shared/types';
 import { scanPluginPackages, type PluginPackage } from './packages';
 
@@ -40,6 +41,8 @@ export interface PluginHostOptions {
   /** 插件数据根（settings.json 落盘位置）。 */
   dataRoot: string;
   registry?: UraRegistry;
+  /** 热卸载回调：关闭该插件已打开的视图（视图层接入）。 */
+  onDeactivate?: (pluginId: string) => void;
 }
 
 export class PluginHost {
@@ -78,13 +81,56 @@ export class PluginHost {
     const builtinIds = new Set(this.options.builtins.map((b) => b.id));
     for (const pkg of scanned) {
       if (builtinIds.has(pkg.id) || !pkg.uraEntry) continue;
-      try {
-        const url = pathToFileURL(pkg.uraEntry).href;
-        await registry.runAs(pkg.id, () => import(url));
-      } catch (error) {
-        this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
-      }
+      await this.loadPackage(pkg);
     }
+  }
+
+  /** 装载单个插件包的注册入口（启动扫描与热安装共用）。 */
+  private async loadPackage(pkg: PluginPackage): Promise<void> {
+    if (!pkg.uraEntry) return;
+    try {
+      const url = pathToFileURL(pkg.uraEntry).href;
+      await this.registry.runAs(pkg.id, () => import(url));
+    } catch (error) {
+      this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * 热安装：扫描单个插件目录 → 装入运行时 → 执行注册入口。
+   * 返回装入的插件包；目录不是有效插件包时返回 null。
+   */
+  async activate(root: string): Promise<PluginPackage | null> {
+    // 与 start() 一致：外部包依赖运行时注入的 SDK 注册面（幂等）。
+    (globalThis as { __workstudioSdk?: typeof uraSdk }).__workstudioSdk =
+      uraSdk;
+    const scanned = await scanPluginPackages([root]);
+    const pkg = scanned.find((item) => item.root === root) ?? scanned[0];
+    if (!pkg) return null;
+    // 覆盖安装：先撤下旧注册面，再装新版本（同路径重装受 ESM 缓存限制，重启后完整生效）。
+    if (this.packages.has(pkg.id)) this.revoke(pkg.id);
+    this.packages.set(pkg.id, pkg);
+    if (!pkg.page && !pkg.settings) {
+      this.diagnostics.push(
+        `插件没有声明页面：${pkg.id}（既无 page 也无 settings）`,
+      );
+    }
+    await this.loadPackage(pkg);
+    return pkg;
+  }
+
+  /** 热卸载：撤销注册面 + 移出运行时 + 关闭已打开的插件视图。 */
+  deactivate(id: string): void {
+    if (!this.packages.has(id)) return;
+    this.revoke(id);
+    this.options.onDeactivate?.(id);
+  }
+
+  /** 注册面撤销（ura 注册表 + 列表注册表）并移出包表。 */
+  private revoke(id: string): void {
+    this.registry.revokeOwner(id);
+    listRegistry.revokeOwner(id);
+    this.packages.delete(id);
   }
 
   get(id: string): PluginPackage | undefined {

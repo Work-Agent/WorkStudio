@@ -30,6 +30,8 @@ export async function createUraRuntime(options: {
   bindingFile?: string;
   workspace: () => string;
   registerFeatures?: () => void | Promise<void>;
+  /** 热卸载回调：关闭该插件已打开的视图（由组合根提供）。 */
+  onDeactivate?: (pluginId: string) => void;
 }): Promise<UraRuntime> {
   await uraRegistry.runAs('system', async () => {
     uraRegistry.registerTransport(new FileTransport());
@@ -42,6 +44,7 @@ export async function createUraRuntime(options: {
     builtins: BUILTIN_PLUGINS,
     dataRoot: options.dataRoot,
     registry: uraRegistry,
+    onDeactivate: options.onDeactivate,
   });
   await host.start();
   if (options.registerFeatures) {

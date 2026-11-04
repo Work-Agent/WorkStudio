@@ -2,7 +2,8 @@
 <!--
   WorkStudio 插件页（设置能力页）。
   数据面：window.appBridge（/plugins/installed / runtime / catalog / install / remove）。
-  来源：zip（带 sha256）/ 本地路径；本地直接加载，安装 / 卸载后重启生效。
+  来源：zip（带 sha256）/ 本地 zip / 本地路径；本地 zip 与远程 zip 解压安装，
+  本地目录直接加载；支持拖入 zip 或文件夹安装。安装 / 卸载即时生效。
 -->
 <html lang="zh-CN" data-theme="light">
   <head>
@@ -198,7 +199,7 @@
         <h1>WorkStudio 插件</h1>
         <p>
           插件是自带页面与资源适配器的 zip 包。可安装清单随应用版本发布；
-          本地路径直接加载、不复制。安装 / 卸载后重启应用生效。
+          本地路径直接加载、不复制。安装 / 卸载即时生效。
         </p>
       </header>
 
@@ -220,12 +221,15 @@
         <input
           id="source"
           type="text"
-          placeholder="https://.../plugin.zip#sha256=... · ~/path/to/plugin"
+          placeholder="https://.../plugin.zip#sha256=... · ~/path/to/plugin · 可直接拖入 zip 或文件夹"
           autocomplete="off"
         />
         <button id="install" class="primary">安装</button>
       </div>
-      <div class="hint">临时安装只记本机安装状态，不写入随包清单。</div>
+      <div class="hint">
+        支持拖拽：把 zip
+        文件或插件文件夹拖到本页任意位置即可安装。临时安装只记本机安装状态，不写入随包清单。
+      </div>
 
       <div class="section-title">可安装插件</div>
       <div id="sources"></div>
@@ -234,8 +238,8 @@
       <div id="plugins"></div>
 
       <p class="hint">
-        远程只接受带 sha256 的
-        zip；本地路径不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
+        远程只接受带 sha256 的 zip；本地 zip 与远程 zip
+        同一套解压安装；本地目录不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
         插件可执行主进程代码，安装前请确认来源。
       </p>
     </div>
@@ -483,7 +487,7 @@
           sources = (await peek('/plugins/installed')) || [];
           $('source').value = '';
           renderCatalog();
-          toast('已安装 ' + value + '，重启应用后生效');
+          toast('已安装 ' + value + '，已即时生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         } finally {
@@ -499,7 +503,7 @@
         try {
           await call('/plugins/remove', { source });
           sources = (await peek('/plugins/installed')) || [];
-          toast('已移除 ' + source + '，重启应用后生效');
+          toast('已移除 ' + source + '，已即时生效');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         } finally {
@@ -512,6 +516,33 @@
       $('source').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') void install();
       });
+
+      // ─── 拖拽安装（zip 文件 / 插件文件夹） ─────────────
+      function filePathOf(file) {
+        try {
+          return window.extension?.filePath?.(file) || '';
+        } catch {
+          return '';
+        }
+      }
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (busy) return;
+        const paths = [...(e.dataTransfer?.files ?? [])]
+          .map(filePathOf)
+          .filter(Boolean);
+        if (paths.length === 0) return;
+        void (async () => {
+          for (const p of paths) {
+            $('source').value = p;
+            await install();
+          }
+        })();
+      });
+
       $('sources').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-remove]');
         if (btn) void remove(btn.dataset.remove);
