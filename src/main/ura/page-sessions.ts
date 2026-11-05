@@ -34,6 +34,8 @@ interface Entry {
 
 export class PageSessions {
   private readonly entries = new Map<string, Entry>();
+  /** ref → pageId：同一资源在会话存活期间复用同一页面。 */
+  private readonly byRef = new Map<string, string>();
 
   constructor(private readonly ura: Ura) {}
 
@@ -50,8 +52,12 @@ export class PageSessions {
     }
     const binary = isBinaryRef(ref);
     const base = await this.baseOf(ref, binary);
+    const existingId = this.byRef.get(ref);
+    const existing = existingId ? this.entries.get(existingId) : undefined;
+    if (!existing || existing.closed) this.byRef.delete(ref);
+    // 复用已有页面：内容按最新版本重建，id 保持不变。
     const info: PageSessionInfo = {
-      id: randomUUID(),
+      id: existing && !existing.closed ? existing.info.id : randomUUID(),
       ref,
       version: opened.version,
       codec: opened.codec,
@@ -69,6 +75,7 @@ export class PageSessions {
       encoding: binary ? 'base64' : 'text',
       closed: false,
     });
+    this.byRef.set(ref, info.id);
     return { type: 'page', info };
   }
 
@@ -122,12 +129,16 @@ export class PageSessions {
     if (!entry) return;
     entry.closed = true;
     this.entries.delete(id);
+    if (this.byRef.get(entry.info.ref) === id) {
+      this.byRef.delete(entry.info.ref);
+    }
   }
 
   /** 工作区切换 / 退出：释放全部页面会话。 */
   disposeAll(): void {
     for (const entry of this.entries.values()) entry.closed = true;
     this.entries.clear();
+    this.byRef.clear();
   }
 
   private async textOf(ref: string): Promise<string> {

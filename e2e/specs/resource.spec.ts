@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '../support/app';
 import { switchWorkspace } from '../support/commands';
@@ -52,4 +53,41 @@ test('没有查看器的资源不打开视图，只给通知条', async ({
   expect(
     electron.app.windows().filter((page) => page.url().startsWith('app://')),
   ).toHaveLength(0);
+});
+
+test('重复打开同一资源复用同一视图', async ({ shell }) => {
+  const workspace = mkdtempSync(join(tmpdir(), 'wa-resource-reuse-'));
+  const file = join(workspace, 'reuse.md');
+  writeFileSync(file, '# reuse\n', 'utf-8');
+  await switchWorkspace(shell, workspace);
+
+  const result = await shell.evaluate(async (ref) => {
+    const current = await window.appBridge!.peek<{ id: string }>(
+      '/workspaces/current',
+    );
+    if (!current) throw new Error('workspace not ready');
+    const open = async (): Promise<{ pageId: string; viewId: string }> => {
+      const response = await window.appBridge!.call<{
+        pageId: string;
+        viewId: string;
+      }>(`/workspaces/${current.id}/resources/pages/open`, { ref });
+      if (!response.ok) throw new Error(response.error.message);
+      return response.data;
+    };
+    const first = await open();
+    const second = await open();
+    const views =
+      (await window.appBridge!.peek<
+        Array<{ id: string; contentPath: string | null }>
+      >('/views')) ?? [];
+    return { first, second, views };
+  }, `file://${file}`);
+
+  expect(result.first.pageId).toBe(result.second.pageId);
+  expect(result.first.viewId).toBe(result.second.viewId);
+  expect(
+    result.views.filter((view) =>
+      view.contentPath?.includes('/resources/pages/'),
+    ),
+  ).toHaveLength(1);
 });
