@@ -230,7 +230,8 @@
           <span class="scope">settings.json · workspaceStudio.githubToken</span>
         </h3>
         <p class="desc">
-          私有仓库读 Releases 需要（公开仓库留空即可）。建议 fine-grained
+          默认使用安装包内置的只读 token（2026-12-05 到期），私有仓库读 Releases
+          开箱可用；此处填写可覆盖，清空保存则回退内置。建议 fine-grained
           token，只授本仓库 <code>Contents: Read-only</code>； 明文存在本机
           settings.json。
         </p>
@@ -407,11 +408,14 @@
       }
 
       // ── GitHub Token（workspaceStudio.githubToken，两层中的 App 默认层） ──
+      // 输入框默认显示内置只读 token；用户保存的值优先，清空保存则回退内置。
       async function loadToken() {
         try {
           const view = (await bridge.peek('/piconf'))?.settings ?? null;
-          const token = view?.global?.workspaceStudio?.githubToken ?? '';
-          $('token').value = token;
+          const configured = view?.global?.workspaceStudio?.githubToken ?? '';
+          $('token').value =
+            configured ||
+            String((await bridge.peek('/updates/default-token')) ?? '');
         } catch {
           /* 读取失败保持空白 */
         }

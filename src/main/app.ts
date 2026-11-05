@@ -57,6 +57,7 @@ import { createUraRuntime, type UraRuntime } from './ura';
 import { PageSessions } from './ura/page-sessions';
 import { PluginService } from './plugins/service';
 import { PluginCatalogService } from './plugins/catalog';
+import { BUNDLED_GITHUB_TOKEN } from './plugins/github';
 import { readUserPreferences } from './preferences';
 import { setProxySource } from './net/proxy';
 import { UpdateService } from './update/updater';
@@ -312,7 +313,12 @@ export class App {
       workspace: () => workspacePath,
     });
     this.updates = new UpdatesService(
-      new UpdateService({ token: () => readUserPreferences().githubToken }),
+      new UpdateService({
+        token: () =>
+          process.env.GITHUB_TOKEN ??
+          readUserPreferences().githubToken ??
+          BUNDLED_GITHUB_TOKEN,
+      }),
     );
 
     // ─── 中间件与路由 ──────────────────────────────────
