@@ -6,11 +6,20 @@
 // 尾部 = 可访问性结构。落在应用管理的 sites/<domain>/ 下，只有浏览器写入。
 
 import { createHash } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { fileRef } from '../../../shared/ura';
 import { getWorkspaceId } from '../../agent/workspace';
 import type { BrowserSnapshot } from '../../harness/browser-contract';
 import { readBrowserAllowlist } from '../../preferences';
 import type { Ura } from '../../ura/facade';
+
+/** 快照头部：列表行（标题 / 网址）与「打开在线页面」的唯一依据。 */
+export interface SnapshotHead {
+  url?: string;
+  title?: string;
+  domain?: string;
+}
 
 export class SiteSnapshots {
   constructor(
@@ -23,13 +32,72 @@ export class SiteSnapshots {
     const domain = domainOf(page.url);
     if (!domain) return null;
     const allowlist = readBrowserAllowlist(getWorkspaceId(this.workspace()));
-    if (!allowlist.some((entry) => matches(domain, entry))) return null;
+    if (!allowlisted(domain, allowlist)) return null;
 
     const root = fileRef(this.workspace());
     const ref = `${root}/sites/${domain}/${slugOf(page.url)}.md`;
     await this.ura.write(ref, render(page, domain));
+    headCache.delete(ref);
     return { ref };
   }
+}
+
+/** 域是否落在白名单条目内（含子域）：采集与列表共用同一判定。 */
+export function allowlisted(
+  domain: string,
+  allowlist: readonly string[],
+): boolean {
+  return allowlist.some((entry) => matches(domain, entry));
+}
+
+/**
+ * 读快照头部（frontmatter）：列表只关心 title / url / domain，不读正文。
+ * 带短 TTL 缓存，避免每次列表快照都重读全部文件。
+ */
+export async function readSnapshotHead(ref: string): Promise<SnapshotHead> {
+  const now = Date.now();
+  const hit = headCache.get(ref);
+  if (hit && now - hit.at < HEAD_TTL_MS) return hit.value;
+  let value: SnapshotHead = {};
+  if (ref.startsWith('file://')) {
+    try {
+      const handle = await open(fileURLToPath(ref), 'r');
+      try {
+        const buffer = Buffer.alloc(HEAD_BYTES);
+        const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
+        value = parseHead(buffer.toString('utf8', 0, bytesRead));
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      value = {};
+    }
+  }
+  headCache.set(ref, { at: now, value });
+  return value;
+}
+
+const HEAD_BYTES = 4096;
+const HEAD_TTL_MS = 5_000;
+const headCache = new Map<string, { at: number; value: SnapshotHead }>();
+
+/** 快照头部是 `key: value` 行；只取 url / title / domain，正文不参与。 */
+function parseHead(text: string): SnapshotHead {
+  const lines = text.split(/\r?\n/);
+  if (lines[0]?.trim() !== '---') return {};
+  const head: SnapshotHead = {};
+  for (const line of lines.slice(1)) {
+    if (line.trim() === '---') break;
+    const index = line.indexOf(':');
+    if (index < 0) continue;
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    if (!value) continue;
+    if (key === 'url') head.url = value;
+    else if (key === 'title') head.title = value;
+    else if (key === 'domain') head.domain = value;
+  }
+  return head;
 }
 
 function domainOf(url: string): string | null {

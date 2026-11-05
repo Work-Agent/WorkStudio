@@ -6,12 +6,14 @@ import pathDisplay from '../cases/path-display.ts';
 import pluginEntry from '../cases/plugin-entry.ts';
 import settingsOpen from '../cases/settings-open.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
+import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
 import viewLifecycle from '../cases/view-lifecycle.ts';
 
 export const cases: readonly E2ECase[] = [
   navigation,
   browserOpen,
+  siteOpen,
   dialogOverlay,
   settingsOpen,
   settingsSidebar,

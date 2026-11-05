@@ -1,6 +1,7 @@
 // ─── 浏览器内建能力：站点集合 + 可访问性标记 ────────────────────────
 //
-// 一个白名单域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
+// 一个采集域 = 一个分组；条目来自工作区 sites/<domain>/ 下的页面快照。
+// 行上是快照头部的页面标题与 URL；打开走实时视图（不经 transport / codec）。
 // 白名单属工作区策略：settings.json 的 workspaceStudio.browser.allowlist。
 
 import { fileURLToPath } from 'node:url';
@@ -11,16 +12,18 @@ import {
   registerPresenter,
   registerViewAction,
 } from '../../ura/sdk';
-import { MIME } from '../../../shared/ura';
+import { MIME, type ListEntry } from '../../../shared/ura';
 import type { ListDefinition } from '../../../shared/lists';
 import type { ListProvider } from '../../service/lists/registry';
 import { DOC_FIELDS, OPEN_ACTION } from '../../service/lists/builtins/common';
 import { mtimeOf } from '../../service/lists/builtins/file-time';
+import { allowlisted, readSnapshotHead } from '../../service/sites/snapshots';
 
 const SITES_DIR = 'sites';
 
-function titleOf(ref: string): string {
-  return ref.slice(ref.lastIndexOf('/') + 1);
+function titleFallbackOf(ref: string): string {
+  const name = ref.slice(ref.lastIndexOf('/') + 1);
+  return name.replace(/\.md$/i, '');
 }
 
 const webDefinition: ListDefinition = {
@@ -43,43 +46,65 @@ const webProvider: ListProvider = async (ctx) => {
   const allowlist = readBrowserAllowlist(
     getWorkspaceId(fileURLToPath(ctx.workspace)),
   );
+  if (allowlist.length === 0) return [];
+  // 快照目录按页面真实 hostname 落盘（含子域），所以按目录分组后再用白名单过滤
+  const files: ListEntry[] = await ctx
+    .find('*.md', { scope: `${ctx.workspace}/${SITES_DIR}`, limit: 600 })
+    .catch(() => []);
+  const byDomain = new Map<string, typeof files>();
+  for (const file of files) {
+    if (file.type !== 'file') continue;
+    const domain = domainOfRef(file.ref);
+    if (!domain || !allowlisted(domain, allowlist)) continue;
+    const bucket = byDomain.get(domain);
+    if (bucket) bucket.push(file);
+    else byDomain.set(domain, [file]);
+  }
   const groups = [];
-  for (const domain of allowlist) {
-    const scope = `${ctx.workspace}/${SITES_DIR}/${domain}`;
-    const entries = await ctx
-      .find('*.md', { scope, limit: 200 })
-      .catch(() => []);
+  for (const [domain, entries] of byDomain) {
     const favicon = `https://${domain}/favicon.ico`;
     groups.push({
       id: domain,
       label: domain,
       icon: favicon,
       items: await Promise.all(
-        entries
-          .filter((entry: { type: string }) => entry.type === 'file')
-          .map(async (entry: { ref: string }) => {
-            const updatedAt = await mtimeOf(entry.ref);
-            return {
-              key: entry.ref,
-              itemType: 'document',
-              title: titleOf(entry.ref),
-              subtitle: '网站资料',
-              icon: favicon,
-              meta: {
-                ref: entry.ref,
-                source: 'web',
-                sourceLabel: '网站资料',
-                groupId: domain,
-                groupTitle: domain,
-                ...(updatedAt ? { updatedAt } : {}),
-              },
-            };
-          }),
+        entries.map(async (entry) => {
+          const head = await readSnapshotHead(entry.ref);
+          const updatedAt = await mtimeOf(entry.ref);
+          const url = head.url ?? '';
+          return {
+            key: entry.ref,
+            // 头里有 url 才是可打开的站点页面；缺头的旧快照退回按文档打开
+            itemType: url ? 'web-page' : 'document',
+            title: head.title || titleFallbackOf(entry.ref),
+            subtitle: url || domain,
+            icon: favicon,
+            meta: {
+              ref: entry.ref,
+              source: 'web',
+              sourceLabel: '网站资料',
+              groupId: domain,
+              groupTitle: domain,
+              ...(url ? { url } : {}),
+              ...(updatedAt ? { updatedAt } : {}),
+            },
+          };
+        }),
       ),
     });
   }
   return groups;
 };
+
+/** `…/sites/<domain>/<file>.md` → `<domain>`。 */
+function domainOfRef(ref: string): string | null {
+  const marker = `/${SITES_DIR}/`;
+  const index = ref.indexOf(marker);
+  if (index < 0) return null;
+  const rest = ref.slice(index + marker.length);
+  const end = rest.indexOf('/');
+  return end > 0 ? rest.slice(0, end) : null;
+}
 
 // ─── 地址栏动作：可访问性元素标记 ────────────────────────────────────
 

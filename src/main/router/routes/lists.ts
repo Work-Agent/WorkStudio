@@ -37,6 +37,16 @@ export function routesLists(r: Router, service: ListsService): void {
     const wsId = String(call.params['wsId']);
     const meta = item.meta ?? {};
 
+    if (item.itemType === 'web-page') {
+      // 站点页面：直接交回实时视图（真实网页），快照 Markdown 只服务侧车
+      const url = String(meta['url'] ?? '');
+      if (!url) return { ok: true };
+      return r.call(`/workspaces/${wsId}/sites/web/open`, {
+        url,
+        title: item.title,
+      });
+    }
+
     if (item.itemType === 'document') {
       const ref = String(meta['ref'] ?? '');
       if (!ref) return { ok: true };

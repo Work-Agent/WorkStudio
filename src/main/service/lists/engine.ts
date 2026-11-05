@@ -63,7 +63,7 @@ export class ListsService {
     }
   }
 
-  /** 打开 / 激活态是 UI 覆盖：按 ref 合并当前视图集合。 */
+  /** 打开 / 激活态是 UI 覆盖：按 ref（文档）或 URL（站点页面）合并当前视图集合。 */
   private applyViewStates(groups: ListGroup[]): void {
     const views = this.deps.viewHost.list();
     const byRef = new Map(
@@ -71,11 +71,17 @@ export class ListsService {
         .map((view) => [view.document?.id ?? view.url, view] as const)
         .filter(([ref]) => Boolean(ref)),
     );
+    const byUrl = new Map(
+      views.filter((view) => view.url).map((view) => [view.url, view] as const),
+    );
     for (const group of groups) {
       for (const item of group.items) {
-        if (item.itemType !== 'document') continue;
-        const ref = String(item.meta?.['ref'] ?? '');
-        const view = byRef.get(ref);
+        const view =
+          item.itemType === 'document'
+            ? byRef.get(String(item.meta?.['ref'] ?? ''))
+            : item.itemType === 'web-page'
+              ? byUrl.get(String(item.meta?.['url'] ?? ''))
+              : undefined;
         if (!view) continue;
         item.meta = { ...item.meta, viewId: view.id };
         item.state = { ...item.state, open: true, active: view.active };

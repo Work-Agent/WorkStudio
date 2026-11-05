@@ -244,6 +244,9 @@ intent ─► automation click / type / submit ─► the site itself completes 
 Into the resource map (bypasses transport / codec):
 sites/<domain>/*.md (already Markdown) ─► site collection: domain → pages
                                          └─► resource map ─► sidecar (visible next turn)
+
+A person's entry (bypasses transport / codec):
+site entry (title + URL) ─► view host ─► WebContentsView navigation ─► live view (the real page)
 ```
 
 | Step      | Browser                             | Plugin pipeline                                                     |
@@ -256,7 +259,8 @@ sites/<domain>/*.md (already Markdown) ─► site collection: domain → pages
 
 - **Shared session**: all web tabs share one browser session, so login state, cookies and cache stay consistent; temporary tabs and organised site content are the same origin.
 - **Direct navigation**: opening a page means the view host tells the WebContentsView to navigate; no prefetch, no decoding, no ref produced, no change subscription.
-- **Snapshots skip transport / codec**: what the browser hands over is already Markdown and is registered as a document directly, with no interpretation step of its own; opening, searching and sidecar reads afterwards use exactly the same path as local documents.
+- **Snapshots skip transport / codec**: what the browser hands over is already Markdown and is registered as a document directly, with no interpretation step of its own; searching and sidecar reads use the same path as local documents.
+- **People see the live page, the sidecar sees the projection**: a sidebar site entry shows the snapshot's page title and URL; opening it navigates the live view to that URL (activating the tab if it is already open). The Markdown snapshot (body + accessibility structure) serves only the sidecar and the resource map and is not a reading surface for people.
 - **Snapshots live in an app-managed space**: site content is written under the application-managed `sites/<domain>/`, written only by the browser; the user does not edit it, so there is no “external change” semantics and it does not enter the write queue.
 - **Layered into the map**: a domain is a collection group and a page is an entry; the resource map is injected as two levels — “site → page” — so the sidecar does not receive a flat list of refs.
 - **Allowlisted domain = collected domain**: multiple pages under a domain are converted to Markdown by the render consumer and enter the collection; anything outside the list stays a temporary tab, is not written and never enters the resource map.
@@ -288,14 +292,14 @@ button "Export"            button.export
 table  "Quarterly compare" table:nth-of-type(1)
 ```
 
-| Part          | Content                                                                     | Used by                                              |
-| ------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Front matter  | `url` · Readability `title` / `excerpt` · `domain` · `capturedAt`           | Collection rows, tab titles, search excerpts, dedupe |
-| Body          | Markdown body extracted by Readability                                      | Sidecar context, page rendering, search              |
-| Accessibility | role · name · selector of landmarks / heading levels / interactive elements | Automation targeting, structure verification         |
+| Part          | Content                                                                     | Used by                                            |
+| ------------- | --------------------------------------------------------------------------- | -------------------------------------------------- |
+| Front matter  | `url` · Readability `title` / `excerpt` · `domain` · `capturedAt`           | Collection rows (title + URL), open target, dedupe |
+| Body          | Markdown body extracted by Readability                                      | Sidecar context, search                            |
+| Accessibility | role · name · selector of landmarks / heading levels / interactive elements | Automation targeting, structure verification       |
 
 - **File name = path slug + URL hash**: re-capturing the same URL overwrites the same file, no copies.
-- **The body is a projection, not the source**: it is never used for write-back; site content is changed only on the site.
+- **The body is a projection, not the source**: it is never used for write-back and is not a reading surface for people; site content is changed only on the site, and people look at the live page.
 - **The accessibility section is an index**: the sidecar takes only the body by default and reads the tail when it needs to target or verify structure.
 - **Each part has an owner**: `url` is the only proof for returning to the online page; Readability provides readable body and summary; the accessibility structure lets automation avoid guessing positions visually.
 
