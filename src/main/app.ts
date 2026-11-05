@@ -168,7 +168,11 @@ export class App {
         this.viewsCapability?.closePluginViews(pluginId),
       pluginRoots: [
         ...pluginService.roots(),
+        // 内置插件页：dev 在 src/plugins（源码即扫描根），打包后在 out/plugins
+        // （copyBuiltinPlugins 拷贝产物，随 asar 分发）。目录缺失会被扫描器
+        // 静默跳过，同 id 先到先得 —— src 在前保证 dev 优先用源码。
         join(env.appPath, 'src', 'plugins'),
+        join(env.appPath, 'out', 'plugins'),
         pluginsRoot(),
       ],
     });

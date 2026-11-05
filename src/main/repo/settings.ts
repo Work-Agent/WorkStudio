@@ -32,7 +32,11 @@ export class SettingsRepo {
       sceneFile: join(getWorkspaceBase(wsId), 'scene.json'),
       appPath: this.appPath,
       sitesDir: join(workspacePath, 'sites'),
-      pluginsDirs: [join(this.appPath, 'src', 'plugins'), pluginsRoot()],
+      pluginsDirs: [
+        join(this.appPath, 'src', 'plugins'),
+        join(this.appPath, 'out', 'plugins'),
+        pluginsRoot(),
+      ],
       bootLog: join(this.dataRoot, 'logs', 'boot.log'),
       versions: {
         app: '',
