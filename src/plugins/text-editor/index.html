@@ -146,7 +146,8 @@
         }
       }
 
-      function setDirty(dirty) {
+      function setDirty(dirty, force = false) {
+        if (!force && state.dirty === dirty) return;
         state.dirty = dirty;
         window.extension.bus.send({ type: 'dirty', dirty });
       }
@@ -158,18 +159,7 @@
         state.original = state.content;
         $('editor').value = state.content;
         $('editor').readOnly = state.readOnly;
-        setDirty(false);
-      }
-
-      /** URA 页面会话投递（新契约）。 */
-      function applyInfo(info) {
-        state.meta = { id: info.ref };
-        state.readOnly = false;
-        state.content = (info.data && info.data.text) || '';
-        state.original = state.content;
-        $('editor').value = state.content;
-        $('editor').readOnly = state.readOnly;
-        setDirty(false);
+        setDirty(false, true);
       }
 
       const bus = window.extension.bus;
@@ -223,11 +213,6 @@
         toastTimer = setTimeout(() => (el.className = 'toast'), 2200);
       }
 
-      applyTheme(
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light',
-      );
       try {
         const size = localStorage.getItem(PREF_SIZE);
         if (size)
@@ -238,20 +223,6 @@
         setWrap(localStorage.getItem(PREF_WRAP) !== '0');
       } catch {
         setWrap(true);
-      }
-      if (sessionId) {
-        ura.page
-          .get(sessionId)
-          .then((info) => {
-            applyInfo(info);
-            void ura.watch(info.ref);
-            ura.onChange((event) => {
-              if (!state.dirty && event && event.ref === info.ref) {
-                void ura.page.reload(sessionId).then(applyInfo);
-              }
-            });
-          })
-          .catch((e) => toast(e && e.message ? e.message : String(e), true));
       }
       bus.loaded();
     </script>

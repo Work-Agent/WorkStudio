@@ -21,6 +21,10 @@ export interface ViewRecord {
   active: boolean;
   pinned: boolean;
   dirty: boolean;
+  /** 文件已删除或重命名。 */
+  missing: boolean;
+  /** 脏视图期间外部内容已变化。 */
+  conflict: boolean;
   sessionId: string | null;
   contentPath: string | null;
   externalId: string | null;
@@ -37,6 +41,8 @@ export interface ViewSnapshot {
   active: boolean;
   pinned: boolean;
   dirty: boolean;
+  missing: boolean;
+  conflict: boolean;
 }
 
 export interface CreateViewInput {
@@ -71,6 +77,8 @@ export class ViewRegistry {
       active: false,
       pinned: false,
       dirty: false,
+      missing: false,
+      conflict: false,
       sessionId: input.sessionId ?? null,
       contentPath: input.contentPath ?? null,
       externalId: input.externalId ?? null,
@@ -88,6 +96,13 @@ export class ViewRegistry {
   findByContentPath(path: string): ViewRecord | null {
     for (const record of this.records.values()) {
       if (record.contentPath === path) return record;
+    }
+    return null;
+  }
+
+  findBySessionId(sessionId: string): ViewRecord | null {
+    for (const record of this.records.values()) {
+      if (record.sessionId === sessionId) return record;
     }
     return null;
   }
@@ -172,8 +187,25 @@ export class ViewRegistry {
 
   setDirty(id: string, dirty: boolean): void {
     const record = this.records.get(id);
-    if (!record || record.dirty === dirty) return;
+    if (!record) return;
+    const clearConflict = !dirty && record.conflict;
+    if (record.dirty === dirty && !clearConflict) return;
     record.dirty = dirty;
+    if (!dirty) record.conflict = false;
+    this.notify();
+  }
+
+  setMissing(id: string, missing: boolean): void {
+    const record = this.records.get(id);
+    if (!record || record.missing === missing) return;
+    record.missing = missing;
+    this.notify();
+  }
+
+  setConflict(id: string, conflict: boolean): void {
+    const record = this.records.get(id);
+    if (!record || record.conflict === conflict) return;
+    record.conflict = conflict;
     this.notify();
   }
 
@@ -239,5 +271,7 @@ function snapshotOf(record: ViewRecord): ViewSnapshot {
     active: record.active,
     pinned: record.pinned,
     dirty: record.dirty,
+    missing: record.missing,
+    conflict: record.conflict,
   };
 }

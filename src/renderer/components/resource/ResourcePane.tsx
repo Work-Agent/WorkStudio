@@ -31,6 +31,8 @@ export function ResourcePane() {
             label: v.title,
             icon: typeIcon(v.type),
             dirty: v.dirty,
+            missing: v.missing,
+            conflict: v.conflict,
             pinned: v.pinned,
             error: v.state === 'error',
           }))}

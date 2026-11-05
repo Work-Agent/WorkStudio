@@ -602,6 +602,10 @@ export interface ViewEntry {
   active: boolean;
   pinned: boolean;
   dirty: boolean;
+  /** 文件已删除或重命名（标签显示删除线）。 */
+  missing?: boolean;
+  /** 未保存且外部内容已变化。 */
+  conflict?: boolean;
   temporary?: boolean;
   interactiveElements?: boolean;
   renderer?: RendererInfo;

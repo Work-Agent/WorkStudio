@@ -16,8 +16,12 @@ export interface TabsBarItem {
   icon?: ComponentType<{ className?: string }>;
   /** 徽章（如待办数；>0 显示）。 */
   badge?: number;
-  /** 脏点（文档未保存态）。 */
+  /** 脏点（未保存时显示；冲突时变红）。 */
   dirty?: boolean;
+  /** 文件已删除或重命名（名称删除线 + 红色）。 */
+  missing?: boolean;
+  /** 未保存且外部内容已变化。 */
+  conflict?: boolean;
   /** 固定（显示 Pin，稳定排在未固定之前）。 */
   pinned?: boolean;
   /** 生命周期 error（红色错误标，点击重试）。 */
@@ -199,7 +203,11 @@ export function TabsBar({
                 e.preventDefault();
                 openMenu(item.id);
               }}
-              title={displayPath(item.label)}
+              title={
+                item.missing
+                  ? `${displayPath(item.label)}（文件已被删除或重命名）`
+                  : displayPath(item.label)
+              }
               className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors min-w-0 max-w-32 ${
                 isActive
                   ? 'bg-zinc-50 dark:bg-[#1E2021] text-zinc-900 dark:text-zinc-100'
@@ -220,8 +228,10 @@ export function TabsBar({
                 )}
                 {item.dirty && (
                   <span
-                    className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
-                    title="未保存"
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      item.conflict ? 'bg-red-500' : 'bg-amber-500'
+                    }`}
+                    title={item.conflict ? '未保存；外部内容已修改' : '未保存'}
                   />
                 )}
                 {item.error && (
@@ -234,7 +244,15 @@ export function TabsBar({
                     title="加载失败，点击重试"
                   />
                 )}
-                <span className="truncate">{displayPath(item.label)}</span>
+                <span
+                  className={`truncate ${
+                    item.missing
+                      ? 'line-through text-red-500 dark:text-red-400'
+                      : ''
+                  }`}
+                >
+                  {displayPath(item.label)}
+                </span>
                 {(item.badge ?? 0) > 0 && (
                   <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[#4F6BED] text-white rounded-full shrink-0">
                     {item.badge}

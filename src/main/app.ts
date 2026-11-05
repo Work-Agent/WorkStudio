@@ -356,6 +356,15 @@ export class App {
     });
     this.host.useCall(this.middlewares);
 
+    this.resources.onPageReloaded((info) => {
+      this.viewsCapability.notifyPageContent(
+        info.id,
+        this.resources.pageContent(info.id),
+      );
+    });
+    this.resources.onPageMissing((pageId, missing) => {
+      this.viewsCapability.setPageMissing(pageId, missing);
+    });
     this.views.onChange(() => this.refreshLists());
 
     this.workspaces.onClose(() => {

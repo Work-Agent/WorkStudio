@@ -87,7 +87,11 @@ export class PageSessions {
     const entry = this.require(id);
     const binary = content instanceof Uint8Array;
     const { version } = await this.ura.write(entry.info.ref, content);
-    entry.info = { ...entry.info, version };
+    entry.info = {
+      ...entry.info,
+      version,
+      data: withContent(entry.info.data, content, binary, version),
+    };
     entry.base = binary ? base64Of(content) : content;
     entry.encoding = binary ? 'base64' : 'text';
     return { ok: true, version };
@@ -162,6 +166,23 @@ export class PageSessions {
 
 function base64Of(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64');
+}
+
+/** 保存后同步会话快照，避免下一次投递读到旧内容。 */
+function withContent(
+  data: unknown,
+  content: string | Uint8Array,
+  binary: boolean,
+  version: string,
+): unknown {
+  if (!data || typeof data !== 'object') return data;
+  const next = 'version' in data ? { ...data, version } : data;
+  if (binary) {
+    return 'bytes' in next
+      ? { ...next, bytes: base64Of(content as Uint8Array) }
+      : next;
+  }
+  return 'text' in next ? { ...next, text: content } : next;
 }
 
 const BINARY_EXT =

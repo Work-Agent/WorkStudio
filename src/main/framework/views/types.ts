@@ -8,7 +8,7 @@ export interface CreateViewRequest {
   grants?: Grant;
   sessionId?: string | null;
   contentPath?: string | null;
-  content?: unknown;
+  content?: () => unknown;
   partition?: string;
   preload?: ViewPreload;
 }

@@ -130,13 +130,7 @@ export function routesResources(r: Router, service: ResourcesService): void {
         url: `${appPageUrl(info.page)}?session=${info.id}`,
         title: info.ref,
         sessionId: info.id,
-        content: {
-          meta: { id: info.ref },
-          content:
-            typeof info.data === 'object' && info.data !== null
-              ? String((info.data as { text?: unknown }).text ?? '')
-              : '',
-        },
+        content: () => service.pageContent(info.id),
         preload: 'page',
         grants: {
           call: [

@@ -206,6 +206,26 @@ export class ViewsCapability implements Capability {
     }
   }
 
+  /** 外部变化后把最新快照推给已打开视图；脏视图只标冲突。 */
+  notifyPageContent(sessionId: string, payload: unknown): void {
+    const record = this.viewRegistry.findBySessionId(sessionId);
+    if (!record || payload === undefined) return;
+    if (record.dirty) {
+      this.viewRegistry.setConflict(record.id, true);
+      return;
+    }
+    this.electron.views.send(record.id, CH_BUS, {
+      type: 'content',
+      payload,
+    });
+  }
+
+  /** 文件删除/重命名导致会话失效时更新标签状态。 */
+  setPageMissing(sessionId: string, missing: boolean): void {
+    const record = this.viewRegistry.findBySessionId(sessionId);
+    if (record) this.viewRegistry.setMissing(record.id, missing);
+  }
+
   // ─── 视图 ─────────────────────────────────────────────
 
   getWebContents(viewId: string): import('electron').WebContents | null {
@@ -258,14 +278,32 @@ export class ViewsCapability implements Capability {
         },
         onCrash: () => this.viewRegistry.setState(record.id, 'crashed'),
         onBus: (message) => {
-          if (
-            input.content !== undefined &&
-            (message as { type?: string }).type === 'loaded'
-          ) {
-            this.electron.views.send(record.id, CH_BUS, {
-              type: 'content',
-              payload: input.content,
-            });
+          const type = (message as { type?: string }).type;
+          // 编辑器上报脏态，宿主据此跳过外部推送。
+          if (type === 'dirty') {
+            const dirty = Boolean((message as { dirty?: boolean }).dirty);
+            const conflict = record.conflict;
+            this.viewRegistry.setDirty(record.id, dirty);
+            // 从冲突态回到干净态时补投外部内容，避免停在旧快照。
+            if (!dirty && conflict && input.content) {
+              const payload = input.content();
+              if (payload !== undefined) {
+                this.electron.views.send(record.id, CH_BUS, {
+                  type: 'content',
+                  payload,
+                });
+              }
+            }
+            return;
+          }
+          if (type === 'loaded' && input.content) {
+            const payload = input.content();
+            if (payload !== undefined) {
+              this.electron.views.send(record.id, CH_BUS, {
+                type: 'content',
+                payload,
+              });
+            }
           }
         },
       },
