@@ -7,7 +7,7 @@
  * 打开安装包（不静默替换应用：mac ad-hoc 签名不支持 Squirrel 静默更新，
  * 各平台统一「下载 → 自动打开安装包」）。
  */
-import { app, shell } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { createWriteStream } from 'node:fs';
 import { chmod, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -201,15 +201,20 @@ export class UpdateService {
       if (process.platform === 'linux') await chmod(target, 0o755);
       log.info('update downloaded', target);
       this.patch({ phase: 'ready', received, total, file: target });
-      // 下载完自动打开安装包（mac 挂载 dmg / win 运行安装器 / linux 运行 AppImage）
-      void shell.openPath(target).then((openError) => {
-        if (openError) {
-          log.warn('update auto open failed', openError);
-          this.patch({
-            message: `安装包已下载到下载目录，自动打开失败：${openError}`,
-          });
-        }
-      });
+      // 下载完打开安装包（mac 挂载 dmg / win 运行安装器 / linux 运行 AppImage）。
+      // mac 先弹窗确认并退出应用再打开 dmg：应用运行中拖拽替换会报「正在使用中」。
+      if (process.platform === 'darwin') {
+        void this.confirmAndInstall(target);
+      } else {
+        void shell.openPath(target).then((openError) => {
+          if (openError) {
+            log.warn('update auto open failed', openError);
+            this.patch({
+              message: `安装包已下载到下载目录，自动打开失败：${openError}`,
+            });
+          }
+        });
+      }
       return this.currentStatus();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -219,6 +224,35 @@ export class UpdateService {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * mac 安装确认：弹窗让用户选择退出应用并打开 dmg。退出后拖拽替换
+   * 不会再遇到「项目正在使用中」；选「稍后」则保持现状（手动处理）。
+   */
+  private async confirmAndInstall(target: string): Promise<void> {
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: '更新已就绪',
+      message: `新版 ${this.status.latest ?? ''} 已下载完成`,
+      detail:
+        '点击「退出并安装」将关闭应用并打开安装包，' +
+        '请将 WorkStudio 拖入「应用程序」文件夹完成替换。',
+      buttons: ['退出并安装', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response !== 0) {
+      this.patch({
+        message: `安装包已下载到下载目录：${target}`,
+      });
+      return;
+    }
+    const openError = await shell.openPath(target);
+    if (openError) {
+      log.warn('update auto open failed', openError);
+    }
+    app.quit();
   }
 
   private patch(patch: Partial<UpdateStatus>): void {
