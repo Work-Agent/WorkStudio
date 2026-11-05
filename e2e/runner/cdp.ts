@@ -3,7 +3,8 @@
  *
  * dev extension 持有长连接；Playwright 不参与。
  */
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export const CDP_ENDPOINT = 'http://127.0.0.1:9222/json/list';
 
@@ -198,6 +199,7 @@ export class CdpSession {
       { format: 'png' },
       15_000,
     )) as { data: string };
+    mkdirSync(dirname(path), { recursive: true }); // 临时目录未必存在
     writeFileSync(path, Buffer.from(shot.data, 'base64'));
     return path;
   }

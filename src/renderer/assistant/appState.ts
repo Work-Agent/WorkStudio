@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { WorkspaceMeta } from '../../shared/app';
 import type {
   AgentSnapshot,
+  ModelOption,
   ParsedBlock,
   ParsedMessage,
   SessionMeta,
@@ -85,6 +86,32 @@ export function useAppAgent(): AgentSnapshot | null {
   }, [available, workspace?.id]);
 
   return available ? agent : null;
+}
+
+/**
+ * 可选模型列表（状态路径订阅）。
+ *
+ * 必须走订阅而不是一次性读取：模型在设置页增删时当前模型并不变化，
+ * 用「当前模型变化时重取」的写法会让切换器一直停在旧列表上。
+ */
+export function useAppModels(): ModelOption[] | null {
+  const available = useAppAvailable();
+  const workspace = useWorkspace(available);
+  const [models, setModels] = useState<ModelOption[] | null>(null);
+
+  useEffect(() => {
+    if (!available || !window.appBridge || !workspace) return;
+    const path = `/workspaces/${workspace.id}/sessions/models`;
+    const off = window.appBridge.on((frame) => {
+      if (frame.type === 'state' && frame.path === path) {
+        setModels((frame.value as ModelOption[] | null) ?? []);
+      }
+    });
+    void window.appBridge.watch([path]);
+    return off;
+  }, [available, workspace?.id]);
+
+  return available ? models : null;
 }
 
 export function useAppSessions(): SessionMeta[] | null {
@@ -183,18 +210,36 @@ function textOf(message: ParsedMessage): string {
     .join('');
 }
 
+function userTextOf(message: ParsedMessage | undefined): string {
+  if (!message || message.role !== 'user') return '';
+  return message.blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+}
+
+interface PendingUser {
+  text: string;
+  /** 发送时正在流式（steer / followUp），应排在当前回复之后。 */
+  queued: boolean;
+  /** 推送时的历史长度，用于确认回显。 */
+  base: number;
+  /** 推送时所属会话（null = 新任务态，历史从零开始）。 */
+  sessionId: string | null;
+}
+
 export function useAppMessages(activePath: string | null): {
   messages: ParsedMessage[];
   streaming: boolean;
   optimistic: string | undefined;
-  pushOptimistic: (text: string) => void;
+  pushOptimistic: (text: string, queued?: boolean) => void;
   clearNewTask: () => void;
 } | null {
   const available = useAppAvailable();
   const workspace = useWorkspace(available);
   const [history, setHistory] = useState<ParsedMessage[]>([]);
   const [stream, setStream] = useState<SessionStreamState | null>(null);
-  const [optimistic, setOptimistic] = useState<string | undefined>(undefined);
+  const [pending, setPending] = useState<PendingUser | undefined>(undefined);
   const sessionId = activePath ? encodeURIComponent(activePath) : null;
 
   useEffect(() => {
@@ -212,22 +257,47 @@ export function useAppMessages(activePath: string | null): {
     return off;
   }, [available, workspace?.id, sessionId]);
 
+  const matchesSession = (value: PendingUser): boolean =>
+    value.sessionId === null || value.sessionId === sessionId;
+  const echoedOf = (value: PendingUser): boolean =>
+    history
+      .slice(value.sessionId === null ? 0 : value.base)
+      .some((message) => userTextOf(message) === value.text);
+
   const messages = useMemo(() => {
+    const active = pending && matchesSession(pending) ? pending : null;
+    const optimistic: ParsedMessage | null =
+      active && !echoedOf(active)
+        ? { role: 'user', blocks: [{ type: 'text', text: active.text }] }
+        : null;
     const live = fromStream(stream);
-    if (!live) return history;
-    const last = history.at(-1);
-    if (last?.role === 'assistant' && textOf(last) === textOf(live)) {
-      return history;
+    if (!live) return optimistic ? [...history, optimistic] : history;
+    // steer / followUp：新消息排在当前回复之后，其余场景排在回复之前。
+    if (optimistic && active?.queued) {
+      return [...history, live, optimistic];
     }
-    return [...history, live];
-  }, [history, stream]);
+    if (!optimistic) {
+      const last = history.at(-1);
+      if (last?.role === 'assistant' && textOf(last) === textOf(live)) {
+        return history;
+      }
+      return [...history, live];
+    }
+    return [...history, optimistic, live];
+  }, [history, stream, pending, sessionId]);
+
+  useEffect(() => {
+    if (!pending) return;
+    if (!matchesSession(pending) || echoedOf(pending)) setPending(undefined);
+  }, [history, pending, sessionId]);
 
   if (!available) return null;
   return {
     messages,
     streaming: stream?.streaming ?? false,
-    optimistic,
-    pushOptimistic: setOptimistic,
-    clearNewTask: () => setOptimistic(undefined),
+    optimistic: pending?.text,
+    pushOptimistic: (text: string, queued = false) =>
+      setPending({ text, queued, base: history.length, sessionId }),
+    clearNewTask: () => setPending(undefined),
   };
 }

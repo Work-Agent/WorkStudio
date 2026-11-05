@@ -8,6 +8,7 @@ import type {
   ResourceDiagnostic,
   Skill,
 } from '@earendil-works/pi-coding-agent';
+import { BUILTIN_SKILL_NAMES } from '../../shared/builtin-skills';
 
 export interface SkillInfoView {
   name: string;
@@ -18,6 +19,7 @@ export interface SkillInfoView {
   scope: string;
   source: string;
   manualOnly: boolean;
+  builtin: boolean;
 }
 
 export class SkillsManager {
@@ -49,6 +51,7 @@ export class SkillsManager {
       scope: s.sourceInfo?.scope ?? 'user',
       source: s.sourceInfo?.source ?? '',
       manualOnly: s.disableModelInvocation === true,
+      builtin: BUILTIN_SKILL_NAMES.includes(s.name),
     }));
     this.diagnostics = diagnostics.map((d) => ({
       type: d.type,

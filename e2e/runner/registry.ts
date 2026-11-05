@@ -1,22 +1,28 @@
 import type { CaseTag, E2ECase } from './contract.ts';
 import browserOpen from '../cases/browser-open.ts';
+import browserLinks from '../cases/browser-links.ts';
 import dialogOverlay from '../cases/dialog-overlay.ts';
 import navigation from '../cases/navigation.ts';
 import pathDisplay from '../cases/path-display.ts';
+import pluginEntry from '../cases/plugin-entry.ts';
 import settingsOpen from '../cases/settings-open.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
+import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
 import viewLifecycle from '../cases/view-lifecycle.ts';
 
 export const cases: readonly E2ECase[] = [
   navigation,
   browserOpen,
+  browserLinks,
+  siteOpen,
   dialogOverlay,
   settingsOpen,
   settingsSidebar,
   tabs,
   viewLifecycle,
   pathDisplay,
+  pluginEntry,
 ];
 
 export interface CaseFilter {

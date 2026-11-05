@@ -9,6 +9,7 @@ import type { ListItem } from '../../../shared/lists';
 import { displayPath } from '../../api/pathDisplay';
 import type { ListEntry } from '../../../shared/ura';
 import { cmd } from '../../api/appCommands';
+import { notifyError } from '../../state/notifications';
 import { setUiState } from '../../state/ui';
 
 interface Hit {
@@ -78,7 +79,9 @@ export function FindList() {
       title: name,
       meta: { ref },
     };
-    void cmd('list.action', { action: 'open', item });
+    void cmd('list.action', { action: 'open', item }).then((result) => {
+      if (!result.ok) notifyError(result.error.message, 'open');
+    });
   };
 
   return (

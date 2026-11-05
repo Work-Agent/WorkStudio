@@ -55,6 +55,12 @@ const PAGES: SettingsPageDef[] = [
     icon: 'package',
   },
   {
+    id: 'updates',
+    label: '软件更新',
+    desc: '版本检查 · 安装包下载',
+    icon: 'download',
+  },
+  {
     id: 'models',
     label: '模型配置',
     desc: '供应商登录 · 模型目录 · API Key',

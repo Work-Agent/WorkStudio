@@ -98,6 +98,8 @@ export class SessionsService {
     (sessionId: string, event: SessionStreamEvent) => void
   >();
   private readonly streamViews = new Map<string, SessionStreamState>();
+  /** 流式世代：旧回调不得清理新流。 */
+  private streamEpoch = 0;
 
   constructor(private readonly agent: AgentHost) {}
 
@@ -160,6 +162,7 @@ export class SessionsService {
   /** 工作区换代：重新绑定当前会话、列表与消息。 */
   async reloadWorkspace(): Promise<void> {
     this.currentView = this.agent.getSnapshot();
+    this.streamEpoch += 1;
     this.messageViews.clear();
     this.streamViews.clear();
     await this.refresh();
@@ -279,6 +282,13 @@ export class SessionsService {
   receiveFrame(frame: PiEventFrame): void {
     const snapshot = this.agent.getSnapshot();
     this.currentView = snapshot;
+    // 状态类内部事件（应用默认模型 / 思考档位等）只改快照，不带流式增量。
+    // 必须在这里重新发布当前会话状态：否则设置页与助手面板会一直停留在
+    // 「未配置模型」之类的旧投影上，直到某个偶然的 refresh 才对齐。
+    if (frame.event.type === 'agent_status_changed') {
+      this.emitChange();
+      return;
+    }
     const file = snapshot.sessionFile;
     if (!file) return;
 
@@ -289,8 +299,11 @@ export class SessionsService {
 
     switch (frame.event.type) {
       case 'message_start': {
+        this.streamEpoch += 1;
         next = { streaming: true, text: '', thinking: '', tools: [] };
         this.emitChange();
+        // 新会话首轮：用户消息可能早于会话文件就绪而被跳过，这里补一次历史同步。
+        if (frame.event.message.role !== 'user') void this.syncMessages();
         event = {
           type: 'message-start',
           role: frame.event.message.role,
@@ -317,6 +330,16 @@ export class SessionsService {
             channel: 'thinking',
             delta: inner.delta,
           };
+        } else if (
+          inner.type === 'text_end' &&
+          typeof inner.content === 'string'
+        ) {
+          next = { ...prev, text: inner.content };
+        } else if (
+          inner.type === 'thinking_end' &&
+          typeof inner.content === 'string'
+        ) {
+          next = { ...prev, thinking: inner.content };
         }
         break;
       }
@@ -382,12 +405,24 @@ export class SessionsService {
         this.emitChange();
         void this.syncMessages();
         break;
-      case 'agent_settled':
+      case 'agent_settled': {
         next = { ...prev, streaming: false };
         event = { type: 'settled' };
         this.emitChange();
-        void this.syncMessages();
+        // 等历史同步后再收起流式状态。
+        const epoch = ++this.streamEpoch;
+        void this.syncMessages().then(() => {
+          if (epoch !== this.streamEpoch) return;
+          if (this.stream(sessionId).streaming) return;
+          const idle = idleStream();
+          this.streamViews.set(sessionId, idle);
+          for (const listener of this.streamListeners) {
+            listener(sessionId, idle);
+          }
+          this.emitChange();
+        });
         break;
+      }
       default:
         break;
     }
@@ -405,6 +440,7 @@ export class SessionsService {
 
   private resetStream(file: string | null): void {
     if (!file) return;
+    this.streamEpoch += 1;
     const sessionId = idOf(file);
     const state = idleStream();
     this.streamViews.set(sessionId, state);

@@ -244,6 +244,9 @@ URL ─► 视图宿主 ─► WebContentsView 导航（共享浏览器 session�
 进入资源地图（不经 transport / codec）：
 sites/<domain>/*.md（已是 Markdown）─► 站点集合：域 → 页面
                                        └─► 资源地图 ─► 侧车（下一轮可见）
+
+人的入口（不经 transport / codec）：
+站点条目（标题 + URL）─► 视图宿主 ─► WebContentsView 导航 ─► 实时视图（真实网页）
 ```
 
 | 环节 | 浏览器                          | 插件管道                                                  |
@@ -256,7 +259,8 @@ sites/<domain>/*.md（已是 Markdown）─► 站点集合：域 → 页面
 
 - **共享 session**：所有网页标签共用一个浏览器会话，登录态、cookie 与缓存一致；临时标签与整理出的站点内容同源。
 - **导航直连**：打开 = 视图宿主让 WebContentsView 导航；不预取、不解码、不产生 ref，也不订阅变更。
-- **快照不走 transport / codec**：浏览器交出的就是 Markdown，直接按文档登记，没有自己的解释环节；之后的打开、检索与侧车读取都与本地文档同一套。
+- **快照不走 transport / codec**：浏览器交出的就是 Markdown，直接按文档登记，没有自己的解释环节；检索与侧车读取与本地文档同一套。
+- **人看实时页面，侧车看投影**：侧栏的站点条目展示快照头部的页面标题与 URL，点开即在实时视图里导航到该 URL（同一 URL 已打开则激活）；快照 Markdown（正文 + 可访问性结构）只服务侧车与资源地图，不作为人的阅读入口。
 - **快照属应用管理的空间**：站点内容写在应用管理的 `sites/<domain>/` 下，只有浏览器写入；用户不直接编辑，所以不存在「外部改动」语义，也不进写队列。
 - **分层入图**：域是一个集合分组、页面是条目，资源地图按「站点 → 页面」两层注入——侧车拿到的不是一条条扁平 ref。
 - **白名单域 = 采集域**：域下多页由 render consumer 转 Markdown 后入集合；名单外只作临时标签，不落盘、不进资源地图。
@@ -288,14 +292,14 @@ button "导出"       button.export
 table  "季度对比"   table:nth-of-type(1)
 ```
 
-| 段       | 内容                                                                 | 谁用                               |
-| -------- | -------------------------------------------------------------------- | ---------------------------------- |
-| 头部     | `url` · Readability 的 `title` / `excerpt` · `domain` · `capturedAt` | 集合行、标签页标题、检索摘要、去重 |
-| 正文     | Readability 提取的正文 Markdown                                      | 侧车上下文、页面渲染、检索         |
-| 可访问性 | landmark / 标题层级 / 交互元素的 role · name · selector              | 自动化定位、结构核对               |
+| 段       | 内容                                                                 | 谁用                                  |
+| -------- | -------------------------------------------------------------------- | ------------------------------------- |
+| 头部     | `url` · Readability 的 `title` / `excerpt` · `domain` · `capturedAt` | 集合行（标题 + 网址）、打开入口、去重 |
+| 正文     | Readability 提取的正文 Markdown                                      | 侧车上下文、检索                      |
+| 可访问性 | landmark / 标题层级 / 交互元素的 role · name · selector              | 自动化定位、结构核对                  |
 
 - **文件名 = 路径 slug + URL 哈希**：同一 URL 重抓覆盖同一个文件，不产生副本。
-- **正文是投影不是原文**：不用于回写；站点内容只能回站点改。
+- **正文是投影不是原文**：不用于回写，也不作为人的阅读入口；站点内容只能回站点改，人看的是实时页面。
 - **可访问性段是索引**：侧车默认只取正文，需要定位或核对结构时才读尾部。
 - **三段各有归属**：`url` 是回对在线页面的唯一凭据；Readability 提供可读正文与概述；可访问性结构让自动化不必靠视觉猜位置。
 
@@ -357,10 +361,11 @@ plugin-docx.zip
 └── node_modules/        # 可选；依赖由插件自己 bundle
 ```
 
-| 来源 | 写法                                | 落盘                                |
-| ---- | ----------------------------------- | ----------------------------------- |
-| zip  | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
-| 本地 | 绝对路径 / `./plugins/csv`          | 原地加载，不复制                    |
+| 来源     | 写法                                | 落盘                                |
+| -------- | ----------------------------------- | ----------------------------------- |
+| 远程 zip | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
+| 本地 zip | `~/Downloads/plugin.zip`            | `<appData>/plugins/installed/<id>/` |
+| 本地目录 | 绝对路径 / `./plugins/csv`          | 原地加载，不复制                    |
 
 **可安装清单是随源码维护的 Markdown 文件**（[PLUGINS.md](PLUGINS.md)），一行一条来源；构建时解析为静态列表，内联进主进程与插件设置页，运行期不再读 Markdown：
 
@@ -375,13 +380,13 @@ plugin-docx.zip
 - **清单是编译期资产**：增删插件 = 改清单后重新构建；运行期不解析、不改写清单，清单写错则构建失败。
 - **页面直出**：插件设置页拿到的是构建期内联的数据，不依赖运行时读 Markdown。
 - **安装状态另算**：已安装 = `installed/` 下扫到且注册成功；卸载只删 `installed/<id>`，清单条目保留。
-- **临时安装只记状态**：手动 URL / 社区目录安装记在本机安装索引，不进清单。
+- **临时安装只记状态**：手动 URL / 拖入 zip 或文件夹 / 社区目录安装记在本机安装索引，不进清单。
 - **插件目录统一**：`<appData>/plugins/` 下放 `installed/`、`staging/`、`installed.json`；与工作区无关，和 `agent/` 下的 pi 资源分开。
-- **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `apiVersion` → 原子替换 `installed/<id>`。
+- **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `apiVersion` → 原子替换 `installed/<id>`；本地 zip 走同一套解压流程（无远程哈希可比对，仅记录内容哈希）。
 - **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm。
 - **无自动更新**：改清单 URL / hash 后重新构建并重装；不静默更新。
-- **一次装配**：启动时扫描本地路径与 `installed/` → import `./ura` → 注册 → 建页面；安装 / 卸载下次启动生效。
-- **本地来源不复制**：开发时原地加载，改完重启即生效。
+- **启动装配，运行期热装卸**：启动时扫描本地路径与 `installed/` → import `./ura` → 注册 → 建页面；安装 / 卸载即时生效——卸载按归属撤销注册面并关闭插件页面；ESM 模块本体留在进程内存，属已知限制。
+- **本地来源不复制**：开发时原地加载，改完重新安装即生效（无需重启）。
 
 ### 5.4 设置：只占页面出口
 
@@ -393,6 +398,7 @@ plugin-docx.zip
 - **ref 自带 scheme**：内置页为 `settings://<id>`，插件设置页为 `settings://plugin.<id>`；标签集合、地址栏与页面会话都按 ref 认它；
 - 物理装载与插件页共用 `app://page` 协议、preload 桥、主题广播与会话生命周期；
 - 新增内置设置 = 加一页 + 一条清单；插件设置页随插件版本走；两者都不单独进安装与信任流程；
+- **模型与配置页**：新增自定义模型默认写出 `compat.supportsDeveloperRole: false`（第三方端点普遍只接受 `system` 指令角色）；已有模型配置不回写、不迁移。
 - 页面只读自己的分区与白名单命令，不直连来源。
 
 ## 六、状态与通讯
@@ -444,7 +450,7 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/          # 镜像
 export https_proxy=http://127.0.0.1:7890 ELECTRON_GET_USE_PROXY=true   # 代理
 ```
 
-出现 `Error: Electron uninstall`、或 `node_modules/electron/path.txt` 为空，说明 postinstall 未执行，从本地缓存补跑一次即可：
+出现 `Error: Electron uninstall`、或 `node_modules/electron/path.txt` 为空，说明二进制补齐步骤被跳过（如 `--ignore-scripts`）。Electron 44 起上游不再自带安装脚本，下载由本项目的 `postinstall` 负责，补跑一次即可：
 
 ```bash
 node node_modules/electron/install.js

@@ -6,15 +6,18 @@
 ## 客户端纪律
 
 1. **复用唯一常驻 dev 窗口**——绝不重复拉起第二个客户端；渲染层改动靠 HMR 自动生效。
-2. **保持联通**——窗口离线（崩溃 / HMR 失效）时直接后台拉起恢复，无需询问：
-   ```bash
-   nohup env WA_DEBUG_PORT=9222 pnpm dev > /tmp/work-studio-dev.log 2>&1 &
-   ```
-   可随时 `curl -s -m 1 http://127.0.0.1:9222/json/list` 自查联通；启动失败看 `/tmp/work-studio-dev.log`。
+2. **保持联通**——窗口离线（崩溃 / HMR 失效）时告知扩展恢复即可（`live_dev` 工具或 `/dev on`，扩展会清残留后重新拉起）；
+   需要自行排查时看日志：扩展日志路径由 `os.tmpdir()` 下 `work-studio-dev.log` 给出（消息里会带完整路径）。
+   联通自查（三平台通用，Windows 用 `curl.exe`）：`curl -s -m 1 http://127.0.0.1:9222/json/list`。
 3. **必要的重启直接执行，无需确认**——改了主进程（`src/main.ts` / `src/preload.ts`）或依赖时，
-   同一条命令里杀掉再拉起：
+   杀掉再拉起的写法各不相同，按平台来：
    ```bash
-   pkill -9 -f "[e]lectron-(forge|vite)"; nohup env WA_DEBUG_PORT=9222 pnpm dev > /tmp/work-studio-dev.log 2>&1 &
+   # POSIX（macOS / Linux）
+   pkill -9 -f "[e]lectron-vite"; WA_DEBUG_PORT=9222 pnpm dev
+   ```
+   ```powershell
+   # Windows PowerShell
+   taskkill /F /T /IM electron.exe; $env:WA_DEBUG_PORT=9222; pnpm dev
    ```
    重启后确认 CDP 联通即可。守卫对重启流程（同命令含 kill + 拉起）自动放行。
 
@@ -23,13 +26,13 @@
 开发中只验证本轮改动；静态检查在改动收敛后跑。验证强度与改动风险匹配：
 小 UI 调整截图目视；交互规则变更优先补共享 case，再用 `dev_test` 跑该 case。
 
-| 层           | 跑法                                           | 说明                                                                                          |
-| ------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 静态检查     | `pnpm typecheck` / `pnpm lint`                 | 每轮改动结束前（快）                                                                          |
-| dev 窗口联通 | `curl -s -m 1 http://127.0.0.1:9222/json/list` | 状态自查                                                                                      |
-| 页面目视     | `dev_shot` 工具                                | CDP 截图保存 PNG（默认 `/tmp/work-studio-shot.png`），用 read 查看；`eval` 可先操作出目标状态 |
-| 开发时 e2e   | `dev_test` 工具                                | 在常驻窗口执行共享 case，默认 `tag=dev`；失败返回截图                                         |
-| 提交前回归   | `pnpm test:e2e`                                | Playwright 隔离进程 + 临时 data root；启动/重启/破坏性用例归这里                              |
+| 层           | 跑法                                           | 说明                                                                                                |
+| ------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 静态检查     | `pnpm typecheck` / `pnpm lint`                 | 每轮改动结束前（快）                                                                                |
+| dev 窗口联通 | `curl -s -m 1 http://127.0.0.1:9222/json/list` | 状态自查                                                                                            |
+| 页面目视     | `dev_shot` 工具                                | CDP 截图保存 PNG（默认在系统 temp 目录，返回值带完整路径），用 read 查看；`eval` 可先操作出目标状态 |
+| 开发时 e2e   | `dev_test` 工具                                | 在常驻窗口执行共享 case，默认 `tag=dev`；失败返回截图                                               |
+| 提交前回归   | `pnpm test:e2e`                                | Playwright 隔离进程 + 临时 data root；启动/重启/破坏性用例归这里                                    |
 
 ## 用例与执行器分工
 
@@ -50,7 +53,7 @@
 ## 命令速查
 
 | 命令                               | 用途                                                              |
-| ---------------------------------- | ----------------------------------------------------------------- | --------------------------------------- |
+| ---------------------------------- | ----------------------------------------------------------------- |
 | `dev_shot` 工具                    | 截取 dev 窗口当前界面（CDP，可以 `eval` 预操作、`path` 指定输出） |
 | `dev_test` 工具                    | 在常驻窗口执行共享 e2e case（CDP，不启动 Playwright）             |
 | `pnpm test:e2e`                    | Playwright 隔离回归（提交前）                                     |
@@ -58,8 +61,8 @@
 | `WA_DEVTOOLS=1 pnpm dev`           | 手动打开 DevTools（默认关，调试用）                               |
 | `pnpm typecheck`                   | 类型检查                                                          |
 | `pnpm lint`                        | oxlint + oxfmt 检查                                               |
-| `curl -s localhost:9222/json/list` | 查看 dev 窗口 CDP 状态                                            |
-| `pkill -9 -f "[e]lectron-(forge    | vite)"`                                                           | 停 dev 窗口（扩展关闭模式时会自动回收） |
+| `curl -s localhost:9222/json/list` | 查看 dev 窗口 CDP 状态（Windows 用 `curl.exe`）                   |
+| `/dev off`                         | 停 dev 窗口（扩展回收整棵进程树；Windows 走 `taskkill /T`）       |
 
 ## 目录
 

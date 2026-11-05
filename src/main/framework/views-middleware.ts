@@ -58,8 +58,6 @@ export class ViewsCapability implements Capability {
     this.providers = ctx.providers;
     this.global = ctx.global;
     this.theme = this.electron.theme.read();
-    this.scene = new SceneController(this.electron, () => this.theme);
-    this.scene.install(this.global);
     this.runtime = new ViewRuntime(
       this.viewRegistry,
       this.electron,
@@ -68,6 +66,12 @@ export class ViewsCapability implements Capability {
     this.system = new SystemViews(this.electron, this.viewRegistry, (input) =>
       this.createView(input),
     );
+    this.scene = new SceneController(
+      this.electron,
+      () => this.theme,
+      () => this.system.captureId(),
+    );
+    this.scene.install(this.global);
     this.register();
     this.dialogs = new DialogsController({
       overlay: () => this.electron.views,
@@ -189,6 +193,39 @@ export class ViewsCapability implements Capability {
     this.viewsState.publish(this.viewRegistry.list());
   }
 
+  /** 热卸载：关闭某插件的全部已打开视图（页面 / 配置页）。 */
+  closePluginViews(pluginId: string): void {
+    const targets = new Set([
+      `/plugins/page/${pluginId}`,
+      `/plugins/settings/${pluginId}`,
+    ]);
+    for (const view of this.viewRegistry.list()) {
+      if (view.contentPath && targets.has(view.contentPath)) {
+        this.runtime.close(view.id);
+      }
+    }
+  }
+
+  /** 外部变化后把最新快照推给已打开视图；脏视图只标冲突。 */
+  notifyPageContent(sessionId: string, payload: unknown): void {
+    const record = this.viewRegistry.findBySessionId(sessionId);
+    if (!record || payload === undefined) return;
+    if (record.dirty) {
+      this.viewRegistry.setConflict(record.id, true);
+      return;
+    }
+    this.electron.views.send(record.id, CH_BUS, {
+      type: 'content',
+      payload,
+    });
+  }
+
+  /** 文件删除/重命名导致会话失效时更新标签状态。 */
+  setPageMissing(sessionId: string, missing: boolean): void {
+    const record = this.viewRegistry.findBySessionId(sessionId);
+    if (record) this.viewRegistry.setMissing(record.id, missing);
+  }
+
   // ─── 视图 ─────────────────────────────────────────────
 
   getWebContents(viewId: string): import('electron').WebContents | null {
@@ -241,19 +278,40 @@ export class ViewsCapability implements Capability {
         },
         onCrash: () => this.viewRegistry.setState(record.id, 'crashed'),
         onBus: (message) => {
-          if (
-            input.content !== undefined &&
-            (message as { type?: string }).type === 'loaded'
-          ) {
-            this.electron.views.send(record.id, CH_BUS, {
-              type: 'content',
-              payload: input.content,
-            });
+          const type = (message as { type?: string }).type;
+          // 编辑器上报脏态，宿主据此跳过外部推送。
+          if (type === 'dirty') {
+            const dirty = Boolean((message as { dirty?: boolean }).dirty);
+            const conflict = record.conflict;
+            this.viewRegistry.setDirty(record.id, dirty);
+            // 从冲突态回到干净态时补投外部内容，避免停在旧快照。
+            if (!dirty && conflict && input.content) {
+              const payload = input.content();
+              if (payload !== undefined) {
+                this.electron.views.send(record.id, CH_BUS, {
+                  type: 'content',
+                  payload,
+                });
+              }
+            }
+            return;
+          }
+          if (type === 'loaded' && input.content) {
+            const payload = input.content();
+            if (payload !== undefined) {
+              this.electron.views.send(record.id, CH_BUS, {
+                type: 'content',
+                payload,
+              });
+            }
           }
         },
       },
     );
-    if (wcId !== null) this.viewRegistry.bind(record.id, String(wcId));
+    if (wcId !== null) {
+      this.viewRegistry.bind(record.id, String(wcId));
+      this.installNavigationPolicy(record);
+    }
     this.viewRegistry.attach(record.id, (frame) =>
       this.electron.views.send(record.id, FRAME_CHANNEL, frame),
     );
@@ -265,6 +323,48 @@ export class ViewsCapability implements Capability {
       this.electron.views.activate(record.id);
     }
     return record;
+  }
+
+  /**
+   * 内容视图导航策略。
+   *
+   * 网页标签自己跳转（只限 http/https）；页面里的新窗口落到浏览器面的临时标签。
+   * 其余视图（资源页 / 插件页 / 设置页 / 系统视图）不允许自身导航，外链交给
+   * 系统浏览器——工作台壳层同样如此，策略只在壳窗自己的 webContents 上生效。
+   */
+  private installNavigationPolicy(record: ViewRecord): void {
+    const wc = this.electron.views.webContents(record.id);
+    if (!wc) return;
+    const isHttp = (url: string): boolean => /^https?:\/\//i.test(url);
+    wc.on('will-attach-webview', (event) => event.preventDefault());
+    if (record.type === 'web') {
+      wc.on('will-navigate', (details) => {
+        if (!isHttp(details.url)) details.preventDefault();
+      });
+      wc.setWindowOpenHandler(({ url }) => {
+        if (isHttp(url)) this.openBrowserTab(url);
+        return { action: 'deny' };
+      });
+      return;
+    }
+    wc.on('will-navigate', (event) => event.preventDefault());
+    wc.setWindowOpenHandler(({ url }) => {
+      this.electron.native.openExternal(url);
+      return { action: 'deny' };
+    });
+  }
+
+  /** 网页里的新窗口 → 浏览器面临时标签；同一 URL 复用已有标签。 */
+  private openBrowserTab(url: string): void {
+    const existing = this.viewRegistry
+      .list()
+      .find((view) => view.type === 'web' && view.url === url);
+    if (existing) {
+      this.viewRegistry.setActive(existing.id);
+      this.electron.views.activate(existing.id);
+      return;
+    }
+    this.openBrowser(url);
   }
 
   private async open(

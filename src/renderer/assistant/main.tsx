@@ -31,7 +31,7 @@ import { matchCommands, runBuiltinCommand, useCommands } from './commands';
 import { DockResizeHandle, MessageRow, ResizeHandles } from './components';
 import { formatTokens, tabLabel } from './format';
 import { useMessages } from './messages';
-import { useAgent, useSessions, useShell } from './session';
+import { useAgent, useModels, useSessions, useShell } from './session';
 
 // 浮动圆角依赖视图透明：页面画布与 body 不得有底色（面板底色由根容器负责）。
 document.documentElement.style.background = 'transparent';
@@ -74,9 +74,8 @@ function Assistant() {
     Record<string, string[] | undefined>
   >({});
   const [workingMessage, setWorkingMessage] = useState<string | undefined>();
-  const [models, setModels] = useState<
-    Array<{ provider: string; modelId: string; label: string }>
-  >([]);
+  // 模型列表来自状态路径订阅：设置页增删模型后面板立即跟随，不依赖当前模型变化。
+  const models = useModels();
   const [thinkingLevels, setThinkingLevels] = useState<ThinkingLevel[]>([]);
   const [menu, setMenu] = useState<'model' | 'thinking' | 'skills' | null>(
     null,
@@ -152,9 +151,6 @@ function Assistant() {
   }, []);
 
   useEffect(() => {
-    void bridge?.cmd('agent.models').then((r) => {
-      if (r.ok) setModels((r.data as typeof models) ?? []);
-    });
     void bridge?.cmd('agent.thinkingLevels').then((r) => {
       if (r.ok) setThinkingLevels((r.data as ThinkingLevel[]) ?? []);
     });
@@ -162,10 +158,32 @@ function Assistant() {
 
   useEffect(() => {
     void bridge
-      ?.cmd<Array<{ name: string; description: string }>>('skills.list')
+      ?.cmd<Array<{ name: string; description: string; builtin?: boolean }>>(
+        'skills.list',
+      )
       .then((response) => {
-        if (response.ok) setSkills(response.data);
+        if (!response.ok) return;
+        setSkills(response.data);
+        // 内置技能默认勾选；其余技能由用户按需勾选。
+        setSelectedSkills((current) =>
+          current.length > 0
+            ? current
+            : response.data
+                .filter((skill) => skill.builtin)
+                .map((skill) => skill.name),
+        );
       });
+  }, [activePath]);
+
+  // 从会话列表重新打开已关闭的标签时恢复显示。
+  useEffect(() => {
+    if (!activePath) return;
+    setClosedPaths((previous) => {
+      if (!previous.has(activePath)) return previous;
+      const next = new Set(previous);
+      next.delete(activePath);
+      return next;
+    });
   }, [activePath]);
 
   // 自动滚动：距底 <80px 才跟随
@@ -179,12 +197,27 @@ function Assistant() {
   }, [messages, messages.length]);
 
   const closeTabs = (paths: string[]): void => {
+    const closing = new Set(paths);
+    const remaining = openPaths.filter((path) => !closing.has(path));
     setClosedPaths((previous) => {
       const next = new Set(previous);
       for (const path of paths) next.add(path);
       return next;
     });
     void bridge?.cmd('session.closeTabs', { paths });
+    if (!activePath || !closing.has(activePath)) return;
+    // 关闭活跃标签：优先右侧相邻，其次左侧；全部关闭回到新会话。
+    const index = openPaths.indexOf(activePath);
+    const nextActive =
+      remaining.length > 0
+        ? remaining[Math.min(index, remaining.length - 1)]
+        : null;
+    if (nextActive) {
+      void bridge?.cmd('session.openTab', { path: nextActive });
+    } else {
+      clearNewTask();
+      void bridge?.cmd('session.new');
+    }
   };
 
   const onScroll = (): void => {
@@ -257,8 +290,9 @@ function Assistant() {
     }
     setText('');
     setCommandTag(null);
-    pushOptimistic(value);
-    if (streaming || agent?.isStreaming) {
+    const queued = streaming || Boolean(agent?.isStreaming);
+    pushOptimistic(value, queued);
+    if (queued) {
       await api.cmd(
         mode === 'followUp' ? 'session.followUp' : 'session.steer',
         { text: value },
@@ -298,11 +332,11 @@ function Assistant() {
     // 发起方拥有拖拽序列（OS 语义：pointerdown 命中的视图持续收到 move/up）；
     // 这里不做按键过滤（不同平台/事件的 buttons 位不可靠），只上报“仍在拖”。
     let frame = 0;
-    const onMove = (event: PointerEvent): void => {
+    const onMove = (): void => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        void api.interaction.move(event.clientX, event.clientY);
+        void api.interaction.move();
       });
     };
     const stop = (): void => {
@@ -399,6 +433,10 @@ function Assistant() {
           {openPaths.map((path) => {
             const isActive = path === activePath;
             const isStreaming = isActive && (streaming || agent?.isStreaming);
+            const label =
+              isActive && !sessions.some((session) => session.path === path)
+                ? '新任务'
+                : tabLabel(sessions, path);
             return (
               <div
                 key={path}
@@ -408,7 +446,7 @@ function Assistant() {
                   e.preventDefault();
                   openTabMenu(path);
                 }}
-                title={tabLabel(sessions, path)}
+                title={label}
                 className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors max-w-32 min-w-0 ${
                   isActive
                     ? 'bg-white dark:bg-[#262829] text-zinc-900 dark:text-zinc-100'
@@ -425,7 +463,7 @@ function Assistant() {
                   />
                 )}
                 <span className="text-[12px] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                  {tabLabel(sessions, path)}
+                  {label}
                 </span>
                 <button
                   onClick={(e) => {
@@ -515,13 +553,6 @@ function Assistant() {
         {messages.map((message, i) => (
           <MessageRow key={i} message={message} />
         ))}
-        {optimisticText && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-lg bg-[#4F6BED] text-white px-2.5 py-1.5 whitespace-pre-wrap">
-              {optimisticText}
-            </div>
-          </div>
-        )}
       </div>
 
       {(workingMessage ||
@@ -843,7 +874,6 @@ function Assistant() {
               <button
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] max-w-32"
                 onClick={() => setMenu(menu === 'model' ? null : 'model')}
-                disabled={models.length === 0}
                 title="切换模型"
               >
                 <span className="truncate">
@@ -859,6 +889,13 @@ function Assistant() {
                     onClick={() => setMenu(null)}
                   />
                   <div className="absolute bottom-7 right-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                    {models.length === 0 && (
+                      <div className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        还没有可用模型
+                        <br />
+                        在「设置 → 模型」中添加或登录
+                      </div>
+                    )}
                     {models.map((m) => (
                       <button
                         key={`${m.provider}/${m.modelId}`}

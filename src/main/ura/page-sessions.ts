@@ -34,6 +34,8 @@ interface Entry {
 
 export class PageSessions {
   private readonly entries = new Map<string, Entry>();
+  /** ref → pageId：同一资源在会话存活期间复用同一页面。 */
+  private readonly byRef = new Map<string, string>();
 
   constructor(private readonly ura: Ura) {}
 
@@ -45,10 +47,17 @@ export class PageSessions {
     if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${ref}`);
     }
+    if (!opened.presentation.page) {
+      throw new Error(`无可用查看器：${ref}`);
+    }
     const binary = isBinaryRef(ref);
     const base = await this.baseOf(ref, binary);
+    const existingId = this.byRef.get(ref);
+    const existing = existingId ? this.entries.get(existingId) : undefined;
+    if (!existing || existing.closed) this.byRef.delete(ref);
+    // 复用已有页面：内容按最新版本重建，id 保持不变。
     const info: PageSessionInfo = {
-      id: randomUUID(),
+      id: existing && !existing.closed ? existing.info.id : randomUUID(),
       ref,
       version: opened.version,
       codec: opened.codec,
@@ -66,6 +75,7 @@ export class PageSessions {
       encoding: binary ? 'base64' : 'text',
       closed: false,
     });
+    this.byRef.set(ref, info.id);
     return { type: 'page', info };
   }
 
@@ -77,7 +87,11 @@ export class PageSessions {
     const entry = this.require(id);
     const binary = content instanceof Uint8Array;
     const { version } = await this.ura.write(entry.info.ref, content);
-    entry.info = { ...entry.info, version };
+    entry.info = {
+      ...entry.info,
+      version,
+      data: withContent(entry.info.data, content, binary, version),
+    };
     entry.base = binary ? base64Of(content) : content;
     entry.encoding = binary ? 'base64' : 'text';
     return { ok: true, version };
@@ -94,6 +108,9 @@ export class PageSessions {
     const opened = await this.ura.read(entry.info.ref, { as: 'editor' });
     if (opened.presentation.type !== 'page') {
       throw new Error(`资源没有页面出口：${entry.info.ref}`);
+    }
+    if (!opened.presentation.page) {
+      throw new Error(`无可用查看器：${entry.info.ref}`);
     }
     entry.info = {
       ...entry.info,
@@ -116,12 +133,16 @@ export class PageSessions {
     if (!entry) return;
     entry.closed = true;
     this.entries.delete(id);
+    if (this.byRef.get(entry.info.ref) === id) {
+      this.byRef.delete(entry.info.ref);
+    }
   }
 
   /** 工作区切换 / 退出：释放全部页面会话。 */
   disposeAll(): void {
     for (const entry of this.entries.values()) entry.closed = true;
     this.entries.clear();
+    this.byRef.clear();
   }
 
   private async textOf(ref: string): Promise<string> {
@@ -145,6 +166,23 @@ export class PageSessions {
 
 function base64Of(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64');
+}
+
+/** 保存后同步会话快照，避免下一次投递读到旧内容。 */
+function withContent(
+  data: unknown,
+  content: string | Uint8Array,
+  binary: boolean,
+  version: string,
+): unknown {
+  if (!data || typeof data !== 'object') return data;
+  const next = 'version' in data ? { ...data, version } : data;
+  if (binary) {
+    return 'bytes' in next
+      ? { ...next, bytes: base64Of(content as Uint8Array) }
+      : next;
+  }
+  return 'text' in next ? { ...next, text: content } : next;
 }
 
 const BINARY_EXT =

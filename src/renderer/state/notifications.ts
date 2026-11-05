@@ -30,3 +30,16 @@ export const useNotificationsStore = create<NotificationsState>()((set) => ({
   dismiss: (id) =>
     set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) })),
 }));
+
+let errorSeq = 0;
+
+/** 命令失败的通知条：渲染层不吞错误，把失败原因摆到界面上。 */
+export function notifyError(message: string, source?: string): void {
+  errorSeq += 1;
+  useNotificationsStore.getState().push({
+    id: `error-${errorSeq}`,
+    message,
+    level: 'error',
+    ...(source ? { source } : {}),
+  });
+}

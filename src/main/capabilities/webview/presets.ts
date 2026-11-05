@@ -4,6 +4,7 @@
  * preload / partition / 页面 URL 的单一解析点；ViewHost 只消费本模块结果。
  */
 import type { WebPreferences } from 'electron';
+import { appPageUrl } from '../../core/paths';
 import { pathCodec, preloadFile, rendererFile } from '../../paths';
 
 export type PreloadName =
@@ -28,13 +29,10 @@ export function pageUrl(page: 'index' | 'assistant' | 'overlay'): string {
 }
 
 /**
- * 插件页 / 设置页的 app:// 地址。
- *
- * 路径与编码由 pathCodec 统一处理（URL 侧分隔符恒 '/'、段内编码），
- * 页面里的相对资源（./assets/…）才能解析到同一插件目录。
+ * 插件页 / 设置页的 app:// 地址（实现只在 core/paths，这里只是视图侧的入口名）。
  */
 export function pageUrlFor(file: string): string {
-  return `app://page${pathCodec.fsToUrlPath(file)}`;
+  return appPageUrl(file);
 }
 
 /**

@@ -9,20 +9,32 @@ import { pathToFileURL } from 'node:url';
 import { uraRegistry, type UraRegistry } from '../ura/registry';
 import { isWithin } from '../paths';
 import * as uraSdk from '../ura/sdk';
+import { listRegistry } from '../service/lists/registry';
 import type { PluginInfo } from '../../shared/types';
-import { scanPluginPackages, type PluginPackage } from './packages';
+import {
+  scanPluginPackages,
+  type OfficeGenKind,
+  type PluginPackage,
+} from './packages';
 
 export interface BuiltinLoader {
   id: string;
   load: () => Promise<unknown>;
 }
 
+/**
+ * 插件页面出口。
+ *
+ * page    = 文档查看器出口：由资源管道按 MIME 装载，必须带文档内容与页面会话。
+ * settings = 配置面出口：由插件入口打开，无文档依赖。
+ * 两种出口至少存在一个，且都只由各自的入口使用。
+ */
 export interface PluginPageEntry {
   id: string;
   label: string;
   icon?: string;
   version: string;
-  page: string;
+  page?: string;
   settings?: string;
   iconUrl?: string;
 }
@@ -33,12 +45,15 @@ export interface PluginHostOptions {
   /** 插件数据根（settings.json 落盘位置）。 */
   dataRoot: string;
   registry?: UraRegistry;
+  /** 热卸载回调：关闭该插件已打开的视图（视图层接入）。 */
+  onDeactivate?: (pluginId: string) => void;
 }
 
 export class PluginHost {
   private readonly packages = new Map<string, PluginPackage>();
   private readonly diagnostics: string[] = [];
   private readonly settings = new Map<string, Record<string, unknown>>();
+  private importEpoch = 0;
 
   constructor(private readonly options: PluginHostOptions) {}
 
@@ -48,7 +63,15 @@ export class PluginHost {
     (globalThis as { __workstudioSdk?: typeof uraSdk }).__workstudioSdk =
       uraSdk;
     const scanned = await scanPluginPackages(this.options.roots);
-    for (const pkg of scanned) this.packages.set(pkg.id, pkg);
+    for (const pkg of scanned) {
+      this.packages.set(pkg.id, pkg);
+      // 两个出口都没有：插件能注册能力，但没有可打开的页面（不视为装载失败）。
+      if (!pkg.page && !pkg.settings) {
+        this.diagnostics.push(
+          `插件没有声明页面：${pkg.id}（既无 page 也无 settings）`,
+        );
+      }
+    }
 
     for (const builtin of this.options.builtins) {
       try {
@@ -63,13 +86,60 @@ export class PluginHost {
     const builtinIds = new Set(this.options.builtins.map((b) => b.id));
     for (const pkg of scanned) {
       if (builtinIds.has(pkg.id) || !pkg.uraEntry) continue;
-      try {
-        const url = pathToFileURL(pkg.uraEntry).href;
-        await registry.runAs(pkg.id, () => import(url));
-      } catch (error) {
-        this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
-      }
+      await this.loadPackage(pkg);
     }
+  }
+
+  /** 装载单个插件包的注册入口（启动扫描与热安装共用）。 */
+  private async loadPackage(pkg: PluginPackage): Promise<void> {
+    if (!pkg.uraEntry) return;
+    try {
+      // ESM 按 URL 缓存模块；安装目录固定（installed/<id> 或原地目录），
+      // 卸载重装 / 覆盖安装会命中旧缓存导致注册代码不再执行——
+      // 用递增 query 保证每次激活都是全新求值。
+      this.importEpoch += 1;
+      const url = `${pathToFileURL(pkg.uraEntry).href}?v=${this.importEpoch}`;
+      await this.registry.runAs(pkg.id, () => import(url));
+    } catch (error) {
+      this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * 热安装：扫描单个插件目录 → 装入运行时 → 执行注册入口。
+   * 返回装入的插件包；目录不是有效插件包时返回 null。
+   */
+  async activate(root: string): Promise<PluginPackage | null> {
+    // 与 start() 一致：外部包依赖运行时注入的 SDK 注册面（幂等）。
+    (globalThis as { __workstudioSdk?: typeof uraSdk }).__workstudioSdk =
+      uraSdk;
+    const scanned = await scanPluginPackages([root]);
+    const pkg = scanned.find((item) => item.root === root) ?? scanned[0];
+    if (!pkg) return null;
+    // 覆盖安装：撤下旧注册面并关闭旧版本页面，再装新版本。
+    if (this.packages.has(pkg.id)) this.deactivate(pkg.id);
+    this.packages.set(pkg.id, pkg);
+    if (!pkg.page && !pkg.settings) {
+      this.diagnostics.push(
+        `插件没有声明页面：${pkg.id}（既无 page 也无 settings）`,
+      );
+    }
+    await this.loadPackage(pkg);
+    return pkg;
+  }
+
+  /** 热卸载：撤销注册面 + 移出运行时 + 关闭已打开的插件视图。 */
+  deactivate(id: string): void {
+    if (!this.packages.has(id)) return;
+    this.revoke(id);
+    this.options.onDeactivate?.(id);
+  }
+
+  /** 注册面撤销（ura 注册表 + 列表注册表）并移出包表。 */
+  private revoke(id: string): void {
+    this.registry.revokeOwner(id);
+    listRegistry.revokeOwner(id);
+    this.packages.delete(id);
   }
 
   get(id: string): PluginPackage | undefined {
@@ -79,18 +149,17 @@ export class PluginHost {
   /** 插件页面解析（views.open 与页面白名单共用）。 */
   getPage(id: string): PluginPageEntry | null {
     const pkg = this.packages.get(id);
-    if (pkg?.page) {
-      return {
-        id: pkg.id,
-        label: pkg.label,
-        ...(pkg.icon ? { icon: pkg.icon } : {}),
-        version: pkg.version,
-        page: pkg.page,
-        ...(pkg.settings ? { settings: pkg.settings } : {}),
-        ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
-      };
-    }
-    return null;
+    // 只有配置页（没有渲染页）的插件同样可打开：出口选择交给调用方。
+    if (!pkg || (!pkg.page && !pkg.settings)) return null;
+    return {
+      id: pkg.id,
+      label: pkg.label,
+      ...(pkg.icon ? { icon: pkg.icon } : {}),
+      version: pkg.version,
+      ...(pkg.page ? { page: pkg.page } : {}),
+      ...(pkg.settings ? { settings: pkg.settings } : {}),
+      ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
+    };
   }
 
   list(): PluginPackage[] {
@@ -127,7 +196,7 @@ export class PluginHost {
       ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
       builtin: true,
       extensionCount: pkg.page ? 1 : 0,
-      skillCount: 0,
+      skillCount: pkg.skills.length,
       toolCount: 0,
       hasHome: false,
       hasConfig: !!pkg.settings,
@@ -137,6 +206,25 @@ export class PluginHost {
 
   pluginNameOf(source: string): string {
     return this.packages.get(source)?.label ?? source;
+  }
+
+  /** 已装插件的技能目录（pi additionalSkillPaths 数据源；会话创建期生效）。 */
+  skillPaths(): string[] {
+    const paths: string[] = [];
+    for (const pkg of this.packages.values()) {
+      for (const skill of pkg.skills) paths.push(skill.dir);
+    }
+    return paths;
+  }
+
+  /** 某格式的生成脚本（按插件装入顺序取第一个声明；未声明返回 null，由调用方兜底）。 */
+  genScriptOf(kind: OfficeGenKind): string | null {
+    for (const pkg of this.packages.values()) {
+      for (const skill of pkg.skills) {
+        if (skill.gen?.kind === kind) return skill.gen.script;
+      }
+    }
+    return null;
   }
 
   loadDiagnostics(): readonly string[] {

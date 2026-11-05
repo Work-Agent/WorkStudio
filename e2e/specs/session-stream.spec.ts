@@ -10,7 +10,7 @@ import type { PiEventFrame, PiSessionEvent } from '../../src/shared/types';
 
 const sessionFile = '/tmp/e2e-session.jsonl';
 
-function fakeAgent(): AgentHost {
+function fakeAgent(overrides: Record<string, unknown> = {}): AgentHost {
   return {
     getSnapshot: () => ({
       configured: true,
@@ -30,6 +30,7 @@ function fakeAgent(): AgentHost {
       pendingMessageCount: 0,
       cwd: '/tmp',
       workspacePath: '/tmp',
+      ...overrides,
     }),
     getMessages: async () => [],
     listSessions: async () => [],
@@ -106,4 +107,33 @@ test('流式事件校验器拒绝未知载荷', () => {
     isSessionStreamEvent({ type: 'append', channel: 'unknown', delta: 'a' }),
   ).toBe(false);
   expect(isSessionStreamEvent({ type: 'unknown' })).toBe(false);
+});
+
+test('状态类内部事件会重新发布当前会话（配置模型后不再停留在未配置）', () => {
+  let configured = false;
+  const service = new SessionsService(
+    fakeAgent({
+      get configured() {
+        return configured;
+      },
+    }),
+  );
+
+  let changes = 0;
+  service.onChange(() => {
+    changes += 1;
+  });
+
+  // 配置模型：AgentHost 推出 status 内部事件，快照随之变化。
+  configured = true;
+  service.receiveFrame({
+    seq: 1,
+    event: {
+      type: 'agent_status_changed',
+      status: { configured: true },
+    },
+  } as unknown as PiEventFrame);
+
+  expect(changes).toBe(1);
+  expect(service.current?.configured).toBe(true);
 });

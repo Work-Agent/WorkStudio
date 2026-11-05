@@ -121,6 +121,7 @@ export function computeLayout(input: LayoutInput): LayoutSnapshot {
 
   return {
     assistantMode: ui.aiFloating ? 'floating' : 'dock',
+    assistantVisible: ui.aiOpen,
     window: { width: w, height: h },
     titlebar: { x: 0, y: 0, width: w, height: TITLEBAR_HEIGHT },
     workbench,

@@ -15,3 +15,28 @@ export function formatTokens(count: number): string {
   if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
   return `${(count / 1_000_000).toFixed(1)}M`;
 }
+
+/** 工具调用参数的单行预览（折叠摘要行用；截断到 80 字符）。 */
+export function argsPreview(args: unknown): string {
+  let text: string;
+  if (typeof args === 'string') {
+    text = args;
+  } else if (args && typeof args === 'object') {
+    // 对象取前几个原始字段值，比整段 JSON 更可读
+    const parts = Object.values(args as Record<string, unknown>)
+      .filter((v) => typeof v === 'string' || typeof v === 'number')
+      .map((v) => String(v));
+    text = parts.join(' · ') || JSON.stringify(args);
+  } else {
+    text = args == null ? '' : String(args);
+  }
+  text = text.replace(/\s+/g, ' ').slice(0, 80);
+  // 空参数 / 空容器没有信息量，不显示预览
+  return text === '{}' || text === '[]' ? '' : text;
+}
+
+/** 结果正文的展示过滤：空白或空容器（{} / []）视为无内容。 */
+export function resultBody(result: string | undefined): string {
+  const text = result?.trim() ?? '';
+  return text === '{}' || text === '[]' ? '' : text;
+}

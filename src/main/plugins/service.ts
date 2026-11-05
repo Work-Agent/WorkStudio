@@ -2,7 +2,9 @@
 //
 // 可安装清单随源码维护（PLUGINS.md），构建期解析成静态数组
 // （virtual:plugin-registry）：运行期只读数据，不读、不写 Markdown。
-// 远程只接受 zip，必须带 sha256；本地路径原地加载（不复制）。
+// 远程只接受 zip，必须带 sha256；本地 zip 路径同一套解压流程；
+// 本地目录原地加载（不复制）。下载代理见 net/proxy.ts（用户设置优先，
+// 其次 https_proxy 环境变量，都没有则直连）。
 // 安装状态由 installed/ 与 installed.json 得出；临时来源只记安装状态。
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -11,6 +13,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { unzipSync } from 'fflate';
+import { fetch as undiciFetch } from 'undici';
 import { PLUGIN_REGISTRY } from 'virtual:plugin-registry';
 import {
   describePluginSource,
@@ -19,11 +22,28 @@ import {
   type PluginSourceType,
 } from '../../shared/plugin-registry';
 import { createLogger } from '../log';
+import { ensureProxy } from '../net/proxy';
+import { githubHeaders } from './github';
 
 const log = createLogger('plugin-sources');
 const MAX_ZIP_BYTES = 64 * 1024 * 1024;
 const SUPPORTED_API_VERSION = 1;
 const ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+
+/** Windows 上进程可能短暂持有插件文件句柄：删除失败时稍候重试。 */
+async function rmTree(target: string): Promise<void> {
+  const retryable = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EACCES']);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (attempt >= 4 || !code || !retryable.has(code)) throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
+    }
+  }
+}
 
 interface InstalledEntry {
   id: string;
@@ -85,6 +105,25 @@ export class PluginService {
     return [...local, this.installedRoot()];
   }
 
+  /** 来源对应的插件 id（仅本机安装记录；未安装返回 null）。 */
+  installedIdOf(source: string): string | null {
+    return this.installed[source]?.id ?? null;
+  }
+
+  /** 该 id 是否还被其他来源安装（卸载时决定是否删目录 / 撤运行时）。 */
+  isSharedId(id: string, exceptSource: string): boolean {
+    return Object.entries(this.installed).some(
+      ([key, value]) => key !== exceptSource && value.id === id,
+    );
+  }
+
+  /** 来源对应的插件目录（本地目录原地；zip 安装在 installed/<id>）。 */
+  installRootOf(source: string): string | null {
+    const installed = this.installed[source];
+    if (!installed) return null;
+    return installed.path ?? join(this.installedRoot(), installed.id);
+  }
+
   async install(raw: string): Promise<PluginSource> {
     const source = raw.trim();
     if (!source) throw new Error('插件来源不能为空');
@@ -93,6 +132,10 @@ export class PluginService {
 
     if (entry.type === 'local') {
       const path = entry.path ?? resolve(this.options.cwd(), source);
+      if (/\.zip$/i.test(path)) {
+        // 本地 zip：与远程同一套解压安装流程，只是字节来自磁盘
+        return this.installZipBytes(await readLocalZip(path), source, entry);
+      }
       const manifest = await readManifest(path);
       if (!manifest)
         throw new Error(`不是插件目录（缺少 workstudio 清单）：${path}`);
@@ -117,6 +160,33 @@ export class PluginService {
     }
 
     const bytes = await download(source);
+    return this.installZipBytes(bytes, source, entry);
+  }
+
+  /** 卸载：只删安装目录与安装索引；清单条目保留，可再装。 */
+  async remove(source: string): Promise<boolean> {
+    const declared = PLUGIN_REGISTRY.some((entry) => entry.source === source);
+    const installed = this.installed[source];
+    if (!installed) return declared;
+    const shared = Object.entries(this.installed).some(
+      ([key, value]) => key !== source && value.id === installed.id,
+    );
+    if (!shared) {
+      await rmTree(join(this.installedRoot(), installed.id));
+    }
+    delete this.installed[source];
+    await this.persistInstalled();
+    return true;
+  }
+
+  // ─── 内部 ───────────────────────────────────────────────
+
+  /** zip 安装公共流程：校验哈希 → 解压到 staging → 原子落位 → 记索引。 */
+  private async installZipBytes(
+    bytes: Uint8Array,
+    source: string,
+    entry: PluginRegistryEntry,
+  ): Promise<PluginSource> {
     const hash = createHash('sha256').update(bytes).digest('hex');
     if (entry.sha256 && hash !== entry.sha256)
       throw new Error(`sha256 不匹配：期望 ${entry.sha256}，实际 ${hash}`);
@@ -125,7 +195,7 @@ export class PluginService {
     try {
       const manifest = await extractZip(bytes, staging);
       const target = join(this.installedRoot(), manifest.id);
-      await rm(target, { recursive: true, force: true });
+      await rmTree(target);
       await rename(staging, target);
       const label = entry.label ?? manifest.label;
       const sha256 = entry.sha256 ?? hash;
@@ -154,27 +224,6 @@ export class PluginService {
       throw error;
     }
   }
-
-  /** 卸载：只删安装目录与安装索引；清单条目保留，可再装。 */
-  async remove(source: string): Promise<boolean> {
-    const declared = PLUGIN_REGISTRY.some((entry) => entry.source === source);
-    const installed = this.installed[source];
-    if (!installed) return declared;
-    const shared = Object.entries(this.installed).some(
-      ([key, value]) => key !== source && value.id === installed.id,
-    );
-    if (!shared) {
-      await rm(join(this.installedRoot(), installed.id), {
-        recursive: true,
-        force: true,
-      });
-    }
-    delete this.installed[source];
-    await this.persistInstalled();
-    return true;
-  }
-
-  // ─── 内部 ───────────────────────────────────────────────
 
   private resolve(entry: PluginRegistryEntry): PluginSource {
     if (entry.type === 'zip') return { ...entry };
@@ -283,18 +332,51 @@ export class PluginService {
 
 // ─── zip 安装 ─────────────────────────────────────────────
 
+/** 统一下载：单次 5 分钟超时（大包慢网）、64MB 上限、代理链路瞬断重试一次。 */
+async function fetchBytes(
+  url: string,
+  headers: Record<string, string>,
+): Promise<Uint8Array> {
+  ensureProxy();
+  const fetchOnce = async (): Promise<Uint8Array> => {
+    const response = await undiciFetch(url, {
+      headers,
+      signal: AbortSignal.timeout(300_000),
+    });
+    if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
+    const length = Number(response.headers.get('content-length') ?? '0');
+    if (length > MAX_ZIP_BYTES) throw new Error('插件 zip 超过大小上限');
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_ZIP_BYTES)
+      throw new Error('插件 zip 超过大小上限');
+    return new Uint8Array(buffer);
+  };
+  try {
+    return await fetchOnce();
+  } catch (error) {
+    log.warn(
+      'download interrupted, retry once',
+      url,
+      error instanceof Error ? error.message : error,
+    );
+    return await fetchOnce();
+  }
+}
+
+/** zip 远程下载：统一走 fetchBytes（代理 / 重试 / 超时 / 上限）。 */
 async function download(source: string): Promise<Uint8Array> {
-  const response = await fetch(source, {
-    headers: { 'User-Agent': 'work-studio' },
-    signal: AbortSignal.timeout(30_000),
+  return fetchBytes(source, {
+    'User-Agent': 'work-studio',
+    ...githubHeaders(source),
   });
-  if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
-  const length = Number(response.headers.get('content-length') ?? '0');
-  if (length > MAX_ZIP_BYTES) throw new Error('插件 zip 超过大小上限');
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > MAX_ZIP_BYTES)
+}
+
+async function readLocalZip(path: string): Promise<Uint8Array> {
+  const bytes = await readFile(path).catch(() => null);
+  if (!bytes) throw new Error(`无法读取 zip 文件：${path}`);
+  if (bytes.byteLength > MAX_ZIP_BYTES)
     throw new Error('插件 zip 超过大小上限');
-  return new Uint8Array(buffer);
+  return new Uint8Array(bytes);
 }
 
 interface Manifest {

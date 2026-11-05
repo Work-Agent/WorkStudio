@@ -45,6 +45,13 @@ export class ListRegistry {
     return this.entries.get(id)?.definition;
   }
 
+  /** 热卸载：撤下归属该 owner 的列表定义。 */
+  revokeOwner(owner: string): void {
+    for (const [id, entry] of this.entries) {
+      if (entry.owner === owner) this.entries.delete(id);
+    }
+  }
+
   all(): ListDefinition[] {
     return [...this.entries.values()]
       .map((entry) => entry.definition)

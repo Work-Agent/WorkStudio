@@ -36,6 +36,8 @@ export function routesSessions(r: Router, service: SessionsService): void {
     }
     if (service.current?.sessionFile) {
       const sessionId = idOf(service.current.sessionFile);
+      // 新会话在列表刷新前也要发布历史，否则首轮消息只能等整轮结束才回显。
+      messages.publish({ wsId, sessionId }, service.messages(sessionId));
       stream.publish({ wsId, sessionId }, service.stream(sessionId));
     }
   };

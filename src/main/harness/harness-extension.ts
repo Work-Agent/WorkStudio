@@ -5,6 +5,7 @@
  * 操作型工具（浏览器族）走各自契约。插件不注册工具。
  */
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import type { InlineExtension } from '@earendil-works/pi-coding-agent';
 import { fileRef } from '../../shared/ura';
 import type { Ura } from '../ura/facade';
@@ -13,11 +14,14 @@ import type { BrowserAutomationContract } from './browser-contract';
 import { SiteSnapshots } from '../service/sites/snapshots';
 import { createBrowserTools } from './browser-tools';
 import { createUraTools } from './ura-tools';
+import { createOfficeTools } from './office-tools';
 
 export interface HarnessBusinessDeps {
   ura: Ura;
   plugins: PluginHost;
   workspace: () => string;
+  /** 内置技能播种根（office_gen 工具的脚本来源）。 */
+  agentDir: string;
   /** 浏览器自动化（懒取：raw 视图在 ViewHost 就绪后才可用）。 */
   getBrowserAutomation(): BrowserAutomationContract | null;
 }
@@ -44,6 +48,19 @@ export function createHarnessExtension(
     };
     const tools = [
       ...createUraTools(deps.ura),
+      ...createOfficeTools({
+        workspace: deps.workspace,
+        // 生成脚本：已装 office 插件声明优先，内置 office-gen 播种兜底。
+        scriptOf: (kind) =>
+          deps.plugins.genScriptOf(kind) ??
+          join(
+            deps.agentDir,
+            'skills',
+            'office-gen',
+            'scripts',
+            'gen_office.py',
+          ),
+      }),
       ...createBrowserTools(automation, {
         capture: (page) => snapshots.capture(page),
       }),

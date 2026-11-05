@@ -230,7 +230,8 @@
         if (state.mode !== 'source') renderPreview();
       }
 
-      function setDirty(dirty) {
+      function setDirty(dirty, force = false) {
+        if (!force && state.dirty === dirty) return;
         state.dirty = dirty;
         window.extension.bus.send({ type: 'dirty', dirty });
       }
@@ -241,17 +242,7 @@
         state.original = state.content;
         $('source').value = state.content;
         renderPreview();
-        setDirty(false);
-      }
-
-      /** URA 页面会话投递（新契约）。 */
-      function applyInfo(info) {
-        state.meta = { id: info.ref };
-        state.content = (info.data && info.data.text) || '';
-        state.original = state.content;
-        $('source').value = state.content;
-        renderPreview();
-        setDirty(false);
+        setDirty(false, true);
       }
 
       const bus = window.extension.bus;
@@ -314,11 +305,6 @@
 
       // ── 启动 ─────────────────────────────────────────────
 
-      applyTheme(
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light',
-      );
       try {
         const savedMode = localStorage.getItem(PREF_MODE);
         state.allowScripts = localStorage.getItem(PREF_SCRIPTS) === '1';
@@ -329,20 +315,6 @@
         );
       } catch {
         setMode('preview');
-      }
-      if (sessionId) {
-        ura.page
-          .get(sessionId)
-          .then((info) => {
-            applyInfo(info);
-            void ura.watch(info.ref);
-            ura.onChange((event) => {
-              if (!state.dirty && event && event.ref === info.ref) {
-                void ura.page.reload(sessionId).then(applyInfo);
-              }
-            });
-          })
-          .catch((e) => toast(e && e.message ? e.message : String(e), true));
       }
       bus.loaded();
     </script>

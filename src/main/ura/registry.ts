@@ -336,6 +336,51 @@ export class UraRegistry {
     return entry ? { action: entry.impl, owner: entry.owner } : undefined;
   }
 
+  // ─── 撤销 ──────────────────────────────────────────────────────
+  // 热卸载：按归属撤下注册面。绑定是用户数据，不随插件撤销。
+
+  /** 撤下归属该 owner 的全部注册项，返回撤销数量。 */
+  revokeOwner(owner: string): number {
+    let count = 0;
+    for (const [scheme, entry] of this.transports) {
+      if (entry.owner === owner) {
+        this.transports.delete(scheme);
+        count += 1;
+      }
+    }
+    for (const [id, entry] of this.codecs) {
+      if (entry.owner !== owner) continue;
+      this.codecs.delete(id);
+      const index = this.codecList.findIndex((item) => item === entry);
+      if (index >= 0) this.codecList.splice(index, 1);
+      count += 1;
+    }
+    count += this.dropWhere(this.stores, owner);
+    count += this.dropWhere(this.presenters, owner);
+    count += this.dropWhere(this.sidecars, owner);
+    for (const [id, entry] of this.actions) {
+      if (entry.owner === owner) {
+        this.actions.delete(id);
+        count += 1;
+      }
+    }
+    if (count > 0) {
+      this.info('plugin.revoked', `撤销注册 ${count} 项：${owner}`);
+    }
+    return count;
+  }
+
+  private dropWhere<T>(list: Entry<T>[], owner: string): number {
+    let count = 0;
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (list[index]!.owner === owner) {
+        list.splice(index, 1);
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   // ─── 绑定 ──────────────────────────────────────────────────────
 
   setBindings(bindings: Binding[]): void {

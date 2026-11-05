@@ -489,7 +489,12 @@ export type PiSessionEvent =
   | { type: 'message_start'; message: { role: string; content?: unknown } }
   | {
       type: 'message_update';
-      assistantMessageEvent: { type: string; delta?: string };
+      assistantMessageEvent: {
+        type: string;
+        delta?: string;
+        content?: string;
+        contentIndex?: number;
+      };
     }
   | { type: 'message_end'; message: { role: string; content?: unknown } }
   | {
@@ -597,6 +602,10 @@ export interface ViewEntry {
   active: boolean;
   pinned: boolean;
   dirty: boolean;
+  /** 文件已删除或重命名（标签显示删除线）。 */
+  missing?: boolean;
+  /** 未保存且外部内容已变化。 */
+  conflict?: boolean;
   temporary?: boolean;
   interactiveElements?: boolean;
   renderer?: RendererInfo;
@@ -622,6 +631,8 @@ export interface Rect {
 export interface LayoutSnapshot {
   /** 助手形态：dock 占据右侧，floating 使用浮动几何。 */
   assistantMode: 'dock' | 'floating';
+  /** 助手是否显示（收起时 dock / floating 均隐藏）。 */
+  assistantVisible: boolean;
   window: { width: number; height: number };
   titlebar: Rect;
   workbench: Rect;

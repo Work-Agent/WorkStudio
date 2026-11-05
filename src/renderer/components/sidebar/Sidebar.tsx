@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
 import { cmd } from '../../api/appCommands';
+import { notifyError } from '../../state/notifications';
 import { setUiState, useUiStore } from '../../state/ui';
 import { useWorkspaceStore } from '../../state/workspace';
 import { FindList } from './FindList';
@@ -41,7 +42,8 @@ function iconOf(group: ListGroup): { Icon: LucideIcon; iconUrl?: string } {
 }
 
 async function openItem(item: ListItem): Promise<void> {
-  await cmd('list.action', { action: 'open', item });
+  const result = await cmd('list.action', { action: 'open', item });
+  if (!result.ok) notifyError(result.error.message, 'open');
 }
 
 async function closeItem(item: ListItem): Promise<void> {

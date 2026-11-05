@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { ListGroup, ListItem } from '../../../shared/lists';
 import { cmd } from '../../api/appCommands';
+import { notifyError } from '../../state/notifications';
 import { useUiStore } from '../../state/ui';
 import { rendererIcon } from '../titlebar/icons';
 import { EmptyState, SubListView } from './SubListView';
@@ -27,7 +28,11 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 async function activate(item: ListItem): Promise<void> {
-  await cmd('list.action', { action: 'open', item });
+  // 列表行可以声明「不可打开」（例：没有配置页的插件行）：
+  // 灰掉并给出行内原因，而不是发一次必定失败的打开请求。
+  if (item.state?.disabled === true) return;
+  const result = await cmd('list.action', { action: 'open', item });
+  if (!result.ok) notifyError(result.error.message, 'open');
 }
 
 function itemTime(item: ListItem): number {
@@ -58,14 +63,18 @@ function ItemRow({ item, group }: { item: ListItem; group: ListGroup }) {
         ? Globe
         : (ICONS[group.icon ?? 'folder'] ?? FileText));
   const active = item.state?.active === true;
+  const disabled = item.state?.disabled === true;
   const time = itemTime(item);
   return (
     <div
       onClick={() => void activate(item)}
-      className={`group relative flex items-center px-2 py-1.5 rounded-lg cursor-pointer transition-colors min-h-[42px] ${
-        active ? '' : 'hover:bg-zinc-200 dark:hover:bg-[#2a2c2d]'
-      }`}
-      title={item.title}
+      className={`group relative flex items-center px-2 py-1.5 rounded-lg transition-colors min-h-[42px] ${
+        disabled
+          ? 'cursor-not-allowed opacity-50'
+          : 'cursor-pointer hover:bg-zinc-200 dark:hover:bg-[#2a2c2d]'
+      } ${active ? '' : ''}`}
+      title={disabled ? `${item.title}（无可用入口）` : item.title}
+      aria-disabled={disabled || undefined}
     >
       {active && (
         <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[#4F6BED] rounded-r" />

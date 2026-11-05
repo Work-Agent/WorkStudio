@@ -24,26 +24,29 @@
 | 视图   | 打开并关闭设置视图                           | `view.lifecycle`     |
 | 浏览器 | 打开临时浏览器视图                           | `browser.open`       |
 | 对话框 | overlay 展示并应答                           | `dialog.overlay`     |
+| 插件   | 侧栏插件行打开配置页（不是渲染页）           | `plugin.entry`       |
 | 标签   | 多标签、激活标签                             | `view.tabs`          |
 | 路径   | `settings://`、`app/` 展示，不泄露完整工作区 | `path.display`       |
 
 ## Playwright-only / 隔离
 
-| 领域     | 用户路径/行为                          | 测试                     |
-| -------- | -------------------------------------- | ------------------------ |
-| 启动     | 主窗口、壳层、三栏入口                 | `smoke.spec.ts`          |
-| 生命周期 | 同 data root 重启                      | `restart.spec.ts`        |
-| 工作区   | 切换、重启恢复                         | `workspace.spec.ts`      |
-| 工作区   | 切换后 Agent 进入新域                  | `regressions.spec.ts`    |
-| 主题     | 切换并重启保留                         | `theme.spec.ts`          |
-| 快捷键   | Cmd/Ctrl+数字、Cmd/Ctrl+W              | `shortcuts.spec.ts`      |
-| 资源     | 临时工作区创建 + 真实点击 Markdown     | `resource.spec.ts`       |
-| 资源     | 编辑后保存回磁盘                       | `resource-save.spec.ts`  |
-| 设置     | 全部内置设置页加载、无脚本错误         | `settings-pages.spec.ts` |
-| 插件     | 本地插件安装 / 卸载                    | `plugin-install.spec.ts` |
-| 助手     | 助手视图加载 / 未配置态                | `assistant.spec.ts`      |
-| 助手     | 会话标签跟随当前会话                   | `regressions.spec.ts`    |
-| 单元     | provider / registry / routing / stream | 多个 spec                |
+| 领域     | 用户路径/行为                              | 测试                     |
+| -------- | ------------------------------------------ | ------------------------ |
+| 启动     | 主窗口、壳层、三栏入口                     | `smoke.spec.ts`          |
+| 生命周期 | 同 data root 重启                          | `restart.spec.ts`        |
+| 工作区   | 切换、重启恢复                             | `workspace.spec.ts`      |
+| 工作区   | 切换后 Agent 进入新域                      | `regressions.spec.ts`    |
+| 主题     | 切换并重启保留                             | `theme.spec.ts`          |
+| 快捷键   | Cmd/Ctrl+数字、Cmd/Ctrl+W                  | `shortcuts.spec.ts`      |
+| 资源     | 临时工作区创建 + 真实点击 Markdown         | `resource.spec.ts`       |
+| 资源     | 编辑后保存回磁盘                           | `resource-save.spec.ts`  |
+| 原生窗口 | 标题栏留白取自平台实测几何（Windows 三键） | `native-window.spec.ts`  |
+| 原生视图 | 内容视图打开后有首帧（非空白）             | `native-window.spec.ts`  |
+| 设置     | 全部内置设置页加载、无脚本错误             | `settings-pages.spec.ts` |
+| 插件     | 本地插件安装 / 卸载                        | `plugin-install.spec.ts` |
+| 助手     | 助手视图加载 / 未配置态                    | `assistant.spec.ts`      |
+| 助手     | 会话标签跟随当前会话                       | `regressions.spec.ts`    |
+| 单元     | provider / registry / routing / stream     | 多个 spec                |
 
 ## 部分覆盖
 

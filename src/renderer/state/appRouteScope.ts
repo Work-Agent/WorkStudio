@@ -42,6 +42,8 @@ function viewEntry(view: ViewSnapshot): ViewEntry {
     active: view.active,
     pinned: view.pinned,
     dirty: view.dirty,
+    missing: view.missing,
+    conflict: view.conflict,
   };
 }
 

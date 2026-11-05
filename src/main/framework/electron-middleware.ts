@@ -12,18 +12,26 @@ import {
   dialog,
   nativeTheme,
   protocol,
+  screen,
   session,
   shell,
   type App as ElectronApp,
   type MenuItemConstructorOptions,
+  type Rectangle,
   type Session,
+  type TitleBarOverlay,
   type WebContents,
 } from 'electron';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { CH_CAPTURE } from '../../shared/channels';
+import {
+  TITLEBAR_HEIGHT,
+  TITLEBAR_OVERLAY_COLORS,
+} from '../../shared/titlebar';
 import type { LayoutSnapshot } from '../../shared/types';
-import { preloadPath } from '../capabilities/webview/presets';
+import { preloadPath, themeBackground } from '../capabilities/webview/presets';
 import { initDataRoot } from '../data-root';
 import { rendererFile } from '../paths';
 import { readUserPreferences, writeUserPreferences } from '../preferences';
@@ -82,6 +90,9 @@ export interface PopupMenuItem {
 
 interface WindowPort {
   bounds(): WindowBounds | null;
+  /** 指针在窗口内容坐标系中的位置；窗口不可用时为 null。 */
+  cursor(): { x: number; y: number } | null;
+  onBlur(listener: () => void): () => void;
   applyLayout(layout: LayoutSnapshot): void;
   webContentsId(): number | null;
   send(channel: string, payload: unknown): void;
@@ -91,13 +102,22 @@ interface ViewsPort {
   create(input: NativeViewInput, hooks?: ViewHooks): number | null;
   close(viewId: string): void;
   activate(viewId: string): void;
+  focus(viewId: string): void;
   reload(viewId: string): void;
   navigate(viewId: string, url: string): void;
   goBack(viewId: string): void;
   goForward(viewId: string): void;
   send(viewId: string, channel: string, payload: unknown): void;
   setVisible(viewId: string, visible: boolean): void;
+  /** 指针捕获层上报（CH_CAPTURE）；返回取消订阅。 */
+  onCapture(listener: (message: CaptureMessage) => void): () => void;
   webContents(viewId: string): WebContents | null;
+}
+
+/** 捕获层 preload 上报的消息（见 preload/capture.ts）。 */
+export interface CaptureMessage {
+  type: 'move' | 'up' | 'cancel';
+  buttons?: number;
 }
 
 interface ThemePort {
@@ -144,6 +164,14 @@ export class ElectronCapability implements Capability {
   private readonly dataRoot: string;
   private readonly viewsById = new Map<string, ViewEntry>();
   private readonly hooksById = new Map<string, ViewHooks>();
+  private readonly blurListeners = new Set<() => void>();
+  private readonly captureListeners = new Set<
+    (message: CaptureMessage) => void
+  >();
+  /** 上次的视图栈序 key；组成不变时跳过重排。 */
+  private lastStackKey = '';
+  /** 上次应用的助手视图外观（形态 + 主题）；不变时跳过。 */
+  private assistantChromeKey = '';
   private readonly pageSessions = new WeakSet<Session>();
   private uraWatcher:
     | ((ref: string, onEvent: (event: unknown) => void) => () => void)
@@ -180,6 +208,8 @@ export class ElectronCapability implements Capability {
 
     this.window = {
       bounds: () => this.bounds(),
+      cursor: () => this.cursor(),
+      onBlur: (listener) => this.addListener(this.blurListeners, listener),
       applyLayout: (layout) => this.applyLayout(layout),
       webContentsId: () =>
         this.win && !this.win.isDestroyed() ? this.win.webContents.id : null,
@@ -194,6 +224,12 @@ export class ElectronCapability implements Capability {
       create: (input, hooks) => this.createView(input, hooks),
       close: (viewId) => this.closeView(viewId),
       activate: (viewId) => this.activateView(viewId),
+      focus: (viewId) => {
+        const wc = this.viewsById.get(viewId)?.view.webContents;
+        if (wc && !wc.isDestroyed()) wc.focus();
+      },
+      onCapture: (listener) =>
+        this.addListener(this.captureListeners, listener),
       reload: (viewId) => this.viewsById.get(viewId)?.view.webContents.reload(),
       navigate: (viewId, url) => {
         void this.viewsById.get(viewId)?.view.webContents.loadURL(url);
@@ -211,10 +247,7 @@ export class ElectronCapability implements Capability {
         const wc = this.viewsById.get(viewId)?.view.webContents;
         if (wc && !wc.isDestroyed()) wc.send(channel, payload);
       },
-      setVisible: (viewId, visible) => {
-        const entry = this.viewsById.get(viewId);
-        if (entry) entry.view.setVisible(visible);
-      },
+      setVisible: (viewId, visible) => this.setViewVisible(viewId, visible),
       webContents: (viewId) =>
         this.viewsById.get(viewId)?.view.webContents ?? null,
     };
@@ -350,6 +383,19 @@ export class ElectronCapability implements Capability {
     return { width, height };
   }
 
+  /** 屏幕 DIP 光标 → 窗口内容坐标（交互几何的唯一权威来源）。 */
+  private cursor(): { x: number; y: number } | null {
+    if (!this.win || this.win.isDestroyed()) return null;
+    const point = screen.getCursorScreenPoint();
+    const bounds = this.win.getContentBounds();
+    return { x: point.x - bounds.x, y: point.y - bounds.y };
+  }
+
+  private addListener<T>(set: Set<T>, listener: T): () => void {
+    set.add(listener);
+    return () => set.delete(listener);
+  }
+
   private createWindow(): BrowserWindow {
     const isMac = process.platform === 'darwin';
     const window = new BrowserWindow({
@@ -360,6 +406,11 @@ export class ElectronCapability implements Capability {
       show: false,
       backgroundColor: this.currentTheme === 'light' ? '#f4f4f5' : '#1a1c1d',
       titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+      // 三键 / 红绿灯由系统绘制：macOS 走 hiddenInset + 位置微调；Windows / Linux
+      // 隐藏标题栏后必须挂 WCO 覆盖层，否则连最小化 / 最大化 / 关闭都不存在。
+      ...(isMac
+        ? { trafficLightPosition: { x: 16, y: 12 } }
+        : { titleBarOverlay: this.titleBarOverlay() }),
       webPreferences: {
         preload: preloadPath('workbench'),
         contextIsolation: true,
@@ -371,6 +422,9 @@ export class ElectronCapability implements Capability {
     window.once('ready-to-show', () => window.show());
     window.on('resize', () => {
       if (this.layout) this.applyLayout(this.layout);
+    });
+    window.on('blur', () => {
+      for (const listener of this.blurListeners) listener();
     });
     window.on('closed', () => {
       if (this.win === window) this.win = null;
@@ -395,6 +449,7 @@ export class ElectronCapability implements Capability {
       },
     });
     this.win.contentView.addChildView(view);
+    // 内容视图（页面 / 网页）底色透明：页面首帧之前看到的是壳层底色，不是白闪。
     if (
       input.type === 'page' ||
       input.type === 'web' ||
@@ -402,11 +457,30 @@ export class ElectronCapability implements Capability {
       input.type === 'capture'
     ) {
       view.setBackgroundColor('#00000000');
+    }
+    // 系统视图（对话框覆盖层 / 指针捕获层）按需出现：初始隐藏。
+    // 内容视图不做初始隐藏——「隐藏 → 写几何 → 显示」会让 Windows 的原生视图
+    // 失去首帧（见 setViewVisible）。
+    if (input.type === 'overlay' || input.type === 'capture') {
       view.setVisible(false);
     }
-    this.viewsById.set(input.viewId, { view, type: input.type });
+    // 捕获层只上报指针事件；由交互控制器订阅。
+    if (input.type === 'capture') {
+      view.webContents.on('ipc-message', (_event, channel, payload) => {
+        if (channel !== CH_CAPTURE) return;
+        for (const listener of this.captureListeners) {
+          listener(payload as CaptureMessage);
+        }
+      });
+    }
+    const entry: ViewEntry = { view, type: input.type };
+    this.viewsById.set(input.viewId, entry);
     if (hooks) this.hooksById.set(input.viewId, hooks);
-    view.webContents.on('did-finish-load', () => hooks?.onReady?.());
+    view.webContents.on('did-finish-load', () => {
+      // 首帧兜底：加载完成后再写一次几何（隐藏期设过几何的视图尤其需要）。
+      if (this.viewsById.get(input.viewId) === entry) this.reapplyBounds(entry);
+      hooks?.onReady?.();
+    });
     view.webContents.on('render-process-gone', () => hooks?.onCrash?.());
     void view.webContents.loadURL(input.url);
     if (this.layout) this.applyLayout(this.layout);
@@ -427,31 +501,132 @@ export class ElectronCapability implements Capability {
   private activateView(viewId: string): void {
     for (const [id, entry] of this.viewsById) {
       if (entry.type === 'page' || entry.type === 'web') {
-        entry.view.setVisible(id === viewId);
+        this.setViewVisible(id, id === viewId);
       }
     }
     this.viewsById.get(viewId)?.view.webContents.focus();
   }
 
+  /**
+   * 显示 / 隐藏原生视图。
+   *
+   * 可见后补写一次几何：Windows 上「隐藏期间设过 bounds → 再 show」的原生视图
+   * 不会重建合成面，表现为视图可见、几何正确却永远空白，直到下一次几何变化
+   * （拖分隔条 / 改窗口大小）才出画面。macOS / Linux 在 show 时会重新合成，
+   * 因此只有 Windows 会空白；这里补写几何对三者都无害。
+   */
+  private setViewVisible(viewId: string, visible: boolean): void {
+    const entry = this.viewsById.get(viewId);
+    if (!entry) return;
+    entry.view.setVisible(visible);
+    if (visible) this.reapplyBounds(entry);
+  }
+
   private applyLayout(next: LayoutSnapshot): void {
     this.layout = next;
-    for (const entry of this.viewsById.values()) {
-      const rect =
-        entry.type === 'assistant'
-          ? next.assistantMode === 'floating'
-            ? next.assistantFloating
-            : next.assistantDock
-          : entry.type === 'overlay' || entry.type === 'capture'
-            ? next.overlay
-            : next.resourceContent;
-      const bounds = {
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      };
-      entry.view.setBounds(bounds);
+    for (const [id, entry] of this.viewsById) {
+      const bounds = this.boundsFor(entry);
+      if (bounds) entry.view.setBounds(bounds);
+      // 助手可见性跟随 aiOpen：浮动态的几何不会归零，必须显式隐藏。
+      if (
+        entry.type === 'assistant' &&
+        entry.view.getVisible() !== next.assistantVisible
+      ) {
+        this.setViewVisible(id, next.assistantVisible);
+      }
     }
+    this.applyAssistantChrome();
+    this.applyStack();
+  }
+
+  /**
+   * 助手视图外观：浮动态用透明底 + 原生圆角，圆角外透出下层内容而不是视图底色；
+   * 停靠态用主题底色（加载期防白闪，页面根容器负责最终视觉）。
+   */
+  private applyAssistantChrome(): void {
+    const layout = this.layout;
+    if (!layout) return;
+    const assistants = [...this.viewsById.values()].filter(
+      (entry) => entry.type === 'assistant',
+    );
+    if (assistants.length === 0) return;
+    const key = `${layout.assistantMode}:${this.currentTheme}`;
+    if (key === this.assistantChromeKey) return;
+    this.assistantChromeKey = key;
+    const floating = layout.assistantMode === 'floating';
+    for (const entry of assistants) {
+      try {
+        // 与渲染层 rounded-xl（12px）对齐；平台不支持时由页面圆角兜底。
+        entry.view.setBorderRadius(floating ? 12 : 0);
+      } catch {
+        /* 平台不支持原生圆角 */
+      }
+      try {
+        entry.view.setBackgroundColor(
+          floating ? '#00000000' : themeBackground(this.currentTheme),
+        );
+      } catch {
+        /* 平台不支持透明底 */
+      }
+    }
+  }
+
+  /**
+   * 原生视图栈序：内容（page / web）→ 助手 → overlay → capture。
+   *
+   * WebContentsView 后挂的在上层；内容视图创建晚于系统视图，不重排会盖住
+   * 浮动助手、对话框遮罩与指针捕获层。同一 view 重复 addChildView 会置顶，
+   * 组成不变时按 key 跳过，避免无谓重排。
+   */
+  private applyStack(): void {
+    const win = this.win;
+    if (!win || win.isDestroyed()) return;
+    const rank = (type: string): number =>
+      type === 'assistant'
+        ? 1
+        : type === 'overlay'
+          ? 2
+          : type === 'capture'
+            ? 3
+            : 0;
+    const order = [...this.viewsById.entries()].sort(
+      ([, a], [, b]) => rank(a.type) - rank(b.type),
+    );
+    const key = order.map(([id]) => id).join('|');
+    if (key === this.lastStackKey) return;
+    this.lastStackKey = key;
+    for (const [, entry] of order) {
+      try {
+        win.contentView.addChildView(entry.view);
+      } catch {
+        /* 视图已销毁 */
+      }
+    }
+  }
+
+  private reapplyBounds(entry: ViewEntry): void {
+    const bounds = this.boundsFor(entry);
+    if (bounds) entry.view.setBounds(bounds);
+  }
+
+  /** 视图在当前布局下的几何：类型决定取哪块区域。 */
+  private boundsFor(entry: ViewEntry): Rectangle | null {
+    const layout = this.layout;
+    if (!layout) return null;
+    const rect =
+      entry.type === 'assistant'
+        ? layout.assistantMode === 'floating'
+          ? layout.assistantFloating
+          : layout.assistantDock
+        : entry.type === 'overlay' || entry.type === 'capture'
+          ? layout.overlay
+          : layout.resourceContent;
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
   }
 
   private preloadFor(preload: ViewPreload | undefined): string | undefined {
@@ -477,6 +652,31 @@ export class ElectronCapability implements Capability {
     nativeTheme.themeSource = next === 'light' ? 'light' : 'dark';
     if (this.win && !this.win.isDestroyed()) {
       this.win.setBackgroundColor(next === 'light' ? '#f4f4f5' : '#1a1c1d');
+      // 原生三键由覆盖层绘制，配色不随 nativeTheme 自动更新，需显式同步。
+      this.applyTitleBarOverlay(this.win);
+    }
+    this.applyAssistantChrome();
+  }
+
+  /** WCO 覆盖层参数：配色与渲染层标题栏同源，高度与 DOM 标题栏同高。 */
+  private titleBarOverlay(): TitleBarOverlay {
+    const colors =
+      this.currentTheme === 'light'
+        ? TITLEBAR_OVERLAY_COLORS.light
+        : TITLEBAR_OVERLAY_COLORS.dark;
+    return { ...colors, height: TITLEBAR_HEIGHT };
+  }
+
+  /**
+   * 重设覆盖层（macOS 无覆盖层，红绿灯由系统跟随 nativeTheme）。
+   * 桌面环境不支持 WCO 时不抛错：渲染层按 TITLEBAR_FALLBACK_INSET 排布留白。
+   */
+  private applyTitleBarOverlay(target: BrowserWindow): void {
+    if (process.platform === 'darwin') return;
+    try {
+      target.setTitleBarOverlay(this.titleBarOverlay());
+    } catch {
+      /* 平台 / 桌面环境不支持 WCO */
     }
   }
 

@@ -58,6 +58,7 @@ export class AgentSession {
       ura: input.deps.ura,
       plugins: input.deps.registry,
       workspace: () => input.cwd,
+      agentDir: input.agentDir,
       getBrowserAutomation: input.deps.getBrowserAutomation,
     });
 
@@ -70,6 +71,8 @@ export class AgentSession {
           openUrl: input.deps.openExternal,
         }),
         systemPrompt: buildSystemPrompt(),
+        // 已装插件声明的技能目录（manifest.skills）随官方链装载。
+        additionalSkillPaths: input.deps.registry.skillPaths(),
         skillsOverride: (base) => {
           input.deps.skills.registerLoaded(
             base.skills,

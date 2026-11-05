@@ -78,8 +78,8 @@ export interface ViewSpec {
   partition?: string;
   preload?: 'page' | 'web' | 'none';
   sessionId?: string;
-  /** 资源页内容投递（ready 后经 ws:bus 发给页面）。 */
-  content?: unknown;
+  /** 资源页内容投递：loaded 时调用，取当前快照。 */
+  content?: () => unknown;
 }
 
 /** 页面提供者：认领一段路径模式，只有注册它的模块能打开。 */

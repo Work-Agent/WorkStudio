@@ -57,6 +57,11 @@ import { createUraRuntime, type UraRuntime } from './ura';
 import { PageSessions } from './ura/page-sessions';
 import { PluginService } from './plugins/service';
 import { PluginCatalogService } from './plugins/catalog';
+import { BUNDLED_GITHUB_TOKEN } from './plugins/github';
+import { readUserPreferences } from './preferences';
+import { setProxySource } from './net/proxy';
+import { UpdateService } from './update/updater';
+import { UpdatesService } from './service/updates';
 import {
   pluginCatalogFile,
   pluginCatalogUrlFile,
@@ -90,6 +95,7 @@ export class App {
   private piconf!: PiConfService;
   private settings!: SettingsService;
   private sites!: SitesService;
+  private updates!: UpdatesService;
   private viewsCapability!: ViewsCapability;
   private browserAutomation: BrowserAutomation | null = null;
   private agentHost: AgentHost | null = null;
@@ -141,6 +147,7 @@ export class App {
     const initial = workspaces.restore();
     let workspacePath = initial.path;
 
+    setProxySource(() => readUserPreferences().proxy);
     const pluginService = new PluginService({
       root: pluginsRoot(),
       cwd: () => workspacePath,
@@ -157,9 +164,15 @@ export class App {
       bindingFile: uraBindingsFile(),
       workspace: () => workspacePath,
       registerFeatures: registerBrowserFeatures,
+      onDeactivate: (pluginId) =>
+        this.viewsCapability?.closePluginViews(pluginId),
       pluginRoots: [
         ...pluginService.roots(),
+        // 内置插件页：dev 在 src/plugins（源码即扫描根），打包后在 out/plugins
+        // （copyBuiltinPlugins 拷贝产物，随 asar 分发）。目录缺失会被扫描器
+        // 静默跳过，同 id 先到先得 —— src 在前保证 dev 优先用源码。
         join(env.appPath, 'src', 'plugins'),
+        join(env.appPath, 'out', 'plugins'),
         pluginsRoot(),
       ],
     });
@@ -303,6 +316,14 @@ export class App {
       ura: ura.ura,
       workspace: () => workspacePath,
     });
+    this.updates = new UpdatesService(
+      new UpdateService({
+        token: () =>
+          process.env.GITHUB_TOKEN ??
+          readUserPreferences().githubToken ??
+          BUNDLED_GITHUB_TOKEN,
+      }),
+    );
 
     // ─── 中间件与路由 ──────────────────────────────────
     const ctx: MiddlewareContext = {
@@ -331,9 +352,19 @@ export class App {
       piconf: this.piconf,
       settings: this.settings,
       sites: this.sites,
+      updates: this.updates,
     });
     this.host.useCall(this.middlewares);
 
+    this.resources.onPageReloaded((info) => {
+      this.viewsCapability.notifyPageContent(
+        info.id,
+        this.resources.pageContent(info.id),
+      );
+    });
+    this.resources.onPageMissing((pageId, missing) => {
+      this.viewsCapability.setPageMissing(pageId, missing);
+    });
     this.views.onChange(() => this.refreshLists());
 
     this.workspaces.onClose(() => {
@@ -366,7 +397,6 @@ export class App {
 
   attachShortcuts(wc: unknown): void {
     const contents = wc as import('electron').WebContents;
-    this.runtime.attach(contents);
     const views = this.capabilities.find(
       (item): item is ViewsCapability => item.id === 'views',
     );

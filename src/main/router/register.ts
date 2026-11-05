@@ -7,6 +7,7 @@ import {
   routesSessions as sessions,
   routesSettings as settings,
   routesSites as sites,
+  routesUpdates as updates,
   routesWorkspaces as workspaces,
 } from './routes';
 import type { Router } from './router';
@@ -17,6 +18,7 @@ import type { ResourcesService } from '../service/resources';
 import type { SessionsService } from '../service/sessions';
 import type { SettingsService } from '../service/settings';
 import type { SitesService } from '../service/sites';
+import type { UpdatesService } from '../service/updates';
 import type { WorkspacesService } from '../service/workspaces';
 
 export interface RouteServices {
@@ -28,6 +30,7 @@ export interface RouteServices {
   piconf: PiConfService;
   settings: SettingsService;
   sites: SitesService;
+  updates: UpdatesService;
 }
 
 export function registerRoutes(router: Router, services: RouteServices): void {
@@ -45,4 +48,5 @@ export function registerRoutes(router: Router, services: RouteServices): void {
     services.sessions,
   );
   sites(router.service('sites', '/workspaces/:wsId/sites'), services.sites);
+  updates(router.service('updates', '/updates'), services.updates);
 }

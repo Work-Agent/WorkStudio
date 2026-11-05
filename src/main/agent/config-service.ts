@@ -6,7 +6,9 @@
  *   - 读：脱敏视图（apiKey 永不回传渲染层）；
  *   - 写：JSON 合并（未知字段往返保真）+ pi 真实加载校验（ModelRuntime.create）+
  *     失败回滚；写侧不持有 runtime（换代由 AgentHost 负责）；
- *   - 凭证不在 models.json：apiKey 独立走 agent.configure（auth.json / 运行时覆盖）。
+ *   - 凭证不在 models.json：apiKey 独立走 agent.configure（auth.json / 运行时覆盖）；
+ *   - 新模型默认补 compat.supportsDeveloperRole: false（自定义端点普遍只接受 system
+ *     指令角色）；已有模型只合并提交字段，不回写、不补默认值。
  */
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -93,8 +95,16 @@ export class ModelConfigStore {
     });
     provider.models ??= [];
     const i = provider.models.findIndex((m) => m.id === model.id);
-    if (i >= 0) provider.models[i] = { ...provider.models[i]!, ...model };
-    else provider.models.push(model);
+    if (i >= 0) {
+      // 已有模型：只合并本次提交的字段，不补默认值（存量配置保持原样）。
+      provider.models[i] = { ...provider.models[i]!, ...model };
+    } else {
+      // 新模型：默认声明不支持 developer 指令角色（自定义端点普遍只接受 system）。
+      provider.models.push({
+        ...model,
+        compat: { supportsDeveloperRole: false, ...model.compat },
+      });
+    }
     await this.writeAndSwap(parsed, providerId, model.id);
   }
 

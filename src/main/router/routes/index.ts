@@ -6,3 +6,4 @@ export { routesPiConf } from './piconf';
 export { routesPlugins } from './plugins';
 export { routesSettings } from './settings';
 export { routesSites } from './sites';
+export { routesUpdates } from './updates';
