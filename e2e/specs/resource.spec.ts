@@ -55,6 +55,23 @@ test('没有查看器的资源不打开视图，只给通知条', async ({
   ).toHaveLength(0);
 });
 
+test('侧栏查找按文件名匹配工作区资源', async ({ shell }) => {
+  const workspace = mkdtempSync(join(tmpdir(), 'wa-find-'));
+  writeFileSync(join(workspace, 'search-target.md'), '# find\n', 'utf-8');
+  await switchWorkspace(shell, workspace);
+
+  const input = shell.getByTestId('sidebar-find-input');
+  if (!(await input.isVisible().catch(() => false))) {
+    await shell.getByTestId('sidebar-nav-find').click();
+  }
+  await input.fill('search-target');
+  await expect(
+    shell
+      .getByTestId('sidebar-find-item')
+      .filter({ hasText: 'search-target.md' }),
+  ).toBeVisible();
+});
+
 test('重复打开同一资源复用同一视图', async ({ shell }) => {
   const workspace = mkdtempSync(join(tmpdir(), 'wa-resource-reuse-'));
   const file = join(workspace, 'reuse.md');

@@ -1,6 +1,7 @@
 /**
  * 壳层命令适配：组件保留语义命令名，统一映射到 appBridge 路径。
  */
+import { fileRef } from '../../shared/ura';
 import type { CommandResponse } from '../../shared/types';
 
 const appBridge = typeof window !== 'undefined' ? window.appBridge : undefined;
@@ -170,7 +171,10 @@ async function appCommand<T>(
     case 'ura.find':
       return call(`/workspaces/${workspaceId()}/resources/find`, {
         pattern: String(input['pattern'] ?? ''),
-        ...(input['limit'] ? { options: { limit: input['limit'] } } : {}),
+        options: {
+          ...(currentWsPath ? { scope: fileRef(currentWsPath) } : {}),
+          ...(input['limit'] ? { limit: input['limit'] } : {}),
+        },
       });
     default:
       return {
