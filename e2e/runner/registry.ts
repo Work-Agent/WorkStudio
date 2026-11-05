@@ -1,5 +1,6 @@
 import type { CaseTag, E2ECase } from './contract.ts';
 import browserOpen from '../cases/browser-open.ts';
+import browserLinks from '../cases/browser-links.ts';
 import dialogOverlay from '../cases/dialog-overlay.ts';
 import navigation from '../cases/navigation.ts';
 import pathDisplay from '../cases/path-display.ts';
@@ -13,6 +14,7 @@ import viewLifecycle from '../cases/view-lifecycle.ts';
 export const cases: readonly E2ECase[] = [
   navigation,
   browserOpen,
+  browserLinks,
   siteOpen,
   dialogOverlay,
   settingsOpen,

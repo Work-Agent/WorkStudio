@@ -270,7 +270,10 @@ export class ViewsCapability implements Capability {
         },
       },
     );
-    if (wcId !== null) this.viewRegistry.bind(record.id, String(wcId));
+    if (wcId !== null) {
+      this.viewRegistry.bind(record.id, String(wcId));
+      this.installNavigationPolicy(record);
+    }
     this.viewRegistry.attach(record.id, (frame) =>
       this.electron.views.send(record.id, FRAME_CHANNEL, frame),
     );
@@ -282,6 +285,48 @@ export class ViewsCapability implements Capability {
       this.electron.views.activate(record.id);
     }
     return record;
+  }
+
+  /**
+   * 内容视图导航策略。
+   *
+   * 网页标签自己跳转（只限 http/https）；页面里的新窗口落到浏览器面的临时标签。
+   * 其余视图（资源页 / 插件页 / 设置页 / 系统视图）不允许自身导航，外链交给
+   * 系统浏览器——工作台壳层同样如此，策略只在壳窗自己的 webContents 上生效。
+   */
+  private installNavigationPolicy(record: ViewRecord): void {
+    const wc = this.electron.views.webContents(record.id);
+    if (!wc) return;
+    const isHttp = (url: string): boolean => /^https?:\/\//i.test(url);
+    wc.on('will-attach-webview', (event) => event.preventDefault());
+    if (record.type === 'web') {
+      wc.on('will-navigate', (details) => {
+        if (!isHttp(details.url)) details.preventDefault();
+      });
+      wc.setWindowOpenHandler(({ url }) => {
+        if (isHttp(url)) this.openBrowserTab(url);
+        return { action: 'deny' };
+      });
+      return;
+    }
+    wc.on('will-navigate', (event) => event.preventDefault());
+    wc.setWindowOpenHandler(({ url }) => {
+      this.electron.native.openExternal(url);
+      return { action: 'deny' };
+    });
+  }
+
+  /** 网页里的新窗口 → 浏览器面临时标签；同一 URL 复用已有标签。 */
+  private openBrowserTab(url: string): void {
+    const existing = this.viewRegistry
+      .list()
+      .find((view) => view.type === 'web' && view.url === url);
+    if (existing) {
+      this.viewRegistry.setActive(existing.id);
+      this.electron.views.activate(existing.id);
+      return;
+    }
+    this.openBrowser(url);
   }
 
   private async open(

@@ -388,7 +388,6 @@ export class App {
 
   attachShortcuts(wc: unknown): void {
     const contents = wc as import('electron').WebContents;
-    this.runtime.attach(contents);
     const views = this.capabilities.find(
       (item): item is ViewsCapability => item.id === 'views',
     );
