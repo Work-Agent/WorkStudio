@@ -34,6 +34,7 @@ import type { BrowserAutomationContract } from '../harness/browser-contract';
 import type { Ura } from '../ura/facade';
 import { AgentSession as WorkAgentSession } from './session';
 import type { SkillsManager } from '../harness/skills';
+import { seedBuiltinSkills } from '../harness/skill-seed';
 import type { PluginHost } from '../plugins/host';
 import { DialogHost, makeUiContext } from './ui-context';
 import { EventBridge } from './event-bridge';
@@ -113,6 +114,7 @@ export class AgentHost {
     process.env['PI_SKIP_VERSION_CHECK'] = '1';
     const agentDir = getAgentDir();
     mkdirSync(agentDir, { recursive: true });
+    seedBuiltinSkills(agentDir);
     const host = new AgentHost(deps, agentDir);
     host.workspacePath = workspacePath;
     const wsId = registerWorkspace(workspacePath);

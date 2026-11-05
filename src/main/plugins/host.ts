@@ -11,7 +11,11 @@ import { isWithin } from '../paths';
 import * as uraSdk from '../ura/sdk';
 import { listRegistry } from '../service/lists/registry';
 import type { PluginInfo } from '../../shared/types';
-import { scanPluginPackages, type PluginPackage } from './packages';
+import {
+  scanPluginPackages,
+  type OfficeGenKind,
+  type PluginPackage,
+} from './packages';
 
 export interface BuiltinLoader {
   id: string;
@@ -192,7 +196,7 @@ export class PluginHost {
       ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),
       builtin: true,
       extensionCount: pkg.page ? 1 : 0,
-      skillCount: 0,
+      skillCount: pkg.skills.length,
       toolCount: 0,
       hasHome: false,
       hasConfig: !!pkg.settings,
@@ -202,6 +206,25 @@ export class PluginHost {
 
   pluginNameOf(source: string): string {
     return this.packages.get(source)?.label ?? source;
+  }
+
+  /** 已装插件的技能目录（pi additionalSkillPaths 数据源；会话创建期生效）。 */
+  skillPaths(): string[] {
+    const paths: string[] = [];
+    for (const pkg of this.packages.values()) {
+      for (const skill of pkg.skills) paths.push(skill.dir);
+    }
+    return paths;
+  }
+
+  /** 某格式的生成脚本（按插件装入顺序取第一个声明；未声明返回 null，由调用方兜底）。 */
+  genScriptOf(kind: OfficeGenKind): string | null {
+    for (const pkg of this.packages.values()) {
+      for (const skill of pkg.skills) {
+        if (skill.gen?.kind === kind) return skill.gen.script;
+      }
+    }
+    return null;
   }
 
   loadDiagnostics(): readonly string[] {

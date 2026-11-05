@@ -6,6 +6,30 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join } from 'node:path';
 
+/** office_gen 工具支持的生成格式。 */
+export type OfficeGenKind = 'pptx' | 'docx' | 'xlsx';
+export const OFFICE_GEN_KINDS: readonly OfficeGenKind[] = [
+  'pptx',
+  'docx',
+  'xlsx',
+];
+
+/** 清单里的技能声明（相对插件根；解析后进 PluginPackage.skills）。 */
+export interface PluginSkillDecl {
+  name?: string;
+  /** 技能目录（含 SKILL.md），相对插件根。 */
+  dir?: string;
+  /** 声明此技能提供某格式的生成脚本（相对插件根）——office_gen 的执行入口。 */
+  gen?: { kind?: string; script?: string };
+}
+
+/** 解析后的插件技能（路径均为绝对路径，且经过存在性校验）。 */
+export interface PluginSkill {
+  name: string;
+  dir: string;
+  gen?: { kind: OfficeGenKind; script: string };
+}
+
 export interface WorkStudioManifest {
   id?: string;
   label?: string;
@@ -16,6 +40,8 @@ export interface WorkStudioManifest {
   /** 设置页（可选）。 */
   settings?: string;
   webAccessible?: string[];
+  /** 技能声明（可选；装载进 pi 会话，供助手使用）。 */
+  skills?: PluginSkillDecl[];
 }
 
 export interface PackageJson {
@@ -46,6 +72,8 @@ export interface PluginPackage {
   iconUrl?: string;
   /** 注册入口（绝对路径）。 */
   uraEntry?: string;
+  /** 技能（绝对路径；为空表示插件不带技能）。 */
+  skills: PluginSkill[];
 }
 
 export async function scanPluginPackages(
@@ -128,7 +156,32 @@ async function readPackage(
     page,
     settings: settingsPage,
     uraEntry: await resolveFile(root, exportPath(pkg.exports, './ura')),
+    skills: await resolveSkills(root, workstudio.skills),
   };
+}
+
+/** 解析技能声明：目录与 SKILL.md 必须存在；gen 脚本必须存在且 kind 合法，否则整条跳过。 */
+async function resolveSkills(
+  root: string,
+  decls: PluginSkillDecl[] | undefined,
+): Promise<PluginSkill[]> {
+  const resolved: PluginSkill[] = [];
+  for (const decl of decls ?? []) {
+    if (!decl.name || !decl.dir) continue;
+    const dir = join(root, decl.dir);
+    const entry = await stat(join(dir, 'SKILL.md')).catch(() => null);
+    if (!entry?.isFile()) continue;
+    const skill: PluginSkill = { name: decl.name, dir };
+    if (decl.gen?.kind && decl.gen.script) {
+      const kind = decl.gen.kind as OfficeGenKind;
+      if (OFFICE_GEN_KINDS.includes(kind)) {
+        const script = await resolveFile(root, decl.gen.script);
+        if (script) skill.gen = { kind, script };
+      }
+    }
+    resolved.push(skill);
+  }
+  return resolved;
 }
 
 const ICON_MIME: Record<string, string> = {

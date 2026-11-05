@@ -158,9 +158,20 @@ function Assistant() {
 
   useEffect(() => {
     void bridge
-      ?.cmd<Array<{ name: string; description: string }>>('skills.list')
+      ?.cmd<Array<{ name: string; description: string; builtin?: boolean }>>(
+        'skills.list',
+      )
       .then((response) => {
-        if (response.ok) setSkills(response.data);
+        if (!response.ok) return;
+        setSkills(response.data);
+        // 内置技能默认勾选；其余技能由用户按需勾选。
+        setSelectedSkills((current) =>
+          current.length > 0
+            ? current
+            : response.data
+                .filter((skill) => skill.builtin)
+                .map((skill) => skill.name),
+        );
       });
   }, [activePath]);
 
