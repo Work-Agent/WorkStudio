@@ -23,6 +23,7 @@ import {
 } from '../../shared/plugin-registry';
 import { createLogger } from '../log';
 import { ensureProxy } from '../net/proxy';
+import { githubHeaders } from './github';
 
 const log = createLogger('plugin-sources');
 const MAX_ZIP_BYTES = 64 * 1024 * 1024;
@@ -364,7 +365,10 @@ async function fetchBytes(
 
 /** zip 远程下载：统一走 fetchBytes（代理 / 重试 / 超时 / 上限）。 */
 async function download(source: string): Promise<Uint8Array> {
-  return fetchBytes(source, { 'User-Agent': 'work-studio' });
+  return fetchBytes(source, {
+    'User-Agent': 'work-studio',
+    ...githubHeaders(source),
+  });
 }
 
 async function readLocalZip(path: string): Promise<Uint8Array> {

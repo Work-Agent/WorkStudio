@@ -6,6 +6,7 @@
 
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { createLogger } from '../log';
+import { githubHeaders } from './github';
 
 const log = createLogger('plugin-catalog');
 
@@ -69,7 +70,11 @@ export class PluginCatalogService {
     }
     try {
       const response = await fetch(target, {
-        headers: { 'User-Agent': 'work-studio', Accept: 'text/markdown' },
+        headers: {
+          'User-Agent': 'work-studio',
+          Accept: 'text/markdown',
+          ...githubHeaders(target),
+        },
         signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
