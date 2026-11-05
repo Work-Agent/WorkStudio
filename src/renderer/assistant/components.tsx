@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { MoveDiagonal2 } from 'lucide-react';
 import type { ParsedMessage, ResizeDirection } from '../../shared/types';
 import { bridge } from './bridge';
+import { argsPreview, resultBody } from './format';
+import { renderMarkdown } from './markdown';
 
 /**
  * 停靠态左边缘拉伸把手。
@@ -152,9 +154,11 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
       {message.blocks.map((block, i) => {
         if (block.type === 'text') {
           return (
-            <div key={i} className="whitespace-pre-wrap leading-relaxed">
-              {block.text}
-            </div>
+            <div
+              key={i}
+              className="md-chat"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+            />
           );
         }
         if (block.type === 'thinking') {
@@ -164,22 +168,44 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
               className="border-l-2 border-zinc-300 dark:border-zinc-700 pl-2.5 text-zinc-500 dark:text-zinc-400"
             >
               <summary className="cursor-pointer text-[11px]">思考过程</summary>
-              <div className="whitespace-pre-wrap mt-1">{block.text}</div>
+              <div
+                className="md-chat mt-1 text-[11.5px]"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+              />
             </details>
           );
         }
+        // 工具调用：默认折叠，摘要行 = 工具名 + 参数单行预览，点击展开看详情。
+        const preview = argsPreview(block.args);
         return (
-          <div
+          <details
             key={i}
-            className="rounded border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-zinc-600 dark:text-zinc-300"
+            data-tool={block.toolName}
+            className="rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 group"
           >
-            <span className="font-medium">{block.toolName}</span>
-            {block.result && (
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap opacity-80">
-                {block.result.slice(0, 1200)}
-              </pre>
-            )}
-          </div>
+            <summary className="cursor-pointer select-none px-2 py-1 flex items-baseline gap-1.5 min-w-0 text-[11.5px] hover:bg-zinc-100 dark:hover:bg-zinc-800/50 rounded">
+              <span className="font-medium shrink-0">{block.toolName}</span>
+              {preview && (
+                <span className="truncate text-zinc-400 dark:text-zinc-500 min-w-0">
+                  {preview}
+                </span>
+              )}
+            </summary>
+            <div className="px-2 pb-1.5 space-y-1 min-w-0">
+              {preview && (
+                <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-70">
+                  {typeof block.args === 'string'
+                    ? block.args
+                    : JSON.stringify(block.args, null, 2)}
+                </pre>
+              )}
+              {resultBody(block.result) && (
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-80">
+                  {block.result}
+                </pre>
+              )}
+            </div>
+          </details>
         );
       })}
     </div>
