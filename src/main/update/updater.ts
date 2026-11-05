@@ -283,8 +283,12 @@ function assetSuffix(): string | null {
       return `WorkStudio-mac-${process.arch}.dmg`;
     case 'win32':
       return `WorkStudio-win-${process.arch}.exe`;
-    case 'linux':
-      return `WorkStudio-linux-${process.arch}.AppImage`;
+    case 'linux': {
+      // electron-builder 的 ${arch} 在 Linux 上渲染为 x86_64（AppImage），
+      // 与 Node 的 process.arch（x64）不同，需映射。
+      const arch = process.arch === 'x64' ? 'x86_64' : process.arch;
+      return `WorkStudio-linux-${arch}.AppImage`;
+    }
     default:
       return null;
   }
