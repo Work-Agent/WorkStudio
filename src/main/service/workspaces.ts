@@ -30,6 +30,12 @@ export class WorkspacesService {
     return this.currentView;
   }
 
+  refresh(): WorkspaceMeta[] {
+    this.listView = this.store.list();
+    this.emitChange();
+    return this.listView;
+  }
+
   /** 默认工作区回落提示（用户目录不可写时非空）。 */
   get notice(): string | null {
     return this.store.notice;

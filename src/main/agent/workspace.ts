@@ -73,6 +73,7 @@ export function registerWorkspace(workspacePath: string): string {
       readFileSync(metaFile, 'utf-8'),
     ) as Partial<WorkspaceMeta>;
     meta = {
+      ...existing,
       path: workspacePath,
       createdAt: existing.createdAt ?? now,
       lastOpenedAt: now,

@@ -1,6 +1,12 @@
 /** 工作区持久化：注册表 / 当前工作区 / 恢复 / 命名。 */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import type { WorkspaceMeta } from '../../shared/app';
 import {
   ensureDefaultWorkspace,
@@ -63,6 +69,7 @@ export class WorkspacesRepo implements WorkspacesStore {
   }
 
   register(path: string): WorkspaceMeta {
+    if (!isDirectory(path)) throw new Error('工作区目录不存在或不可访问');
     const id = registerWorkspace(path);
     const meta = this.metaOf(id);
     if (!meta) throw new Error(`workspace ${path} not registered`);
@@ -122,6 +129,7 @@ export class WorkspacesRepo implements WorkspacesStore {
       name: this.nameOf(id, meta.path),
       createdAt: meta.createdAt,
       lastOpenedAt: meta.lastOpenedAt,
+      exists: isDirectory(meta.path),
     };
   }
 
@@ -142,5 +150,13 @@ export class WorkspacesRepo implements WorkspacesStore {
       /* 无文件 */
     }
     return workspaceLabel(path);
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
   }
 }
