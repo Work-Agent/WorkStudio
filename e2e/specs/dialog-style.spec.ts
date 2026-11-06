@@ -96,3 +96,109 @@ test('弹窗加载样式，遮罩覆盖窗口，换肤和调整窗口后保持�
     );
   }
 });
+
+test('长选择弹窗可滚动到末项，标题和取消始终可见', async ({
+  shell,
+  electron,
+}, testInfo) => {
+  const original = await electron.app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const bounds = win.getBounds();
+    win.setSize(960, 600);
+    return bounds;
+  });
+  const overlay = await windowByUrl(electron.app, /overlay\.html/);
+  const title = '请选择一个条目';
+  try {
+    await shell.evaluate(
+      (title) =>
+        window.appBridge!.call('/dialogs/open', {
+          request: {
+            type: 'dialog',
+            id: 'long-selection',
+            dialogType: 'select',
+            title,
+            message: `较长的文件标识：${'a'.repeat(200)}`,
+            options: Array.from({ length: 30 }, (_, i) => `选项 ${i + 1}`),
+          },
+        }),
+      title,
+    );
+    const cancel = overlay.getByRole('button', { name: '取消', exact: true });
+    await expect(overlay.getByText(title, { exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(cancel).toBeInViewport({ ratio: 1 });
+    const last = overlay.getByRole('button', { name: '选项 30', exact: true });
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport({ ratio: 1 });
+    await expect(cancel).toBeInViewport({ ratio: 1 });
+    await expect(overlay.getByText(title, { exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    expect(
+      await overlay
+        .getByRole('dialog')
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await overlay.getByRole('dialog').screenshot({
+      path: testInfo.outputPath('long-selection.png'),
+    });
+    await last.click();
+    await expect
+      .poll(() =>
+        shell.evaluate(async () => {
+          const dialogs =
+            await window.appBridge!.peek<
+              Array<{ id: string; response?: { value?: string } }>
+            >('/dialogs');
+          return dialogs?.find((d) => d.id === 'long-selection')?.response
+            ?.value;
+        }),
+      )
+      .toBe('选项 30');
+  } finally {
+    const cancel = overlay.getByRole('button', { name: '取消', exact: true });
+    if (await cancel.isVisible()) await cancel.click();
+    await electron.app.evaluate(
+      ({ BrowserWindow }, bounds) =>
+        BrowserWindow.getAllWindows()[0].setBounds(bounds),
+      original,
+    );
+  }
+});
+
+test('浅色皮肤下的信息通知使用深色文字', async ({ shell }, testInfo) => {
+  const appearance = await shell.evaluate(() =>
+    window.appBridge!.peek('/appearance'),
+  );
+  try {
+    for (const [skin, foreground] of [
+      ['porcelain', 'rgb(40, 45, 55)'],
+      ['mist', 'rgb(37, 53, 74)'],
+    ]) {
+      await shell.evaluate(
+        (skin) =>
+          window.appBridge!.call('/appearance/set', { mode: 'fixed', skin }),
+        skin,
+      );
+      const message = `${skin} 通知文字检查`;
+      await shell.evaluate(
+        (message) =>
+          window.appBridge!.call('/notify', { level: 'info', message }),
+        message,
+      );
+      const toast = shell.getByText(message, { exact: true });
+      await expect(toast).toHaveCSS('color', foreground);
+      await toast.screenshot({
+        path: testInfo.outputPath(`toast-${skin}.png`),
+      });
+      await shell.evaluate(() => window.appBridge!.call('/notices/dismiss'));
+    }
+  } finally {
+    await shell.evaluate(
+      (settings) => window.appBridge!.call('/appearance/set', settings),
+      appearance,
+    );
+  }
+});

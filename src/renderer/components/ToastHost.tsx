@@ -15,7 +15,7 @@ export function ToastHost() {
               ? 'bg-red-500/95 text-white'
               : toast.level === 'warning'
                 ? 'bg-amber-500/95 text-white'
-                : 'bg-[var(--biz-surface)] text-white bg-[var(--biz-surface)]'
+                : 'bg-[var(--biz-surface)] text-[var(--biz-text)]'
           }`}
           onClick={() => dismiss(toast.id)}
           title={toast.source}

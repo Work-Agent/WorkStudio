@@ -439,15 +439,23 @@
         if (rename) {
           e.stopPropagation();
           const path = rename.dataset.rename;
-          const current =
+          const currentName =
             state.sessions.find((s) => s.path === path)?.name ?? '';
-          const next = window.prompt('重命名会话', current);
-          if (next == null || next.trim() === '' || next === current) return;
           try {
+            const response = await call('/dialogs/ask', {
+              dialogType: 'input',
+              title: '重命名会话',
+              prefill: currentName,
+              placeholder: '请输入会话名称',
+            });
+            if (response.cancelled || typeof response.value !== 'string')
+              return;
+            const next = response.value.trim();
+            if (!next || next === currentName) return;
             const current = await workspace();
             await call(
               `/workspaces/${current.id}/sessions/${sessionPath(path)}/rename`,
-              { name: next.trim() },
+              { name: next },
             );
             toast('已重命名');
           } catch (err) {
@@ -459,9 +467,14 @@
         if (del) {
           e.stopPropagation();
           const path = del.dataset.delete;
-          if (!window.confirm('删除该会话？会话文件将被移除，不可恢复。'))
-            return;
           try {
+            const name = state.sessions.find((s) => s.path === path)?.name;
+            const response = await call('/dialogs/ask', {
+              dialogType: 'confirm',
+              title: '删除会话？',
+              message: `删除“${name || '未命名会话'}”？会话文件将被移除，不可恢复。`,
+            });
+            if (response.cancelled || response.confirmed !== true) return;
             const current = await workspace();
             await call(
               `/workspaces/${current.id}/sessions/${sessionPath(path)}/delete`,

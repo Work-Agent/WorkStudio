@@ -957,12 +957,12 @@
             render();
             toast('已保存供应商 ' + pid);
           } else if (action === 'delete-provider') {
-            if (
-              !window.confirm(
-                '删除自定义供应商 ' + pid + '？models.json 中的条目将被移除。',
-              )
-            )
-              return;
+            const response = await call('/dialogs/ask', {
+              dialogType: 'confirm',
+              title: '删除自定义供应商？',
+              message: `删除供应商“${pid}”？该供应商的自定义配置和模型将被移除。`,
+            });
+            if (response.cancelled || response.confirmed !== true) return;
             await call('/piconf/models/delete-provider', { providerId: pid });
             await refresh();
             clearDrafts((key) => key.startsWith(pid + ':'));
@@ -1025,12 +1025,12 @@
             await refresh();
             toast('已保存模型 ' + model.id);
           } else if (action === 'delete-model') {
-            if (
-              !window.confirm(
-                '从 models.json 移除模型 ' + btn.dataset.mid + '？',
-              )
-            )
-              return;
+            const response = await call('/dialogs/ask', {
+              dialogType: 'confirm',
+              title: '移除自定义模型？',
+              message: `从供应商“${pid}”中移除模型“${btn.dataset.mid}”？`,
+            });
+            if (response.cancelled || response.confirmed !== true) return;
             await call('/piconf/models/delete-model', {
               providerId: pid,
               modelId: btn.dataset.mid,

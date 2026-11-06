@@ -68,15 +68,15 @@ function DialogCard({ dialog, onRespond }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="w-[min(560px,calc(100vw-48px))] rounded-xl border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-2xl"
+        className="flex max-h-[calc(100dvh-48px)] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-2xl"
       >
         <div
           id="dialog-title"
-          className="px-4 py-3 border-b border-[var(--biz-border)] text-[13px] font-medium text-[var(--biz-text)]"
+          className="shrink-0 px-4 py-3 border-b border-[var(--biz-border)] text-[13px] font-medium text-[var(--biz-text)] [overflow-wrap:anywhere]"
         >
           {dialog.title}
         </div>
-        <div className="px-4 py-3 text-[12px] text-[var(--biz-text)] space-y-2">
+        <div className="min-h-0 overflow-y-auto px-4 py-3 text-[12px] text-[var(--biz-text)] space-y-2 [overflow-wrap:anywhere]">
           {dialog.message && (
             <div className="whitespace-pre-wrap">{dialog.message}</div>
           )}
@@ -116,7 +116,7 @@ function DialogCard({ dialog, onRespond }: Props) {
             />
           )}
         </div>
-        <div className="px-4 py-3 border-t border-[var(--biz-border)] flex justify-end gap-2">
+        <div className="shrink-0 px-4 py-3 border-t border-[var(--biz-border)] flex justify-end gap-2">
           <button
             className="px-3 py-1 rounded-md text-[12px] text-[var(--biz-text-muted)] text-[var(--biz-text)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
             onClick={() => onRespond({ cancelled: true })}
@@ -184,7 +184,11 @@ function Overlay() {
 
   const current = dialogs[0];
   return current ? (
-    <DialogCard dialog={current} onRespond={(r) => respond(current, r)} />
+    <DialogCard
+      key={current.id}
+      dialog={current}
+      onRespond={(r) => respond(current, r)}
+    />
   ) : null;
 }
 
