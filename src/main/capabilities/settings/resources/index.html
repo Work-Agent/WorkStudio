@@ -1,269 +1,165 @@
 <!doctype html>
-<!--
-  资源索引（设置能力页）。
-  数据面：window.appBridge（resources/tree、resources/pages/open）。
--->
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>资源索引</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>资源诊断</title>
     <style>
-      :root {
-        color-scheme: light;
-        --bg: #f4f4f5;
-        --panel: #ffffff;
-        --fg: #27272a;
-        --muted: #71717a;
-        --border: #e4e4e7;
-        --accent: #4f6bed;
-        --accent-hover: #3d56e0;
-        --input-bg: #ffffff;
-        --soft: #fafafa;
-      }
-      html[data-theme='dark'] {
-        color-scheme: dark;
-        --bg: #1a1c1d;
-        --panel: #202124;
-        --fg: #e4e4e7;
-        --muted: #8b8d8e;
-        --border: #2a2d2e;
-        --accent: #6c86f0;
-        --accent-hover: #5a76e8;
-        --input-bg: #1c1e1f;
-        --soft: #1c1e1f;
-      }
       * {
         box-sizing: border-box;
       }
-      html,
       body {
         margin: 0;
-        padding: 0;
-        height: 100%;
-      }
-      body {
         background: var(--bg);
         color: var(--fg);
-        font-family:
-          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica,
-          Arial, sans-serif;
-        font-size: 13px;
-        overflow: auto;
+        font:
+          13px/1.65 -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          sans-serif;
       }
       .wrap {
-        max-width: 860px;
-        margin: 0 auto;
-        padding: 24px 24px 80px;
+        max-width: 780px;
+        margin: auto;
+        padding: 28px;
       }
       header {
         display: flex;
-        align-items: flex-start;
-        gap: 12px;
-      }
-      header .grow {
-        flex: 1;
+        align-items: start;
+        gap: 18px;
+        justify-content: space-between;
       }
       h1 {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
+        font-size: 24px;
+        margin: 0 0 7px;
       }
-      header p {
-        margin: 6px 0 0;
+      h2 {
+        font-size: 15px;
+        margin: 26px 0 10px;
+      }
+      p {
+        margin: 5px 0;
         color: var(--muted);
-        font-size: 12px;
-        line-height: 1.7;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--fg);
+        padding: 6px 10px;
       }
       .row {
         display: flex;
-        gap: 8px;
+        gap: 14px;
         align-items: center;
-        margin-top: 14px;
-      }
-      input[type='text'] {
-        flex: 1;
-        background: var(--input-bg);
-        color: var(--fg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font-size: 12.5px;
-        font-family: inherit;
-      }
-      input:focus {
-        outline: none;
-        border-color: var(--accent);
-      }
-      button {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        color: var(--fg);
-        border-radius: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      button:hover {
-        border-color: var(--muted);
-      }
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-      }
-      button.primary:hover {
-        background: var(--accent-hover);
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-      .card {
-        margin-top: 14px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--panel);
-        overflow: hidden;
-      }
-      .card h3 {
-        margin: 0;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--muted);
-        padding: 10px 14px;
-        background: var(--soft);
-        border-bottom: 1px solid var(--border);
-        display: flex;
         justify-content: space-between;
-      }
-      .item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 9px 14px;
+        padding: 14px 0;
         border-bottom: 1px solid var(--border);
-        cursor: pointer;
       }
-      .item:last-child {
-        border-bottom: none;
-      }
-      .item:hover {
-        background: var(--soft);
-      }
-      .item .body {
+      .row div {
         flex: 1;
         min-width: 0;
       }
-      .item .title {
-        font-size: 12.5px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      .row p {
+        font-size: 12px;
+        overflow-wrap: anywhere;
       }
-      .item .title span {
-        margin-left: 8px;
-        font-size: 10px;
-        padding: 1px 6px;
-        border-radius: 999px;
-        background: var(--soft);
-        border: 1px solid var(--border);
-        color: var(--muted);
-      }
-      .item .meta {
-        margin-top: 2px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      .badge {
         font-size: 11px;
         color: var(--muted);
-        overflow: hidden;
-        text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .item .ext {
-        flex: none;
-        font-size: 10px;
-        text-transform: uppercase;
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th,
+      td {
+        padding: 10px 7px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        font-weight: 400;
+        overflow-wrap: anywhere;
+      }
+      th {
         color: var(--muted);
       }
-      .empty {
-        padding: 22px 12px;
-        text-align: center;
+      .note {
+        margin-top: 24px;
+        padding: 13px;
+        border-left: 2px solid var(--accent);
+        background: var(--panel);
         color: var(--muted);
         font-size: 12px;
       }
-      .toast {
-        position: fixed;
-        left: 50%;
-        bottom: 22px;
-        transform: translateX(-50%) translateY(8px);
-        background: rgba(24, 24, 27, 0.94);
-        color: #fafafa;
-        padding: 8px 14px;
-        border-radius: 8px;
-        font-size: 12px;
-        opacity: 0;
-        pointer-events: none;
-        transition:
-          opacity 0.16s ease,
-          transform 0.16s ease;
-        max-width: 80vw;
+      .error {
+        color: var(--danger);
+        white-space: pre-wrap;
       }
-      .toast.show {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
+      details {
+        margin-top: 24px;
       }
-      .toast.error {
-        background: #991b1b;
+      summary {
+        cursor: pointer;
+      }
+      #scope {
+        padding: 14px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        margin-top: 22px;
+      }
+      @media (max-width: 520px) {
+        .wrap {
+          padding: 22px 16px;
+        }
+        header {
+          flex-wrap: wrap;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="wrap">
+    <main class="wrap">
       <header>
-        <div class="grow">
-          <h1>资源索引</h1>
-          <p>
-            资源网关投影（本地文档 / 网页快照 /
-            业务数据）。目录变化经文件监视自动写穿；
-            需要时可全量重扫。资源地图（AGENTS.md）随每轮对话注入助手上下文。
-          </p>
+        <div>
+          <h1>资源诊断</h1>
+          <p>检查当前工作区的资料来源、格式支持和加载错误。</p>
         </div>
-        <button class="primary" id="sync">重新索引</button>
+        <button id="refresh">刷新状态</button>
       </header>
-
-      <div class="row">
-        <input type="text" id="q" placeholder="过滤资源…" />
+      <div id="scope"></div>
+      <p id="error" class="error" role="alert"></p>
+      <h2>资料来源</h2>
+      <div id="sources"></div>
+      <h2>格式支持</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>处理能力</th>
+            <th>可识别格式</th>
+            <th>归属</th>
+          </tr>
+        </thead>
+        <tbody id="formats"></tbody>
+      </table>
+      <div class="note">
+        日常查找和打开资料请使用左侧列表。这里与侧栏使用同一份来源状态；刷新不会重建或修改资料。
       </div>
-
-      <div id="groups"></div>
-    </div>
-    <div class="toast" id="toast"></div>
-
+      <details>
+        <summary>高级注册信息与绑定</summary>
+        <div id="registry"></div>
+        <button id="bindings" style="margin-top: 16px">打开高级绑定设置</button>
+      </details>
+    </main>
     <script>
-      const SOURCE_LABEL = {
-        local: '本地文档',
-        web: '网站资料',
-        data: '业务数据',
-      };
-      const state = { documents: [], groups: [], q: '', syncing: false };
-      const bridge = window.appBridge;
-      async function call(path, input) {
-        const result = await bridge.call(path, input);
-        if (!result.ok) throw new Error(result.error.message);
-        return result.data;
-      }
-      async function workspace() {
-        const current = await bridge.peek('/workspaces/current');
-        if (!current) throw new Error('workspace is not ready');
-        return current;
-      }
-      const shortPath = (value) => window.pathDisplay?.format(value) ?? value;
-      const fileRef = (path) =>
-        `file://${path.startsWith('/') ? path : `/${path}`}`;
-      const $ = (id) => document.getElementById(id);
-      const esc = (s) =>
-        String(s ?? '').replace(
+      const $ = (id) => document.getElementById(id),
+        bridge = window.appBridge;
+      const esc = (v) =>
+        String(v ?? '').replace(
           /[&<>"']/g,
           (c) =>
             ({
@@ -274,165 +170,95 @@
               "'": '&#39;',
             })[c],
         );
-
-      function render() {
-        const q = state.q.trim().toLowerCase();
-        const bySource = new Map();
-        for (const doc of state.documents) {
-          if (
-            q &&
-            !(
-              (doc.title || '').toLowerCase().includes(q) ||
-              (doc.path || '').toLowerCase().includes(q)
-            )
-          )
-            continue;
-          const list = bySource.get(doc.source) ?? [];
-          list.push(doc);
-          bySource.set(doc.source, list);
-        }
-        if (bySource.size === 0) {
-          $('groups').innerHTML =
-            '<div class="card"><div class="empty">' +
-            (state.documents.length === 0
-              ? '当前工作区没有索引到资源。把文件放进工作区目录后会自动出现。'
-              : '没有匹配的资源。') +
-            '</div></div>';
-          return;
-        }
-        $('groups').innerHTML = [...bySource.entries()]
-          .map(([source, docs]) => {
-            const rows = docs
-              .slice(0, 200)
-              .map((d) => {
-                const group = d.group
-                  ? (state.groups.find(
-                      (g) => g.source === d.source && g.id === d.group.id,
-                    )?.title ?? d.group.id)
-                  : null;
-                return (
-                  '<div class="item" data-id="' +
-                  esc(d.id) +
-                  '">' +
-                  '<div class="body">' +
-                  '<div class="title">' +
-                  esc(d.title) +
-                  (group ? '<span>' + esc(group) + '</span>' : '') +
-                  '</div>' +
-                  '<div class="meta">' +
-                  esc(shortPath(d.path ?? d.id)) +
-                  ' · ' +
-                  esc(d.type) +
-                  ' · ' +
-                  (d.size ?? 0) +
-                  'B</div>' +
-                  '</div>' +
-                  '<span class="ext">' +
-                  esc(d.ext || '—') +
-                  '</span>' +
-                  '</div>'
-                );
-              })
-              .join('');
-            return (
-              '<div class="card"><h3><span>' +
-              esc(SOURCE_LABEL[source] ?? source) +
-              '</span><span>' +
-              docs.length +
-              ' 项</span></h3>' +
-              rows +
-              (docs.length > 200
-                ? '<div class="empty">仅显示前 200 项（共 ' +
-                  docs.length +
-                  '）。</div>'
-                : '') +
-              '</div>'
-            );
-          })
-          .join('');
+      async function call(path, input) {
+        const r = await bridge.call(path, input);
+        if (!r.ok) throw new Error(r.error.message);
+        return r.data;
       }
-
+      let currentId = null;
+      function renderSources(snapshot) {
+        const groups = (snapshot?.groups ?? []).filter(
+          (g) => g.section === 'resources',
+        );
+        $('sources').innerHTML = groups.length
+          ? groups
+              .map(
+                (g) =>
+                  '<div class="row"><div><strong>' +
+                  esc(g.label) +
+                  '</strong><p>' +
+                  g.count +
+                  ' 项资料' +
+                  (g.diagnostics?.length
+                    ? ' · ' + esc(g.diagnostics.join('；'))
+                    : '') +
+                  '</p></div><span class="badge">' +
+                  (g.state === 'ready'
+                    ? '可用'
+                    : g.state === 'error'
+                      ? '需要处理'
+                      : '加载中') +
+                  '</span></div>',
+              )
+              .join('')
+          : '<p>当前没有资料来源。</p>';
+      }
       async function refresh() {
         try {
-          const current = await workspace();
-          const tree = await call(`/workspaces/${current.id}/resources/tree`, {
-            ref: fileRef(current.path),
-          });
-          state.documents = tree
-            .filter((item) => item.type === 'file')
-            .map((item) => ({
-              id: item.ref,
-              title: item.name,
-              path: item.ref,
-              ext: item.ext,
-              size: item.size,
-              type: 'content',
-              source: 'local',
-            }));
-          state.groups = [];
+          $('refresh').disabled = true;
+          $('error').textContent = '';
+          const ws = await bridge.peek('/workspaces/current');
+          if (!ws) throw new Error('当前没有工作区');
+          currentId = ws.id;
+          $('scope').textContent =
+            '当前工作区 · ' +
+            ws.name +
+            ' · ' +
+            new Date().toLocaleTimeString() +
+            ' 更新';
+          const [snapshot, registry] = await Promise.all([
+            call('/workspaces/' + ws.id + '/lists/refresh'),
+            call('/piconf/ura/registry'),
+          ]);
+          renderSources(snapshot);
+          $('formats').innerHTML =
+            (registry.codecs ?? [])
+              .map(
+                (c) =>
+                  '<tr><td>' +
+                  esc(c.id) +
+                  '</td><td>' +
+                  esc((c.keys ?? []).map((k) => k.mime).join(' / ')) +
+                  '</td><td>' +
+                  esc(c.owner ?? '应用') +
+                  '</td></tr>',
+              )
+              .join('') ||
+            '<tr><td colspan="3">没有可用的格式处理能力，请检查插件加载状态。</td></tr>';
+          $('registry').textContent =
+            '传输实现 ' +
+            (registry.transports?.length ?? 0) +
+            ' · 页面出口 ' +
+            (registry.presenters?.length ?? 0) +
+            ' · 绑定 ' +
+            (registry.bindings?.length ?? 0);
+          void bridge.watch(['/workspaces/' + ws.id + '/lists']);
         } catch (e) {
-          toast(e && e.message ? e.message : String(e), true);
-        }
-        render();
-      }
-
-      $('sync').onclick = async () => {
-        state.syncing = true;
-        $('sync').disabled = true;
-        $('sync').textContent = '索引中…';
-        try {
-          await refresh();
-          toast('已刷新');
-        } catch (e) {
-          toast(e && e.message ? e.message : String(e), true);
+          $('error').textContent = e.message;
         } finally {
-          state.syncing = false;
-          $('sync').disabled = false;
-          $('sync').textContent = '重新索引';
+          $('refresh').disabled = false;
         }
-      };
-
-      $('q').addEventListener('input', (e) => {
-        state.q = e.target.value;
-        render();
-      });
-
-      $('groups').addEventListener('click', (e) => {
-        const item = e.target.closest('[data-id]');
-        if (!item) return;
-        void (async () => {
-          const current = await workspace();
-          return call(`/workspaces/${current.id}/resources/pages/open`, {
-            ref: item.dataset.id,
-          });
-        })().catch((err) =>
-          toast(err && err.message ? err.message : String(err), true),
-        );
-      });
-
-      let toastTimer = 0;
-      function toast(message, error) {
-        const el = $('toast');
-        el.textContent = message;
-        el.className = 'toast show' + (error ? ' error' : '');
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => (el.className = 'toast'), 2600);
       }
-
-      function applyTheme(theme) {
-        document.documentElement.dataset.theme =
-          theme === 'dark' ? 'dark' : 'light';
-      }
-
-      applyTheme(
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light',
-      );
-      window.extension.bus.on((msg) => {
-        if (msg && msg.type === 'theme') applyTheme(msg.theme);
+      $('refresh').onclick = () => void refresh();
+      $('bindings').onclick = () =>
+        void call('/settings/open', { pageId: 'preferences' });
+      bridge.on((f) => {
+        if (
+          f.type === 'state' &&
+          f.path === '/workspaces/' + currentId + '/lists'
+        )
+          renderSources(f.value);
       });
-      window.extension.bus.loaded();
       void refresh();
     </script>
   </body>

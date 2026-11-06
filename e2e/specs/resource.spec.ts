@@ -16,10 +16,9 @@ test('打开工作区内的 Markdown 资源页', async ({ shell, electron, dataD
     'resource-workspace',
   );
   // 走真实侧栏点击，而不是直接调用 commands/cmd。
-  await shell
-    .getByTestId('sidebar-group')
-    .filter({ hasText: '本地文档' })
-    .click();
+  await expect(
+    shell.getByTestId('resource-group').filter({ hasText: '本地文档' }),
+  ).toHaveAttribute('aria-expanded', 'true');
   await shell.getByText('note.md', { exact: true }).click();
 
   const page = await windowByUrl(electron.app, /markdown-viewer\/index\.html/);
@@ -40,13 +39,9 @@ test('没有查看器的资源不打开视图，只给通知条', async ({
   await expect(shell.getByTestId('workspace-select')).toContainText(
     'no-viewer-workspace',
   );
-  // 上一个用例可能停在二级列表：先回主列表再走分组。
-  const back = shell.getByTestId('sidebar-back');
-  if (await back.isVisible().catch(() => false)) await back.click();
-  await shell
-    .getByTestId('sidebar-group')
-    .filter({ hasText: '本地文档' })
-    .click();
+  await expect(
+    shell.getByTestId('resource-group').filter({ hasText: '本地文档' }),
+  ).toHaveAttribute('aria-expanded', 'true');
   await shell.getByText('report.docx', { exact: true }).click();
 
   await expect(shell.getByText(/无可用查看器：.*report\.docx/)).toBeVisible();
@@ -60,7 +55,7 @@ test('侧栏查找按文件名匹配工作区资源', async ({ shell }) => {
   writeFileSync(join(workspace, 'search-target.md'), '# find\n', 'utf-8');
   await switchWorkspace(shell, workspace);
 
-  const input = shell.getByTestId('sidebar-find-input');
+  const input = shell.getByTestId('sidebar-find-input').first();
   if (!(await input.isVisible().catch(() => false))) {
     await shell.getByTestId('sidebar-nav-find').click();
   }

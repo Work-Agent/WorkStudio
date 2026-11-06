@@ -18,6 +18,7 @@ import type { PageSessionInfo, PageSessions } from '../ura/page-sessions';
 export interface ResourcesDeps {
   ura: Ura;
   pages: PageSessions;
+  isDirty?: (pageId: string) => boolean;
 }
 
 export type OpenPageResult =
@@ -120,7 +121,12 @@ export class ResourcesService {
     return result;
   }
 
-  async reloadPage(pageId: string): Promise<PageSessionInfo> {
+  async reloadPage(pageId: string, external = false): Promise<PageSessionInfo> {
+    if (external && this.deps.isDirty?.(pageId)) {
+      const info = this.deps.pages.get(pageId);
+      this.emitPageReload(info);
+      return info;
+    }
     try {
       const info = await this.deps.pages.reload(pageId);
       this.pagesView.set(pageId, info);

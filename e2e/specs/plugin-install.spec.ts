@@ -45,15 +45,15 @@ test('安装并卸载本地插件来源', async ({ shell, electron, dataDir }) =
   await page.locator('#source').fill(pluginDir);
   await page.locator('#install').click();
   await expect(page.locator('#toast')).toContainText('已安装');
-  const displayLabel = 'fixtures/e2e-plugin';
-  const card = page.locator('.card').filter({ hasText: displayLabel });
-  await expect(card).toContainText('已安装');
+  const displayLabel = 'E2E Plugin';
+  const card = page.locator('#plugins .card').filter({ hasText: displayLabel });
+  await expect(card).toContainText('已加载');
   expect(await card.innerText()).not.toContain(pluginDir);
 
   await card.getByRole('button', { name: '卸载' }).click();
   await expect(page.locator('#toast')).toContainText('已移除');
   await expect(
-    page.locator('.card').filter({ hasText: displayLabel }),
+    page.locator('#plugins .card').filter({ hasText: displayLabel }),
   ).toHaveCount(0);
 
   // 卸载后原地重装：热激活必须重新执行注册入口（ESM 缓存已按激活轮次打破）。
@@ -61,6 +61,36 @@ test('安装并卸载本地插件来源', async ({ shell, electron, dataDir }) =
   await page.locator('#install').click();
   await expect(page.locator('#toast')).toContainText('已安装');
   await expect(
-    page.locator('.card').filter({ hasText: displayLabel }),
-  ).toContainText('已安装');
+    page.locator('#plugins .card').filter({ hasText: displayLabel }),
+  ).toContainText('已加载');
+  // 包文件安装成功与注册入口加载失败必须分开报告；修好入口后只重新加载。
+  writeFileSync(
+    join(pluginDir, 'ura.js'),
+    'throw new Error("E2E registration failure"); export {};\n',
+  );
+  await page.locator('#source').fill(pluginDir);
+  await page.locator('#install').click();
+  await expect
+    .poll(() => shell.evaluate(() => window.appBridge!.peek('/plugins/task')))
+    .toMatchObject({
+      status: 'failed',
+      phase: 'load',
+      installed: true,
+      loaded: false,
+    });
+  await expect(page.locator('#install-task')).toContainText('已安装 · 未加载');
+  await expect(
+    page.locator('#plugins .card').filter({ hasText: 'E2E Plugin' }),
+  ).toContainText('E2E registration failure');
+  writeFileSync(
+    join(pluginDir, 'ura.js'),
+    'globalThis.__workstudioSdk?.registerViewAction({ id: "e2e-plugin.action", run: () => undefined }); export {};\n',
+  );
+  await page
+    .locator('#install-task')
+    .getByRole('button', { name: '重新加载', exact: true })
+    .click();
+  await expect
+    .poll(() => shell.evaluate(() => window.appBridge!.peek('/plugins/task')))
+    .toMatchObject({ status: 'done', installed: true, loaded: true });
 });

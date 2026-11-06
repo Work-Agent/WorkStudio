@@ -196,52 +196,45 @@
   <body>
     <div class="wrap">
       <header>
-        <h1>WorkStudio 插件</h1>
-        <p>
-          插件是自带页面与资源适配器的 zip 包。可安装清单随应用版本发布；
-          本地路径直接加载、不复制。安装 / 卸载即时生效。
-        </p>
+        <h1>文档插件</h1>
+        <p>管理资料的阅读、编辑与生成能力。文档仍从左侧资料列表打开。</p>
       </header>
-
-      <div class="section-title">社区目录</div>
-      <div class="install-row">
-        <input
-          id="catalog-url"
-          type="text"
-          placeholder="PLUGINS.md 地址"
-          autocomplete="off"
-        />
-        <button id="catalog-refresh">刷新</button>
-      </div>
-      <div class="hint" id="catalog-meta"></div>
-      <div id="catalog-list"></div>
-
-      <div class="section-title">临时安装</div>
+      <div id="install-task" aria-label="插件安装任务" hidden></div>
+      <div class="section-title">已安装与加载</div>
+      <div id="plugins"></div>
+      <div class="section-title">安装插件</div>
+      <label for="source" class="hint">安装包链接、本地 zip 或插件目录</label>
       <div class="install-row">
         <input
           id="source"
           type="text"
-          placeholder="https://.../plugin.zip#sha256=... · ~/path/to/plugin · 可直接拖入 zip 或文件夹"
+          placeholder="安装包链接需包含 #sha256=…；也可拖入本地文件"
           autocomplete="off"
-        />
-        <button id="install" class="primary">安装</button>
+        /><button id="install" class="primary">安装</button>
       </div>
-      <div class="hint">
-        支持拖拽：把 zip
-        文件或插件文件夹拖到本页任意位置即可安装。临时安装只记本机安装状态，不写入随包清单。
-      </div>
-
-      <div class="section-title">可安装插件</div>
-      <div id="sources"></div>
-
-      <div class="section-title">已加载插件（当前启动）</div>
-      <div id="plugins"></div>
-
-      <p class="hint">
-        远程只接受带 sha256 的 zip；本地 zip 与远程 zip
-        同一套解压安装；本地目录不复制、不安装依赖（由插件作者维护）。安装到应用自持目录。
-        插件可执行主进程代码，安装前请确认来源。
-      </p>
+      <p class="hint">本地目录直接加载；远程安装包需要完整校验信息。</p>
+      <details id="discovery" style="margin-top: 24px">
+        <summary>发现插件</summary>
+        <label for="catalog-url" class="hint">插件目录地址</label>
+        <div class="install-row">
+          <input
+            id="catalog-url"
+            type="text"
+            placeholder="PLUGINS.md 地址"
+            autocomplete="off"
+          /><button id="catalog-refresh">刷新目录</button>
+        </div>
+        <div class="hint" id="catalog-meta"></div>
+        <div id="catalog-list"></div>
+      </details>
+      <details style="margin-top: 24px">
+        <summary>其他安装来源与高级信息</summary>
+        <div id="sources"></div>
+        <p class="hint">
+          远程 zip 保留 sha256
+          校验；本地目录不会复制或自动安装依赖。安装包由应用插件目录管理。
+        </p>
+      </details>
     </div>
     <div class="toast" id="toast"></div>
 
@@ -279,6 +272,7 @@
 
       let sources = [];
       let loaded = [];
+      let installTask = null;
       let catalog = [];
       let catalogUrl = '';
       let catalogMeta = '';
@@ -405,10 +399,34 @@
                 ? '<p class="desc">' + esc(p.description) + '</p>'
                 : '') +
               '<div class="meta">' +
+              (p.loaded === false ? '已安装 · 加载失败 · ' : '已加载 · ') +
               esc(p.id) +
               ' · ' +
               (p.extensionCount > 0 ? p.extensionCount + ' 个视图' : '无视图') +
-              '</div></div></div>',
+              '</div>' +
+              (p.error
+                ? '<p role="alert" class="hint">' + esc(p.error) + '</p>'
+                : '') +
+              '</div><div class="actions">' +
+              (p.hasConfig
+                ? '<button data-plugin-settings="' +
+                  esc(p.id) +
+                  '" ' +
+                  (p.loaded === false ? 'disabled' : '') +
+                  '>配置</button>'
+                : '<span class="hint">无需配置</span>') +
+              sources
+                .filter((source) => source.name === p.id)
+                .map(
+                  (source) =>
+                    '<button data-load="' +
+                    esc(source.source) +
+                    '">重新加载</button><button class="danger" data-remove="' +
+                    esc(source.source) +
+                    '">卸载</button>',
+                )
+                .join('') +
+              '</div></div>',
           )
           .join('');
       }
@@ -498,7 +516,11 @@
           $('source').value = '';
           renderCatalog();
           await refreshLoaded();
-          toast('已安装 ' + value + '，已即时生效');
+          toast(
+            installTask?.loaded
+              ? '插件已安装并加载'
+              : '安装任务已更新，请查看加载状态',
+          );
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         } finally {
@@ -524,6 +546,21 @@
         }
       }
 
+      $('plugins').addEventListener('click', (e) => {
+        const settingsButton = e.target.closest('[data-plugin-settings]');
+        if (settingsButton)
+          void call('/plugins/open', {
+            pluginId: settingsButton.dataset.pluginSettings,
+            surface: 'settings',
+          }).catch((error) => toast(error.message, true));
+        const loadButton = e.target.closest('[data-load]');
+        const removeButton = e.target.closest('[data-remove]');
+        if (loadButton)
+          void call('/plugins/reload', { source: loadButton.dataset.load })
+            .then(() => load())
+            .catch((error) => toast(error.message, true));
+        if (removeButton) void remove(removeButton.dataset.remove);
+      });
       $('install').onclick = () => void install();
       $('source').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') void install();
@@ -571,6 +608,140 @@
         void install();
       });
 
+      function renderInstallTask(task) {
+        installTask = task;
+        const el = $('install-task');
+        el.hidden = !task;
+        if (!task) return;
+        busy = ['running', 'cancelling'].includes(task.status);
+        $('install').disabled = busy;
+        const phases = {
+          download: task.sourceType === 'local' ? '读取安装包' : '下载',
+          verify: '校验',
+          install: '安装',
+          load: '加载',
+        };
+        const index = Object.keys(phases).indexOf(task.phase);
+        const steps = Object.entries(phases)
+          .map(
+            ([phase, name], i) =>
+              '<span style="color:' +
+              (phase === task.phase ? 'var(--accent)' : 'var(--muted)') +
+              '">' +
+              (i < index || task.status === 'done' ? '✓ ' : '○ ') +
+              name +
+              '</span>',
+          )
+          .join('　');
+        const progress =
+          task.status === 'running'
+            ? '<progress aria-label="安装进度" max="100" ' +
+              (task.phase === 'download' && task.total
+                ? 'value="' +
+                  Math.min(
+                    100,
+                    Math.floor((task.received / task.total) * 100),
+                  ) +
+                  '"'
+                : '') +
+              ' style="width:100%;height:6px;margin:12px 0;accent-color:var(--accent)"></progress>'
+            : '';
+        const bytesLabel = (value) =>
+          value < 1024
+            ? value + ' B'
+            : value < 1024 * 1024
+              ? (value / 1024).toFixed(1) + ' KB'
+              : (value / 1024 / 1024).toFixed(1) + ' MB';
+        const count =
+          task.phase === 'download' && task.received
+            ? '<p class="hint">' +
+              bytesLabel(task.received) +
+              (task.total ? ' / ' + bytesLabel(task.total) : ' · 总大小未知') +
+              '</p>'
+            : '';
+        const integrity =
+          task.phase === 'verify' && /sha256/.test(task.error || '');
+        let actions = busy
+          ? '<button data-install-cancel ' +
+            (task.status === 'cancelling' ? 'disabled' : '') +
+            '>' +
+            (task.status === 'cancelling' ? '等待取消确认' : '取消安装') +
+            '</button>'
+          : ['failed', 'cancelled'].includes(task.status)
+            ? (integrity
+                ? ''
+                : '<button data-install-retry class="primary">' +
+                  (task.installed && !task.loaded ? '重新加载' : '重试安装') +
+                  '</button>') + '<button data-install-source>更换来源</button>'
+            : '';
+        el.innerHTML =
+          '<section class="card" style="display:block;margin:22px 0;border-left:2px solid ' +
+          (task.status === 'failed' ? 'var(--danger)' : 'var(--accent)') +
+          '"><h3>' +
+          (task.installed ? esc(task.label) : '插件安装') +
+          '</h3><p class="hint">' +
+          steps +
+          '</p><div ' +
+          (task.status === 'failed'
+            ? 'role="alert"'
+            : 'role="status" aria-live="polite"') +
+          '>' +
+          esc(task.message) +
+          '</div>' +
+          progress +
+          count +
+          '<p class="hint">第 ' +
+          task.attempt +
+          ' 次尝试 · ' +
+          (task.loaded
+            ? '已安装 · 已加载'
+            : task.installed
+              ? '已安装 · 未加载'
+              : '尚未安装完成') +
+          '</p><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">' +
+          actions +
+          '</div><details style="margin-top:14px"><summary>阶段与错误详情</summary><p class="meta" style="overflow-wrap:anywhere">来源：' +
+          esc(shortPath(task.source)) +
+          '<br>' +
+          esc(task.error || '当前阶段：' + phases[task.phase]) +
+          '</p></details></section>';
+        renderSources();
+      }
+      $('install-task').addEventListener('click', async (e) => {
+        if (e.target.closest('[data-install-cancel]')) {
+          const response = await call('/dialogs/ask', {
+            dialogType: 'select',
+            title: '取消插件安装？',
+            message:
+              '取消会等待当前步骤结束。已经安装的文件会保留，并单独显示加载状态。',
+            options: ['确认取消'],
+          });
+          if (!response.cancelled && response.value === '确认取消')
+            void call('/plugins/install/cancel').catch((e) =>
+              toast(e.message, true),
+            );
+        }
+        if (e.target.closest('[data-install-retry]'))
+          void call('/plugins/install/retry').catch((e) =>
+            toast(e.message, true),
+          );
+        if (e.target.closest('[data-install-source]')) $('source').focus();
+      });
+      app.on((frame) => {
+        if (frame.type !== 'state') return;
+        if (frame.path === '/plugins/task') renderInstallTask(frame.value);
+        if (
+          frame.path === '/plugins/installed' ||
+          frame.path === '/plugins/runtime'
+        )
+          void load();
+      });
+      void app.watch([
+        '/plugins/task',
+        '/plugins/installed',
+        '/plugins/runtime',
+      ]);
+      void peek('/plugins/task').then(renderInstallTask);
       applyTheme(
         window.matchMedia('(prefers-color-scheme: dark)').matches
           ? 'dark'
@@ -581,7 +752,9 @@
       });
       window.extension.bus.loaded();
       void load();
-      void loadCatalog();
+      $('discovery').addEventListener('toggle', () => {
+        if ($('discovery').open && !catalogMeta) void loadCatalog();
+      });
     </script>
   </body>
 </html>

@@ -331,7 +331,7 @@
         <h2>新建本地文件</h2>
         <div class="grid" id="codecs"></div>
         <p class="empty" id="codecs-empty" hidden>
-          当前没有可新建的文本类 codec。
+          当前没有可新建的文档格式，请在能力管理中检查文档插件。
         </p>
       </section>
 
@@ -397,11 +397,13 @@
           button.className = 'file-button';
           button.innerHTML =
             '<span class="name"></span><span class="meta"></span>';
-          button.querySelector('.name').textContent = codec.label;
-          button.querySelector('.meta').textContent =
-            (codec.extensions || []).map((ext) => '.' + ext).join(' ') +
-            ' · ' +
-            codec.mime;
+          button.querySelector('.name').textContent =
+            { markdown: 'Markdown 文档', html: '网页文档', text: '纯文本' }[
+              codec.id
+            ] || codec.label;
+          button.querySelector('.meta').textContent = (codec.extensions || [])
+            .map((ext) => '.' + ext)
+            .join(' ');
           button.addEventListener('click', () => createFile(codec));
           list.appendChild(button);
         }

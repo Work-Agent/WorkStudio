@@ -158,11 +158,11 @@ export function TabsBar({
   }, [items, onClose, bulkClose, onTogglePin]);
 
   return (
-    <div className="h-9 shrink-0 flex items-stretch bg-zinc-100 dark:bg-[#1A1C1D] border-b border-zinc-200 dark:border-zinc-800 select-none">
+    <div className="h-9 shrink-0 flex items-stretch bg-[var(--biz-surface)] border-b border-[var(--biz-border)] select-none">
       <button
         onClick={() => scrollByAmount(-1)}
         disabled={!canLeft}
-        className="w-8 shrink-0 flex items-center justify-center border-r border-zinc-200 dark:border-zinc-800/60 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#252829] disabled:opacity-30 disabled:cursor-default transition-colors"
+        className="w-8 shrink-0 flex items-center justify-center border-r border-[var(--biz-border)] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] disabled:opacity-30 disabled:cursor-default transition-colors"
         title="向左滚动"
       >
         <ChevronLeft className="w-4 h-4" />
@@ -208,23 +208,23 @@ export function TabsBar({
                   ? `${displayPath(item.label)}（文件已被删除或重命名）`
                   : displayPath(item.label)
               }
-              className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors min-w-0 max-w-32 ${
+              className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-[var(--biz-border)] transition-colors min-w-0 max-w-32 ${
                 isActive
-                  ? 'bg-zinc-50 dark:bg-[#1E2021] text-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-[#252829] hover:text-zinc-700 dark:hover:text-zinc-200'
+                  ? 'bg-[var(--biz-surface)] text-[var(--biz-text)] text-[var(--biz-text)]'
+                  : 'text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)]'
               } ${isDragging ? 'opacity-50' : ''}`}
             >
               {isActive && (
-                <span className="absolute inset-x-0 top-0 h-0.5 bg-[#4F6BED] rounded-b" />
+                <span className="absolute inset-x-0 top-0 h-0.5 bg-[var(--biz-accent)] rounded-b" />
               )}
               {Icon && (
                 <span className="absolute left-1.5 top-1/2 -translate-y-1/2 shrink-0">
-                  <Icon className="w-3 h-3 text-zinc-400 dark:text-zinc-500" />
+                  <Icon className="w-3 h-3 text-[var(--biz-text-muted)]" />
                 </span>
               )}
               <span className="text-[12px] whitespace-nowrap truncate min-w-0 flex-1 text-center flex items-center justify-center gap-1">
                 {item.pinned && (
-                  <Pin className="w-3 h-3 shrink-0 text-zinc-400 dark:text-zinc-500" />
+                  <Pin className="w-3 h-3 shrink-0 text-[var(--biz-text-muted)]" />
                 )}
                 {item.dirty && (
                   <span
@@ -254,7 +254,7 @@ export function TabsBar({
                   {displayPath(item.label)}
                 </span>
                 {(item.badge ?? 0) > 0 && (
-                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[#4F6BED] text-white rounded-full shrink-0">
+                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[var(--biz-accent)] text-[var(--biz-primary-ink)] rounded-full shrink-0">
                     {item.badge}
                   </span>
                 )}
@@ -265,7 +265,7 @@ export function TabsBar({
                     e.stopPropagation();
                     onClose(item.id);
                   }}
-                  className="absolute right-0.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--biz-text-muted)] hover:text-red-500 hover:bg-[var(--biz-surface)] dark:hover:bg-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="关闭"
                 >
                   <X className="w-3 h-3" />
@@ -279,7 +279,7 @@ export function TabsBar({
       <button
         onClick={() => scrollByAmount(1)}
         disabled={!canRight}
-        className="w-8 shrink-0 flex items-center justify-center border-l border-zinc-200 dark:border-zinc-800/60 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#252829] disabled:opacity-30 disabled:cursor-default transition-colors"
+        className="w-8 shrink-0 flex items-center justify-center border-l border-[var(--biz-border)] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] disabled:opacity-30 disabled:cursor-default transition-colors"
         title="向右滚动"
       >
         <ChevronRight className="w-4 h-4" />
@@ -287,7 +287,7 @@ export function TabsBar({
       {onAdd && (
         <button
           onClick={onAdd}
-          className="w-8 shrink-0 flex items-center justify-center border-l border-zinc-200 dark:border-zinc-800/60 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#252829] transition-colors"
+          className="w-8 shrink-0 flex items-center justify-center border-l border-[var(--biz-border)] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] transition-colors"
           title="新增"
         >
           <Plus className="w-4 h-4" />

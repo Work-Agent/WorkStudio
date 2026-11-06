@@ -13,6 +13,8 @@ export async function initPathDisplay(): Promise<void> {
   ]);
   dataRoot = storage?.dataRoot ?? '';
   workspacePath = workspace?.path ?? '';
+  workspaceId = workspace?.id ?? '';
+  appPath = storage?.appPath ?? '';
 }
 
 function normalize(value: string): string {

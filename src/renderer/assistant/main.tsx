@@ -1,3 +1,5 @@
+import { TaskStatus } from './TaskStatus';
+import { useAppTask } from './appState';
 /**
  * AI 助手视图（独立渲染进程）—— S4，主进程事实的投影。
  *
@@ -48,6 +50,9 @@ interface PopupItem {
 function Assistant() {
   const shell = useShell();
   const agent = useAgent();
+  const task = useAppTask();
+  const taskBusy =
+    !!task && ['running', 'stopping', 'unconfirmed'].includes(task.status);
   const ui = shell?.ui;
   const activePath = ui?.activePath ?? null;
   const [closedPaths, setClosedPaths] = useState<Set<string>>(new Set());
@@ -157,22 +162,29 @@ function Assistant() {
   }, [agent?.provider, agent?.modelId]);
 
   useEffect(() => {
-    void bridge
-      ?.cmd<Array<{ name: string; description: string; builtin?: boolean }>>(
-        'skills.list',
-      )
-      .then((response) => {
-        if (!response.ok) return;
-        setSkills(response.data);
-        // 内置技能默认勾选；其余技能由用户按需勾选。
-        setSelectedSkills((current) =>
-          current.length > 0
-            ? current
-            : response.data
-                .filter((skill) => skill.builtin)
-                .map((skill) => skill.name),
-        );
-      });
+    const refresh = (): void => {
+      void bridge
+        ?.cmd<Array<{ name: string; description: string; builtin?: boolean }>>(
+          'skills.list',
+        )
+        .then((response) => {
+          if (!response.ok) return;
+          setSkills(response.data);
+          setSelectedSkills((current) =>
+            current.filter((name) =>
+              response.data.some((skill) => skill.name === name),
+            ),
+          );
+        });
+    };
+    refresh();
+    const off = window.appBridge?.on((frame) => {
+      if (frame.type === 'state' && frame.path === '/piconf') refresh();
+    });
+    void window.appBridge?.watch(['/piconf']);
+    return () => {
+      off?.();
+    };
   }, [activePath]);
 
   // 从会话列表重新打开已关闭的标签时恢复显示。
@@ -197,6 +209,7 @@ function Assistant() {
   }, [messages, messages.length]);
 
   const closeTabs = (paths: string[]): void => {
+    if (taskBusy && activePath && paths.includes(activePath)) return;
     const closing = new Set(paths);
     const remaining = openPaths.filter((path) => !closing.has(path));
     setClosedPaths((previous) => {
@@ -288,6 +301,7 @@ function Assistant() {
         return;
       }
     }
+    if (taskBusy && mode === 'prompt') return;
     setText('');
     setCommandTag(null);
     const queued = streaming || Boolean(agent?.isStreaming);
@@ -403,27 +417,28 @@ function Assistant() {
 
   const canSend =
     Boolean(agent?.configured) &&
+    !taskBusy &&
     (text.trim().length > 0 || commandTag !== null);
   const showEmpty = messages.length === 0 && !streaming && !optimisticText;
 
   return (
     <div
-      className={`relative h-screen w-full flex flex-col bg-zinc-50 dark:bg-[#202124] text-zinc-900 dark:text-zinc-100 text-[12px] overflow-hidden ${
+      className={`relative h-screen w-full flex flex-col bg-[var(--biz-surface)] text-[var(--biz-text)] text-[12px] overflow-hidden ${
         floating
-          ? 'rounded-xl border border-zinc-300/80 dark:border-zinc-700/80'
+          ? 'rounded-xl border border-[var(--biz-border)] border-[var(--biz-border)]'
           : ''
       }`}
     >
       {!floating && <DockResizeHandle />}
       {/* 会话标签栏（单排；浮动态此排即标题栏：把手/空白处拖拽移动） */}
       <div
-        className="h-9 shrink-0 flex items-stretch border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-[#202124] select-none"
+        className="h-9 shrink-0 flex items-stretch border-b border-[var(--biz-border)] bg-[var(--biz-surface)] select-none"
         style={floating ? { cursor: 'move' } : undefined}
         onPointerDown={floating ? startDrag : undefined}
       >
         {floating && (
           <div
-            className="shrink-0 flex items-center pl-2 pr-1 text-zinc-400"
+            className="shrink-0 flex items-center pl-2 pr-1 text-[var(--biz-text-muted)]"
             title="拖动以移动"
           >
             <GripHorizontal className="w-3.5 h-3.5" />
@@ -432,7 +447,7 @@ function Assistant() {
         <div className="flex flex-1 items-stretch overflow-x-auto min-w-0 tab-scroll">
           {openPaths.map((path) => {
             const isActive = path === activePath;
-            const isStreaming = isActive && (streaming || agent?.isStreaming);
+            const isStreaming = isActive && taskBusy;
             const label =
               isActive && !sessions.some((session) => session.path === path)
                 ? '新任务'
@@ -441,24 +456,28 @@ function Assistant() {
               <div
                 key={path}
                 data-no-drag
-                onClick={() => void bridge?.cmd('session.openTab', { path })}
+                onClick={() => {
+                  if (!taskBusy || isActive)
+                    void bridge?.cmd('session.openTab', { path });
+                }}
+                aria-disabled={taskBusy && !isActive}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   openTabMenu(path);
                 }}
                 title={label}
-                className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-zinc-200 dark:border-zinc-800/60 transition-colors max-w-32 min-w-0 ${
+                className={`group relative flex items-center justify-center gap-1.5 px-5 shrink-0 cursor-pointer border-r border-[var(--biz-border)] transition-colors max-w-32 min-w-0 ${
                   isActive
-                    ? 'bg-white dark:bg-[#262829] text-zinc-900 dark:text-zinc-100'
-                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-[#252829] hover:text-zinc-700 dark:hover:text-zinc-200'
+                    ? 'bg-[var(--biz-bg)] dark:bg-[var(--biz-surface-hover)] text-[var(--biz-text)] text-[var(--biz-text)]'
+                    : 'text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)]'
                 }`}
               >
                 {isActive && (
-                  <span className="absolute inset-x-0 top-0 h-0.5 bg-[#4F6BED] rounded-b" />
+                  <span className="absolute inset-x-0 top-0 h-0.5 bg-[var(--biz-accent)] rounded-b" />
                 )}
                 {isStreaming && (
                   <span
-                    className="w-1.5 h-1.5 rounded-full bg-[#4F6BED] animate-pulse shrink-0"
+                    className="w-1.5 h-1.5 rounded-full bg-[var(--biz-accent)] animate-pulse shrink-0"
                     title="正在执行"
                   />
                 )}
@@ -470,8 +489,13 @@ function Assistant() {
                     e.stopPropagation();
                     closeTabs([path]);
                   }}
-                  className="absolute right-0.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-red-500 hover:bg-zinc-200 dark:hover:bg-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="关闭标签（数据保留）"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--biz-text-muted)] hover:text-red-500 hover:bg-[var(--biz-surface)] dark:hover:bg-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  disabled={taskBusy && isActive}
+                  title={
+                    taskBusy && isActive
+                      ? '执行中，请先停止任务'
+                      : '关闭标签（数据保留）'
+                  }
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -481,20 +505,21 @@ function Assistant() {
           {activePath === null && (
             <div
               data-testid="chat-tab-new"
-              className="relative flex items-center justify-center px-5 shrink-0 border-r border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#262829] text-zinc-900 dark:text-zinc-100 max-w-32"
+              className="relative flex items-center justify-center px-5 shrink-0 border-r border-[var(--biz-border)] bg-[var(--biz-bg)] dark:bg-[var(--biz-surface-hover)] text-[var(--biz-text)] max-w-32"
               title="新任务（发送后成为独立会话）"
             >
-              <span className="absolute inset-x-0 top-0 h-0.5 bg-[#4F6BED] rounded-b" />
+              <span className="absolute inset-x-0 top-0 h-0.5 bg-[var(--biz-accent)] rounded-b" />
               <span className="text-[12px] whitespace-nowrap">新任务</span>
             </div>
           )}
         </div>
 
         {/* 停止（执行中，标签栏右端常驻） */}
-        {(streaming || agent?.isStreaming) && (
+        {taskBusy && (
           <button
             onClick={() => void bridge?.cmd('session.abort')}
-            className="shrink-0 px-2.5 flex items-center border-l border-zinc-200 dark:border-zinc-800 text-red-500 hover:bg-zinc-100 dark:hover:bg-[#252829]"
+            className="shrink-0 px-2.5 flex items-center border-l border-[var(--biz-border)] text-red-500 hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)]"
+            disabled={task?.status === 'stopping'}
             title="停止执行"
           >
             <Square className="w-3 h-3 fill-current" />
@@ -504,7 +529,7 @@ function Assistant() {
         {/* 形态切换：浮动态 → 停靠；停靠态 → 浮动（收起由 TitleBar 💬 负责） */}
         <button
           onClick={() => setUi({ aiFloating: !floating })}
-          className="shrink-0 px-2.5 flex items-center border-l border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-300 hover:text-[#4F6BED] dark:hover:text-[#4F6BED] hover:bg-zinc-100 dark:hover:bg-[#252829]"
+          className="shrink-0 px-2.5 flex items-center border-l border-[var(--biz-border)] text-[var(--biz-text-muted)] text-[var(--biz-text)] hover:text-[var(--biz-accent)] dark:hover:text-[var(--biz-accent)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)]"
           title={floating ? '停靠到右栏' : '浮动为独立面板'}
         >
           {floating ? (
@@ -523,14 +548,26 @@ function Assistant() {
               clearNewTask();
             })();
           }}
-          disabled={!agent?.configured}
-          className="shrink-0 px-2.5 flex items-center border-l border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-300 hover:text-[#4F6BED] dark:hover:text-[#4F6BED] hover:bg-zinc-100 dark:hover:bg-[#252829] disabled:opacity-40"
+          disabled={!agent?.configured || taskBusy}
+          className="shrink-0 px-2.5 flex items-center border-l border-[var(--biz-border)] text-[var(--biz-text-muted)] text-[var(--biz-text)] hover:text-[var(--biz-accent)] dark:hover:text-[var(--biz-accent)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface-hover)] disabled:opacity-40"
           title={agent?.configured ? '新会话' : '配置模型后可用'}
         >
           <MessageCirclePlus className="w-3.5 h-3.5" />
         </button>
       </div>
 
+      <div className="flex justify-end px-4 py-1">
+        <button
+          className="text-[11px] text-[var(--biz-text-muted)]"
+          onClick={() =>
+            void window.appBridge?.call('/settings/open', {
+              pageId: 'sessions',
+            })
+          }
+        >
+          会话历史
+        </button>
+      </div>
       {/* 消息流 */}
       <div
         ref={scrollRef}
@@ -538,27 +575,41 @@ function Assistant() {
         className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3"
       >
         {showEmpty && agent?.configured && (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 gap-2">
+          <div className="h-full flex flex-col items-center justify-center text-[var(--biz-text-muted)] gap-2">
             <span className="text-[13px]">描述一个任务开始工作</span>
             <span className="text-[11px]">
-              例如：帮我整理 docs 目录下的季度报告
+              从左侧打开资料，或说明需要生成的成果
             </span>
           </div>
         )}
         {showEmpty && !agent?.configured && (
-          <div className="h-full flex items-center justify-center text-zinc-400 dark:text-zinc-600">
-            ⚠ 未配置模型（请在模型设置中配置）
+          <div className="h-full flex items-center justify-center text-[var(--biz-text-muted)]">
+            <div className="text-center space-y-3">
+              <p>连接模型，开始与资料协作</p>
+              <button
+                className="wb-button"
+                onClick={() =>
+                  void window.appBridge?.call('/settings/open', {
+                    pageId: 'models',
+                  })
+                }
+              >
+                连接模型
+              </button>
+              <p className="text-[11px]">你现在也可以继续编辑本地资料。</p>
+            </div>
           </div>
         )}
         {messages.map((message, i) => (
           <MessageRow key={i} message={message} />
         ))}
+        <TaskStatus key={task?.id ?? 0} task={task} activePath={activePath} />
       </div>
 
       {(workingMessage ||
         Object.values(extensionStatus).some(Boolean) ||
         Object.values(extensionWidgets).some((lines) => lines?.length)) && (
-        <div className="shrink-0 px-3 pt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500 space-y-0.5">
+        <div className="shrink-0 px-3 pt-1 text-[10.5px] text-[var(--biz-text-muted)] space-y-0.5">
           {workingMessage && <div>{workingMessage}</div>}
           {Object.entries(extensionStatus).map(([key, value]) =>
             value ? <div key={key}>{value}</div> : null,
@@ -575,7 +626,7 @@ function Assistant() {
 
       {/* token 状态行（会话 token 统计；与消息流同源） */}
       {activeTokens && (
-        <div className="shrink-0 px-3 pt-1 flex justify-end text-[10.5px] text-zinc-400 dark:text-zinc-500">
+        <div className="shrink-0 px-3 pt-1 flex justify-end text-[10.5px] text-[var(--biz-text-muted)]">
           <span
             className="tabular-nums cursor-default"
             title={`输入 ${activeTokens.input.toLocaleString()} · 输出 ${activeTokens.output.toLocaleString()} tokens`}
@@ -592,10 +643,10 @@ function Assistant() {
           inputExpanded ? 'h-1/2 min-h-[180px]' : ''
         }`}
       >
-        <div className="border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-[#232627] focus-within:border-zinc-400 dark:focus-within:border-zinc-500 flex flex-col flex-1 min-h-0">
+        <div className="border border-[var(--biz-border)] rounded-lg bg-[var(--biz-bg)] dark:bg-[var(--biz-bg)] focus-within:border-[var(--biz-border)] dark:focus-within:border-[var(--biz-border)] flex flex-col flex-1 min-h-0">
           <div className="relative flex items-start px-2 pt-1.5 flex-1 min-h-0">
             {acItems.length > 0 && (
-              <div className="absolute left-1 right-1 bottom-full z-50 mb-1 max-h-56 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+              <div className="absolute left-1 right-1 bottom-full z-50 mb-1 max-h-56 overflow-y-auto rounded-lg border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-xl">
                 {acItems.map((command, index) => (
                   <button
                     key={command.name}
@@ -605,14 +656,14 @@ function Assistant() {
                     onClick={() => applyCompletion(command.name)}
                     className={`w-full text-left px-2.5 py-1.5 text-[12px] flex items-center gap-2 ${
                       index === acIdx
-                        ? 'bg-zinc-100 dark:bg-[#2a2d2e]'
-                        : 'hover:bg-zinc-100 dark:hover:bg-[#2a2d2e]'
+                        ? 'bg-[var(--biz-surface)] bg-[var(--biz-surface)]'
+                        : 'hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]'
                     }`}
                   >
-                    <span className="font-mono text-[#4F6BED]">
+                    <span className="font-mono text-[var(--biz-accent)]">
                       /{command.name}
                     </span>
-                    <span className="truncate text-[10.5px] text-zinc-400 dark:text-zinc-500">
+                    <span className="truncate text-[10.5px] text-[var(--biz-text-muted)]">
                       {command.description}
                     </span>
                   </button>
@@ -628,13 +679,13 @@ function Assistant() {
                     lineHeight: '18.75px',
                     transform: `translateY(${-inputScrollTop}px)`,
                   }}
-                  className="absolute left-0 top-0 z-10 flex items-center gap-0.5 rounded-md bg-[#4F6BED]/10 text-[#4F6BED] dark:text-[#8ea2f5] px-1 py-0 text-[10.5px] font-mono"
+                  className="absolute left-0 top-0 z-10 flex items-center gap-0.5 rounded-md bg-[var(--biz-accent-dim)] text-[var(--biz-accent)] dark:text-[var(--biz-accent)] px-1 py-0 text-[10.5px] font-mono"
                 >
                   <Terminal className="w-3 h-3" />
                   <span>/{commandTag}</span>
                   <button
                     onClick={() => setCommandTag(null)}
-                    className="ml-0.5 rounded-sm hover:bg-[#4F6BED]/15"
+                    className="ml-0.5 rounded-sm hover:bg-[var(--biz-accent-dim)]"
                     title="移除命令"
                   >
                     <X className="w-2.5 h-2.5" />
@@ -643,7 +694,7 @@ function Assistant() {
               )}
               <textarea
                 ref={textareaRef}
-                className={`w-full min-w-0 flex-1 resize-none bg-transparent text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none text-[12.5px] leading-normal overflow-y-auto pr-5 ${
+                className={`w-full min-w-0 flex-1 resize-none bg-transparent text-[var(--biz-text)] placeholder:text-[var(--biz-text-muted)] dark:placeholder:text-[var(--biz-text-muted)] focus:outline-none text-[12.5px] leading-normal overflow-y-auto pr-5 ${
                   inputExpanded ? 'h-full' : ''
                 }`}
                 rows={inputExpanded ? undefined : 3}
@@ -739,7 +790,7 @@ function Assistant() {
             </div>
             <button
               onClick={() => setInputExpanded((value) => !value)}
-              className="absolute right-1.5 top-1 p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] rounded transition-colors"
+              className="absolute right-1.5 top-1 p-1 text-[var(--biz-text-muted)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] rounded transition-colors"
               title={inputExpanded ? '收起输入框' : '展开输入框'}
             >
               {inputExpanded ? (
@@ -751,14 +802,14 @@ function Assistant() {
           </div>
 
           {/* 工具栏：思考档位（左）· 队列状态 · 模型 + 发送/停止（右） */}
-          <div className="flex items-center gap-1 px-2 pb-1 pt-1.5 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0">
+          <div className="flex items-center gap-1 px-2 pb-1 pt-1.5 border-t border-[var(--biz-border)] text-[11px] text-[var(--biz-text-muted)] shrink-0">
             <button
               onClick={() => {
                 setCommandTag(null);
                 setText('/');
                 textareaRef.current?.focus();
               }}
-              className="p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
+              className="p-1 rounded text-[var(--biz-text-muted)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
               title="命令（/）"
             >
               <Terminal className="w-3 h-3" />
@@ -767,7 +818,7 @@ function Assistant() {
             {/* 思考档位 */}
             <div className="relative">
               <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
                 onClick={() => setMenu(menu === 'thinking' ? null : 'thinking')}
                 title="思考档位"
               >
@@ -781,16 +832,16 @@ function Assistant() {
                     className="fixed inset-0 z-40"
                     onClick={() => setMenu(null)}
                   />
-                  <div className="absolute bottom-7 left-0 z-50 w-40 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                  <div className="absolute bottom-7 left-0 z-50 w-40 rounded-lg border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-xl">
                     {(thinkingLevels.length > 0
                       ? thinkingLevels
                       : ([agent?.thinkingLevel ?? 'off'] as ThinkingLevel[])
                     ).map((level) => (
                       <button
                         key={level}
-                        className={`w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] ${
+                        className={`w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] ${
                           level === agent?.thinkingLevel
-                            ? 'text-[#4F6BED] font-medium'
+                            ? 'text-[var(--biz-accent)] font-medium'
                             : ''
                         }`}
                         onClick={() => {
@@ -809,13 +860,15 @@ function Assistant() {
             {/* 技能选择 */}
             <div className="relative">
               <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e]"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
                 onClick={() => setMenu(menu === 'skills' ? null : 'skills')}
-                title="技能"
+                title="选择本轮使用的技能；未指定时使用工作区已启用技能"
               >
                 <BookOpen className="w-3 h-3" />
                 <span className="hidden whitespace-nowrap min-[380px]:inline">
-                  {selectedSkills.length || '技能'}
+                  {selectedSkills.length
+                    ? `本轮技能 ${selectedSkills.length}`
+                    : '本轮技能 全部'}
                 </span>
               </button>
               {menu === 'skills' && (
@@ -824,30 +877,43 @@ function Assistant() {
                     className="fixed inset-0 z-40"
                     onClick={() => setMenu(null)}
                   />
-                  <div className="absolute bottom-7 left-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                  <div className="absolute bottom-7 left-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-xl">
+                    <button
+                      className="w-full text-left px-2.5 py-2 text-xs"
+                      onClick={() => setSelectedSkills([])}
+                    >
+                      使用工作区全部已启用技能
+                    </button>
+                    <div className="px-2.5 pb-1 text-[10px] text-[var(--biz-text-muted)]">
+                      选择单个技能可限定本轮范围
+                    </div>
                     {skills.length === 0 ? (
-                      <div className="px-2.5 py-2 text-[11px] text-zinc-400">
-                        暂无技能
+                      <div className="px-2.5 py-2 text-[11px] text-[var(--biz-text-muted)]">
+                        当前工作区没有可用技能
                       </div>
                     ) : (
                       skills.map((skill) => {
-                        const active = selectedSkills.includes(skill.name);
+                        const active =
+                          selectedSkills.length === 0 ||
+                          selectedSkills.includes(skill.name);
                         return (
                           <button
                             key={skill.name}
-                            className="w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] flex items-start gap-1.5"
+                            className="w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] flex items-start gap-1.5"
                             onClick={() => void toggleSkill(skill.name)}
                           >
                             <Check
                               className={`w-3 h-3 mt-0.5 shrink-0 ${
-                                active ? 'text-[#4F6BED]' : 'text-transparent'
+                                active
+                                  ? 'text-[var(--biz-accent)]'
+                                  : 'text-transparent'
                               }`}
                             />
                             <span className="min-w-0">
                               <span className="block truncate">
                                 {skill.name}
                               </span>
-                              <span className="block text-[10px] text-zinc-400 truncate">
+                              <span className="block text-[10px] text-[var(--biz-text-muted)] truncate">
                                 {skill.description}
                               </span>
                             </span>
@@ -860,7 +926,7 @@ function Assistant() {
               )}
             </div>
 
-            <span className="text-[10.5px] text-zinc-400 dark:text-zinc-500 truncate">
+            <span className="text-[10.5px] text-[var(--biz-text-muted)] truncate">
               {agent?.isCompacting
                 ? '压缩中…'
                 : agent?.pendingMessageCount
@@ -872,7 +938,7 @@ function Assistant() {
             {/* 模型切换（视图内浮层，向上展开且不越界） */}
             <div className="relative">
               <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] max-w-32"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] max-w-32"
                 onClick={() => setMenu(menu === 'model' ? null : 'model')}
                 title="切换模型"
               >
@@ -888,9 +954,9 @@ function Assistant() {
                     className="fixed inset-0 z-40"
                     onClick={() => setMenu(null)}
                   />
-                  <div className="absolute bottom-7 right-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#1E2021] shadow-xl">
+                  <div className="absolute bottom-7 right-0 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-xl">
                     {models.length === 0 && (
-                      <div className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      <div className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--biz-text-muted)]">
                         还没有可用模型
                         <br />
                         在「设置 → 模型」中添加或登录
@@ -899,10 +965,10 @@ function Assistant() {
                     {models.map((m) => (
                       <button
                         key={`${m.provider}/${m.modelId}`}
-                        className={`w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-zinc-100 dark:hover:bg-[#2a2d2e] ${
+                        className={`w-full text-left px-2.5 py-1.5 text-[12px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] ${
                           m.provider === agent?.provider &&
                           m.modelId === agent?.modelId
-                            ? 'text-[#4F6BED] font-medium'
+                            ? 'text-[var(--biz-accent)] font-medium'
                             : ''
                         }`}
                         onClick={() => {
@@ -914,7 +980,7 @@ function Assistant() {
                         }}
                       >
                         {m.label}
-                        <span className="ml-1 text-[10px] text-zinc-400">
+                        <span className="ml-1 text-[10px] text-[var(--biz-text-muted)]">
                           {m.provider}
                         </span>
                       </button>
@@ -925,17 +991,23 @@ function Assistant() {
             </div>
 
             {/* 发送 / 停止（图标键，与 Pi-Work 一致） */}
-            {streaming || agent?.isStreaming ? (
+            {(task ? taskBusy : streaming || agent?.isStreaming) ? (
               <button
                 className="p-1 text-red-500 hover:text-red-600 transition-colors"
                 onClick={() => void bridge?.cmd('session.abort')}
-                title="停止生成（Esc）"
+                disabled={task?.status === 'stopping'}
+                aria-label="停止本轮"
+                title={
+                  task?.status === 'stopping'
+                    ? '正在等待停止确认'
+                    : '停止本轮（Esc）'
+                }
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
               </button>
             ) : (
               <button
-                className="p-1 text-[#4F6BED] hover:text-[#3D56E0] disabled:opacity-40 transition-colors"
+                className="p-1 text-[var(--biz-accent)] hover:text-[var(--biz-accent-hover)] disabled:opacity-40 transition-colors"
                 disabled={!canSend || !bridge}
                 onClick={() => void submit('prompt')}
                 title="发送（Enter）"

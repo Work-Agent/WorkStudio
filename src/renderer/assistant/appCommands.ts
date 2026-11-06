@@ -64,11 +64,12 @@ export async function appAssistantCommand<T = unknown>(
         sessionId: encodeURIComponent(String(input['path'] ?? '')),
       });
     case 'session.closeTabs':
-      return { ok: true, data: null as T };
+      return call(`/workspaces/${wsId}/sessions/tabs/close`, input);
     case 'session.prompt':
     case 'session.steer':
     case 'session.followUp':
     case 'session.follow-up':
+    case 'session.retry':
     case 'session.abort':
     case 'session.compact':
     case 'session.fork':
@@ -99,7 +100,12 @@ export async function appAssistantCommand<T = unknown>(
       const piconf = await bridge?.peek<{
         skills?: Array<{ name: string; description: string }>;
       }>('/piconf');
-      return { ok: true, data: (piconf?.skills ?? []) as T };
+      return {
+        ok: true,
+        data: (piconf?.skills ?? []).filter(
+          (skill) => (skill as { enabled?: boolean }).enabled !== false,
+        ) as T,
+      };
     }
     case 'skills.setActive':
       return call('/piconf/skills/set-active', input);

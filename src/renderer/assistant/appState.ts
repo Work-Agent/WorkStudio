@@ -1,3 +1,4 @@
+import type { SessionTask } from '../../shared/session-task';
 /**
  * 助手视图的 app 投影：workspace / agent / sessions / shell / messages。
  *
@@ -138,7 +139,7 @@ export function useAppShell(): AssistantShell | null {
   const available = useAppAvailable();
   const workspace = useWorkspace(available);
   const agent = useAppAgent();
-  const sessions = useAppSessions();
+  const [opened, setOpened] = useState<string[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [scene, setScene] = useState<{ aiFloating?: boolean } | null>(null);
 
@@ -146,23 +147,29 @@ export function useAppShell(): AssistantShell | null {
     if (!available || !window.appBridge) return;
     const off = window.appBridge.on((frame) => {
       if (frame.type !== 'state') return;
+      if (
+        workspace &&
+        frame.path === `/workspaces/${workspace.id}/sessions/opened`
+      )
+        setOpened((frame.value as string[]) ?? []);
       if (frame.path === '/theme') setTheme(frame.value as 'light' | 'dark');
       if (workspace && frame.path === `/scene/${workspace.id}`) {
         setScene(frame.value as { aiFloating?: boolean });
       }
     });
     void window.appBridge.watch(['/theme']);
-    if (workspace) void window.appBridge.watch([`/scene/${workspace.id}`]);
+    if (workspace)
+      void window.appBridge.watch([
+        `/scene/${workspace.id}`,
+        `/workspaces/${workspace.id}/sessions/opened`,
+      ]);
     return off;
   }, [available, workspace?.id]);
 
   if (!available) return null;
   const activePath = agent?.sessionFile ?? null;
   const openPaths = [
-    ...new Set([
-      ...(sessions ?? []).map((session) => session.path),
-      ...(activePath ? [activePath] : []),
-    ]),
+    ...new Set([...opened, ...(activePath ? [activePath] : [])]),
   ];
   return {
     ui: {
@@ -300,4 +307,24 @@ export function useAppMessages(activePath: string | null): {
       setPending({ text, queued, base: history.length, sessionId }),
     clearNewTask: () => setPending(undefined),
   };
+}
+
+/** 本轮任务的主进程投影；不使用界面计时推断执行结果。 */
+export function useAppTask(): SessionTask | null {
+  const available = useAppAvailable();
+  const workspace = useWorkspace(available);
+  const [task, setTask] = useState<SessionTask | null>(null);
+  useEffect(() => {
+    setTask(null);
+    const bridge = window.appBridge;
+    if (!available || !workspace || !bridge) return;
+    const path = `/workspaces/${workspace.id}/sessions/task`;
+    const off = bridge.on((frame) => {
+      if (frame.type === 'state' && frame.path === path)
+        setTask(frame.value as SessionTask | null);
+    });
+    void bridge.watch([path]);
+    return off;
+  }, [available, workspace?.id]);
+  return task;
 }

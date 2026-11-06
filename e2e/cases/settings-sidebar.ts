@@ -2,15 +2,25 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'settings.sidebar',
-  title: '从侧栏设置列表点击打开设置页',
+  title: '侧栏打开设置后通过内部导航切换分类',
   tags: ['dev', 'ci'],
   async run(ctx) {
     await ctx.clickTestId('sidebar-nav-settings');
-    await ctx.clickText('插件', { exact: true });
-    await ctx.expect.poll(async () => {
-      const views =
-        await ctx.appBridge.peek<Array<{ title: string }>>('/views');
-      return views?.some((view) => view.title === '插件') ?? false;
-    }, '点击设置列表后插件页未打开');
+    const page = await ctx.waitForPage(/settings\/appearance\/index\.html/);
+    await page.evaluate(() => {
+      document.querySelectorAll('nav button').forEach((button) => {
+        if (button.textContent === '偏好设置')
+          (button as HTMLButtonElement).click();
+      });
+    });
+    await ctx.waitForPage(/settings\/preferences\/index\.html/);
+    await ctx.expect.poll(
+      async () =>
+        (await ctx.appBridge.peek<Array<{ title: string }>>('/views'))?.some(
+          (view) => view.title === '偏好设置',
+        ) ?? false,
+      '内部导航没有打开偏好设置',
+    );
+    await ctx.expect.text('sidebar', '工作区资料');
   },
 });

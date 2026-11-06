@@ -35,6 +35,8 @@ function service(): PluginsService {
   return {
     installed: () => [],
     runtime: () => [],
+    task: null,
+    onTask: () => () => undefined,
     onChange: () => () => undefined,
     onCatalog: () => () => undefined,
     entry: (pluginId: string) => entries[pluginId] ?? null,

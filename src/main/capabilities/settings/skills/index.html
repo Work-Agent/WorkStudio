@@ -258,8 +258,7 @@
         <div class="grow">
           <h1>技能</h1>
           <p>
-            已加载技能清单（来源：应用技能目录与插件声明的技能目录）。技能由 pi
-            资源链装载； 对话中可在输入区选择启用集合，未选择 = 全量注入。
+            管理当前工作区可使用的工作方法。启用状态在此工作区保存；参与本轮任务的技能在助手输入区选择。
           </p>
         </div>
         <button class="primary" id="reload">重新装载</button>
@@ -350,6 +349,15 @@
                 state.active.length === 0 || state.active.includes(s.name);
               return (
                 '<div class="item">' +
+                '<button class="mini" style="float:right" data-toggle-skill="' +
+                esc(s.name) +
+                '" data-enabled="' +
+                String(s.enabled !== false) +
+                '">' +
+                (s.enabled === false ? '启用' : '停用') +
+                '</button><span class="badge">' +
+                (s.enabled === false ? '本工作区已停用' : '本工作区已启用') +
+                '</span>' +
                 '<div class="head"><b>' +
                 esc(s.name) +
                 '</b>' +
@@ -470,6 +478,16 @@
           theme === 'dark' ? 'dark' : 'light';
       }
 
+      document.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-toggle-skill]');
+        if (!b) return;
+        void call('/piconf/skills/set-enabled', {
+          name: b.dataset.toggleSkill,
+          enabled: b.dataset.enabled === 'false',
+        })
+          .then(() => refresh(false))
+          .catch((error) => toast(error.message, true));
+      });
       applyTheme(
         window.matchMedia('(prefers-color-scheme: dark)').matches
           ? 'dark'

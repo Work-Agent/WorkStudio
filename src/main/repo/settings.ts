@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import type { AgentHost } from '../agent/agent-host';
 import { getWorkspaceBase, getWorkspaceId } from '../agent/workspace';
-import { setDataRoot } from '../data-root';
+import { getDataRootSource, setDataRoot } from '../data-root';
 import { pluginsRoot } from '../paths';
 import type { StorageView } from '../../shared/types';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ export class SettingsRepo {
     const wsId = getWorkspaceId(workspacePath);
     return {
       dataRoot: this.dataRoot,
-      dataRootSource: 'configured',
+      dataRootSource: getDataRootSource(),
       workspacePath,
       workspaceId: wsId,
       agentDir: this.dataRoot,

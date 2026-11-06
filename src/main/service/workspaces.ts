@@ -7,6 +7,7 @@ import type { WorkspaceMeta } from '../../shared/app';
 import { WorkspacesRepo, type WorkspacesStore } from '../repo/workspaces';
 
 export class WorkspacesService {
+  beforeChange: (() => Promise<boolean>) | null = null;
   private listView: WorkspaceMeta[] = [];
   private currentView: WorkspaceMeta | null = null;
   private readonly changeListeners = new Set<() => void>();
@@ -67,6 +68,9 @@ export class WorkspacesService {
 
   async open(path: string): Promise<WorkspaceMeta> {
     if (!path) throw new Error('workspace path is required');
+    if (this.currentView?.path === path) return this.currentView;
+    if (this.beforeChange && !(await this.beforeChange()) && this.currentView)
+      return this.currentView;
     const next = this.store.register(path);
     const prev = this.currentView;
     if (prev && prev.id !== next.id) this.emitClose(prev.id);
@@ -78,13 +82,15 @@ export class WorkspacesService {
     return next;
   }
 
-  close(): void {
+  async close(): Promise<boolean> {
     const prev = this.currentView;
-    if (!prev) return;
+    if (!prev) return true;
+    if (this.beforeChange && !(await this.beforeChange())) return false;
     this.emitClose(prev.id);
     this.store.writeCurrent(null);
     this.currentView = null;
     this.emitChange();
+    return true;
   }
 
   rename(id: string, name: string): WorkspaceMeta {
@@ -96,8 +102,8 @@ export class WorkspacesService {
     return meta;
   }
 
-  remove(id: string): void {
-    if (this.currentView?.id === id) this.close();
+  async remove(id: string): Promise<void> {
+    if (this.currentView?.id === id && !(await this.close())) return;
     this.store.remove(id);
     this.listView = this.store.list();
     this.emitChange();

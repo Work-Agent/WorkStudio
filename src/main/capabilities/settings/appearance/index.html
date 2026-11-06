@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>外观与皮肤</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          13px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          sans-serif;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: auto;
+        padding: 30px 28px 50px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 24px 0 8px;
+      }
+      p {
+        margin: 5px 0;
+        color: var(--muted);
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      .scope {
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        margin: 24px 0;
+      }
+      .scope label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .skin {
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        text-align: left;
+      }
+      .skin[aria-pressed='true'] {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .sample {
+        height: 90px;
+        display: grid;
+        grid-template-columns: 26% 1fr 27%;
+        grid-template-rows: 17px 1fr;
+        border: 1px solid var(--sample-border);
+        border-radius: 5px;
+        overflow: hidden;
+        background: var(--sample-bg);
+      }
+      .sample .top {
+        grid-column: 1/-1;
+        background: var(--sample-soft);
+        border-bottom: 1px solid var(--sample-border);
+      }
+      .sample .side {
+        background: var(--sample-soft);
+        border-right: 1px solid var(--sample-border);
+      }
+      .sample .chat {
+        border-left: 1px solid var(--sample-border);
+      }
+      .sample .lines {
+        padding: 13px 8px;
+      }
+      .lines i {
+        display: block;
+        height: 3px;
+        background: var(--sample-muted);
+        margin-bottom: 7px;
+        border-radius: 2px;
+      }
+      .lines i:first-child {
+        background: var(--sample-accent);
+        width: 70%;
+      }
+      .skin strong {
+        display: block;
+        font-weight: 500;
+        margin: 10px 3px 3px;
+      }
+      .skin small {
+        display: block;
+        color: var(--muted);
+        margin: 0 3px 4px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        margin: 14px 0;
+      }
+      select {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        padding: 8px;
+        width: 100%;
+      }
+      .font-preview {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--panel);
+      }
+      .note {
+        border-left: 2px solid var(--accent);
+        padding: 12px 14px;
+        background: var(--panel);
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 520px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .wrap {
+          padding: 22px 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>外观与皮肤</h1>
+      <p>立即应用于整个应用，切换工作区时继续保持。</p>
+      <div class="scope">
+        <label
+          ><input id="system" type="checkbox" />跟随系统外观
+          <span style="margin-left: auto; color: var(--muted)"
+            >应用全局</span
+          ></label
+        >
+        <p>系统切换明暗时，使用下方指定的皮肤。</p>
+        <div id="system-options" class="grid" hidden>
+          <label class="field"
+            >系统为浅色时<select id="light">
+              <option value="porcelain">白瓷</option>
+              <option value="mist">雾蓝</option>
+            </select></label
+          ><label class="field"
+            >系统为深色时<select id="dark">
+              <option value="black">曜黑</option>
+              <option value="graphite">石墨</option>
+            </select></label
+          >
+        </div>
+      </div>
+      <h2>选择皮肤</h2>
+      <p>点击立即切换。文档和未保存的编辑会保留。</p>
+      <div id="skins" class="grid" aria-label="可选皮肤"></div>
+      <p
+        id="status"
+        role="status"
+        aria-live="polite"
+        style="margin-top: 16px"
+      ></p>
+      <h2>阅读与编辑</h2>
+      <label class="field"
+        >编辑器字号<select id="size" aria-label="编辑器字号">
+          <option value="14">14 px</option>
+          <option value="15">15 px</option>
+          <option value="16">16 px</option>
+          <option value="18">18 px</option>
+        </select></label
+      >
+      <div id="font-preview" class="font-preview">
+        资料与成果，始终清楚可读。<br /><span
+          style="font-family: ui-monospace, monospace"
+          ># WorkStudio · 1234567890</span
+        >
+      </div>
+      <div class="note">
+        皮肤应用于工作台、设置、助手和内置编辑器。外部网页、图片和文档作品保留自身配色。第三方插件可适配皮肤参数。
+      </div>
+    </main>
+    <script>
+      const skins = [
+        [
+          'black',
+          '曜黑',
+          '纯黑底色，保留层次',
+          '#000000',
+          '#0b0c0f',
+          '#2c3039',
+          '#a2a9b6',
+          '#a8b5ff',
+        ],
+        [
+          'graphite',
+          '石墨',
+          '深灰界面，柔和对比',
+          '#22252b',
+          '#1c1f24',
+          '#414754',
+          '#a6afbe',
+          '#b3bfff',
+        ],
+        [
+          'porcelain',
+          '白瓷',
+          '清晰明亮，适合白天',
+          '#ffffff',
+          '#f5f6f9',
+          '#dce1ea',
+          '#5e697a',
+          '#455dc4',
+        ],
+        [
+          'mist',
+          '雾蓝',
+          '低饱和蓝灰，安静专注',
+          '#f4f8fc',
+          '#eaf0f7',
+          '#cbd8e8',
+          '#53677f',
+          '#315d9a',
+        ],
+      ];
+      const $ = (id) => document.getElementById(id);
+      let state;
+      $('skins').innerHTML = skins
+        .map(
+          ([id, name, desc, bg, soft, border, muted, accent]) =>
+            `<button class="skin" data-skin="${id}" aria-label="使用${name}皮肤" aria-pressed="false" style="--sample-bg:${bg};--sample-soft:${soft};--sample-border:${border};--sample-muted:${muted};--sample-accent:${accent}"><span class="sample" aria-hidden="true"><span class="top"></span><span class="side lines"><i></i><i></i></span><span class="lines"><i></i><i></i><i></i></span><span class="chat lines"><i></i><i></i></span></span><strong>${name}</strong><small>${desc}</small></button>`,
+        )
+        .join('');
+      function render(next) {
+        if (!next) return;
+        state = next;
+        $('system').checked = state.mode === 'system';
+        $('system-options').hidden = state.mode !== 'system';
+        $('light').value = state.lightSkin;
+        $('dark').value = state.darkSkin;
+        $('size').value = String(state.editorSize);
+        $('font-preview').style.fontSize = state.editorSize + 'px';
+        document
+          .querySelectorAll('[data-skin]')
+          .forEach((b) =>
+            b.setAttribute(
+              'aria-pressed',
+              String(state.mode === 'fixed' && b.dataset.skin === state.skin),
+            ),
+          );
+        $('status').textContent =
+          (state.mode === 'system' ? '跟随系统 · ' : '固定皮肤 · ') +
+          skins.find((s) => s[0] === state.effectiveSkin)[1] +
+          ' · 已自动保存';
+      }
+      async function save(patch) {
+        const r = await window.appBridge.call('/appearance/set', patch);
+        if (r.ok) render(r.data);
+        else {
+          $('status').textContent = '保存失败：' + r.error.message;
+        }
+      }
+      $('skins').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-skin]');
+        if (b) void save({ mode: 'fixed', skin: b.dataset.skin });
+      });
+      $('system').onchange = (e) =>
+        void save({ mode: e.target.checked ? 'system' : 'fixed' });
+      $('light').onchange = (e) => void save({ lightSkin: e.target.value });
+      $('dark').onchange = (e) => void save({ darkSkin: e.target.value });
+      $('size').onchange = (e) =>
+        void save({ editorSize: Number(e.target.value) });
+      window.appBridge.on((f) => {
+        if (f.type === 'state' && f.path === '/appearance') render(f.value);
+      });
+      void window.appBridge.watch(['/appearance']);
+      void window.appBridge.peek('/appearance').then(render);
+    </script>
+  </body>
+</html>

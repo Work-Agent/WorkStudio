@@ -1,3 +1,6 @@
+import type { SessionTask } from '../../shared/session-task';
+import { fileRef } from '../../shared/ura';
+import { resolve } from 'node:path';
 /**
  * 会话业务：持有会话状态与操作，不认路径、不碰 ctx。
  *
@@ -88,6 +91,28 @@ const pathOf = (id: string): string => decodeURIComponent(id);
 
 export class SessionsService {
   private listView: SessionListItem[] = [];
+  private taskView: SessionTask | null = null;
+  private taskSeq = 0;
+  private stopRequestedTask: number | null = null;
+  private taskStartSeq = 0;
+  private lastActiveFile: string | null = null;
+  private lastInput: PromptInput | null = null;
+  private readonly openedFiles = new Set<string>();
+  get task(): SessionTask | null {
+    return this.taskView ? structuredClone(this.taskView) : null;
+  }
+  get opened(): string[] {
+    const file = this.currentView?.sessionFile;
+    if (file !== this.lastActiveFile) {
+      this.lastActiveFile = file ?? null;
+      if (file) this.openedFiles.add(file);
+    }
+    return [...this.openedFiles];
+  }
+  closeTabs(paths: string[]): void {
+    for (const path of paths) this.openedFiles.delete(path);
+    this.emitChange();
+  }
   private currentView: AgentSnapshot | null = null;
   private readonly messageViews = new Map<string, ParsedMessage[]>();
   private readonly changeListeners = new Set<() => void>();
@@ -161,6 +186,10 @@ export class SessionsService {
 
   /** 工作区换代：重新绑定当前会话、列表与消息。 */
   async reloadWorkspace(): Promise<void> {
+    this.openedFiles.clear();
+    this.lastActiveFile = null;
+    this.taskView = null;
+    this.lastInput = null;
     this.currentView = this.agent.getSnapshot();
     this.streamEpoch += 1;
     this.messageViews.clear();
@@ -170,7 +199,16 @@ export class SessionsService {
     this.emitChange();
   }
 
+  private requireIdle(): void {
+    if (
+      this.taskView &&
+      ['running', 'stopping', 'unconfirmed'].includes(this.taskView.status)
+    )
+      throw new Error('请先停止当前任务并等待确认，再切换会话');
+  }
+
   async newSession(): Promise<void> {
+    this.requireIdle();
     await this.agent.newSession();
     this.currentView = this.agent.getSnapshot();
     this.resetStream(this.currentView.sessionFile);
@@ -181,6 +219,13 @@ export class SessionsService {
 
   async openSession(sessionId: string): Promise<void> {
     const path = pathOf(sessionId);
+    if (path === this.currentView?.sessionFile) {
+      this.openedFiles.add(path);
+      this.emitChange();
+      return;
+    }
+    this.requireIdle();
+    this.openedFiles.add(path);
     await this.agent.switchSession(path);
     this.currentView = this.agent.getSnapshot();
     this.resetStream(this.currentView.sessionFile);
@@ -189,11 +234,86 @@ export class SessionsService {
     this.emitChange();
   }
 
-  async prompt(input: PromptInput): Promise<void> {
-    await this.agent.prompt(input);
-    this.currentView = this.agent.getSnapshot();
-    await this.refresh();
+  async prompt(input: PromptInput, retry = false): Promise<void> {
+    if (
+      this.taskView &&
+      ['running', 'stopping', 'unconfirmed'].includes(this.taskView.status)
+    )
+      throw new Error('当前任务尚未结束');
+    const task: SessionTask = {
+      id: ++this.taskSeq,
+      sessionFile: input.newSession
+        ? null
+        : this.agent.getSnapshot().sessionFile,
+      status: 'running',
+      request: input.text,
+      attempt: retry ? (this.taskView?.attempt ?? 0) + 1 : 1,
+      stage: '正在连接模型',
+      error: null,
+      mayHaveSideEffects: false,
+      artifacts: [],
+      tools: [],
+    };
+    this.taskStartSeq = this.agent.currentSeq ?? 0;
+    this.taskView = task;
+    this.lastInput = { ...input };
     this.emitChange();
+    try {
+      await this.agent.prompt(input);
+      const streaming = this.agent.getSnapshot().isStreaming;
+      if (['stopping', 'unconfirmed'].includes(task.status)) {
+        task.status = streaming ? 'unconfirmed' : 'stopped';
+        task.stage = streaming ? '尚未确认停止，请等待执行结果' : '本轮已停止';
+      } else if (task.status === 'running') {
+        task.status = streaming
+          ? 'unconfirmed'
+          : task.tools.some((tool) => tool.error)
+            ? 'failed'
+            : 'done';
+        task.stage =
+          task.status === 'unconfirmed'
+            ? '尚未确认执行结束，请等待执行结果'
+            : task.status === 'failed'
+              ? '本轮结束，有工具步骤失败，请检查'
+              : '本轮执行结束，请检查结果';
+      }
+    } catch (error) {
+      if (
+        this.stopRequestedTask === task.id &&
+        !this.agent.getSnapshot().isStreaming
+      ) {
+        task.status = 'stopped';
+        task.stage = '本轮已停止';
+      } else {
+        task.status = 'failed';
+        task.stage = '本轮未完成';
+        task.error = error instanceof Error ? error.message : String(error);
+      }
+    } finally {
+      this.currentView = this.agent.getSnapshot();
+      if (!task.sessionFile) task.sessionFile = this.currentView.sessionFile;
+      await this.refresh();
+      this.emitChange();
+    }
+  }
+
+  async retry(confirmed = false): Promise<void> {
+    if (
+      !this.taskView ||
+      !['failed', 'stopped'].includes(this.taskView.status) ||
+      !this.lastInput
+    )
+      throw new Error('当前没有可重试的任务');
+    if (
+      this.taskView.sessionFile &&
+      this.taskView.sessionFile !== this.agent.getSnapshot().sessionFile
+    )
+      throw new Error('请先打开原会话再重试');
+    if (this.taskView.mayHaveSideEffects && !confirmed)
+      throw new Error(
+        '本轮可能已有文件操作，请先检查成果，再确认重新执行原请求',
+      );
+    await this.prompt({ ...this.lastInput, newSession: false }, true);
   }
 
   async steer(text: string): Promise<void> {
@@ -209,9 +329,32 @@ export class SessionsService {
   }
 
   async abort(): Promise<void> {
-    await this.agent.abort();
-    this.currentView = this.agent.getSnapshot();
-    this.emitChange();
+    const task = this.taskView;
+    if (task && ['running', 'unconfirmed'].includes(task.status)) {
+      this.stopRequestedTask = task.id;
+      task.status = 'stopping';
+      task.stage = '已请求停止，正在等待当前操作返回';
+      this.emitChange();
+    }
+    try {
+      await this.agent.abort();
+      this.currentView = this.agent.getSnapshot();
+      if (task && task.status === 'stopping') {
+        task.status = this.currentView.isStreaming ? 'unconfirmed' : 'stopped';
+        task.stage = this.currentView.isStreaming
+          ? '尚未确认停止，请等待执行结果'
+          : '本轮已停止；已完成的操作不会撤销';
+      }
+    } catch (error) {
+      if (task) {
+        task.status = 'unconfirmed';
+        task.stage = '未能确认停止';
+        task.error = error instanceof Error ? error.message : String(error);
+      }
+      throw error;
+    } finally {
+      this.emitChange();
+    }
   }
 
   async compact(instructions?: string): Promise<void> {
@@ -224,6 +367,7 @@ export class SessionsService {
     entryId: string,
     position?: 'before' | 'at',
   ): Promise<{ cancelled: boolean }> {
+    this.requireIdle();
     const result = await this.agent.fork(entryId, position);
     this.currentView = this.agent.getSnapshot();
     this.emitChange();
@@ -237,6 +381,7 @@ export class SessionsService {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
+    this.requireIdle();
     await this.agent.deleteSession(pathOf(sessionId));
     this.streamViews.delete(sessionId);
     this.currentView = this.agent.getSnapshot();
@@ -293,6 +438,85 @@ export class SessionsService {
     if (!file) return;
 
     const sessionId = idOf(file);
+    const task = this.taskView;
+    if (task && !task.sessionFile) task.sessionFile = file;
+    if (task && task.sessionFile === file && frame.seq > this.taskStartSeq) {
+      const event = frame.event;
+      if (event.type === 'tool_execution_start') {
+        const ev = event as {
+          toolCallId: string;
+          toolName: string;
+          args: unknown;
+        };
+        task.tools.push({
+          id: ev.toolCallId,
+          name: ev.toolName,
+          done: false,
+          error: false,
+        });
+        if (task.status === 'running') task.stage = `正在执行 ${ev.toolName}`;
+        if (
+          /(write|edit|bash|exec|delete|remove|move|rename|create)/i.test(
+            ev.toolName,
+          )
+        )
+          task.mayHaveSideEffects = true;
+      } else if (event.type === 'tool_execution_end') {
+        const ev = event as {
+          toolCallId: string;
+          toolName?: string;
+          isError: boolean;
+        };
+        const tool = task.tools.find((item) => item.id === ev.toolCallId);
+        if (tool) {
+          tool.done = true;
+          tool.error = ev.isError;
+        }
+        if (ev.isError && task.status === 'done') task.status = 'failed';
+        if (
+          task.status === 'running' ||
+          (ev.isError && task.status === 'failed')
+        )
+          task.stage = ev.isError
+            ? '工具步骤失败，请检查执行详情'
+            : '继续处理任务';
+        const previousTool = this.stream(sessionId).tools.find(
+          (item) => item.id === ev.toolCallId,
+        );
+        if (tool && !ev.isError && ['write', 'edit'].includes(tool.name)) {
+          const args = previousTool?.args as
+            | { ref?: string; path?: string }
+            | undefined;
+          const target = args?.ref ?? args?.path;
+          if (target) {
+            const ref = /^[a-z][a-z0-9+.-]*:/i.test(target)
+              ? target
+              : fileRef(
+                  resolve(
+                    snapshot.workspacePath ?? snapshot.cwd ?? '.',
+                    target,
+                  ),
+                );
+            if (!task.artifacts.some((item) => item.ref === ref))
+              task.artifacts.push({
+                ref,
+                label: decodeURIComponent(ref.split('/').pop() ?? ref),
+              });
+          }
+        }
+      } else if (event.type === 'error') {
+        if (this.stopRequestedTask !== task.id) {
+          task.error = String(
+            (event as { message?: string }).message ?? '执行失败',
+          );
+          if (task.status !== 'stopping') {
+            task.status = 'failed';
+            task.stage = '本轮执行失败';
+          }
+        }
+      }
+      this.emitChange();
+    }
     const prev = this.stream(sessionId);
     let next: SessionStreamState | null = null;
     let event: SessionStreamEvent | null = null;

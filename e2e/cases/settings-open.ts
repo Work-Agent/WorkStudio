@@ -7,7 +7,7 @@ export default defineCase({
   async run(ctx) {
     await ctx.appBridge.call('/settings/open', { pageId: 'plugins' });
     const page = await ctx.waitForPage(/settings\/plugins\/index\.html/);
-    await page.expect.text('h1', 'WorkStudio 插件');
+    await page.expect.text('h1', '文档插件');
     await ctx.expect.poll(
       async () =>
         (await page.evaluate(() => typeof window.appBridge?.call)) ===

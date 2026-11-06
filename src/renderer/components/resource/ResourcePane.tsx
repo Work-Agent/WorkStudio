@@ -56,9 +56,20 @@ export function ResourcePane() {
       {/* ── 内容区：仅空态占位；视图内容全部由 WebContentsView 覆盖 ── */}
       <div className="shell-resource-content overflow-hidden">
         {views.length === 0 && (
-          <div className="pointer-events-none h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 text-[12px] gap-2 px-6 text-center">
+          <div className="h-full flex flex-col items-center justify-center text-[var(--biz-text-muted)] text-[12px] gap-2 px-6 text-center">
             <FileText className="w-6 h-6 opacity-50" />
-            <span>从左侧打开文档后，将在此处编辑</span>
+            <h2 className="text-lg font-medium">从一份资料开始</h2>
+            <span>打开左侧资料，或新建一份工作成果。</span>
+            <button
+              className="wb-button mt-3"
+              onClick={() =>
+                runViewCommand('views.open', {
+                  input: { type: 'settings', pageId: 'welcome' },
+                })
+              }
+            >
+              打开欢迎页
+            </button>
           </div>
         )}
       </div>

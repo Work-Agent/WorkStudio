@@ -88,6 +88,7 @@ export interface ViewProvider {
   path: string;
   resolve(call: RouteCall<{ path: string }>): ViewSpec | Promise<ViewSpec>;
   release?(path: string): void;
+  refresh?(path: string): void | Promise<void>;
 }
 
 /** 记录一次打开请求：views/open 的入参。 */

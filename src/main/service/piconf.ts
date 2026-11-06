@@ -1,3 +1,4 @@
+import { readWorkspacePolicy, writeWorkspacePolicy } from '../preferences';
 /**
  * pi 配置业务：设置三层 · 模型 · 包 · 技能。
  * 路径绑定在 routes.ts。
@@ -30,6 +31,7 @@ import type { Binding } from '../../shared/ura';
 
 export interface PiConfDeps {
   settings: SettingsService;
+  workspaceId?: () => string;
   models: ModelConfigStore;
   packages: PiPackageService;
   skills: SkillsManager;
@@ -75,6 +77,8 @@ export class PiConfService {
   }
 
   setGlobal(path: string, value: unknown): SettingsViewResult {
+    if (path === 'sessionDir' && this.deps.agent.getSnapshot().isStreaming)
+      throw new Error('请先结束当前任务，再更改会话目录');
     const result = this.settings.setGlobal(path, value);
     if (path === 'sessionDir') void this.deps.agent.rebuildForWorkspace();
     this.emitChange('settings');
@@ -274,6 +278,20 @@ export class PiConfService {
 
   packagesLoaded(): unknown {
     return this.deps.agent.getLoadedResources();
+  }
+
+  async setSkillEnabled(name: string, enabled: boolean): Promise<void> {
+    const id = this.deps.workspaceId?.();
+    if (!id) throw new Error('工作区尚未就绪');
+    if (this.deps.agent.getSnapshot().isStreaming)
+      throw new Error('请等待当前任务结束后再修改技能启用状态');
+    const disabled = new Set(readWorkspacePolicy(id).disabledSkills);
+    if (enabled) disabled.delete(name);
+    else disabled.add(name);
+    writeWorkspacePolicy(id, { disabledSkills: [...disabled] });
+    this.deps.skills.setDisabled([...disabled]);
+    await this.deps.agent.reloadResources();
+    this.emitChange('skills');
   }
 
   setActiveSkills(names: string[]): string[] {

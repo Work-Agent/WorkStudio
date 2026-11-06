@@ -79,11 +79,13 @@ export function DockResizeHandle() {
     >
       <span
         className={`pointer-events-none absolute inset-y-0 left-px w-px transition-colors ${
-          active ? 'bg-[#4F6BED]' : 'bg-zinc-300 dark:bg-zinc-800'
+          active
+            ? 'bg-[var(--biz-accent)]'
+            : 'bg-[var(--biz-surface)] bg-[var(--biz-surface)]'
         }`}
       />
       <span
-        className={`pointer-events-none absolute left-[3px] top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-[#4F6BED]/70 transition-opacity ${
+        className={`pointer-events-none absolute left-[3px] top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-[var(--biz-accent)]/70 transition-opacity ${
           active ? 'opacity-100' : 'opacity-0'
         }`}
       />
@@ -127,7 +129,7 @@ export function ResizeHandles({
           title="拖动以调整大小"
         >
           {h.dir === 'se' && (
-            <MoveDiagonal2 className="w-3 h-3 absolute right-1 bottom-1 text-zinc-400/70 group-hover:text-[#4F6BED] dark:text-zinc-500 dark:group-hover:text-[#6c86f0] transition-colors" />
+            <MoveDiagonal2 className="w-3 h-3 absolute right-1 bottom-1 text-[var(--biz-text-muted)]/70 group-hover:text-[var(--biz-accent)] text-[var(--biz-text-muted)] dark:group-hover:text-[var(--biz-accent)] transition-colors" />
           )}
         </div>
       ))}
@@ -139,7 +141,7 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg bg-[#4F6BED] text-white px-2.5 py-1.5 space-y-1">
+        <div className="max-w-[85%] rounded-lg bg-[var(--biz-accent)] text-[var(--biz-primary-ink)] px-2.5 py-1.5 space-y-1">
           {message.blocks.map((b, i) => (
             <div key={i} className="whitespace-pre-wrap">
               {b.type === 'text' ? b.text : b.type === 'thinking' ? b.text : ''}
@@ -165,7 +167,7 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
           return (
             <details
               key={i}
-              className="border-l-2 border-zinc-300 dark:border-zinc-700 pl-2.5 text-zinc-500 dark:text-zinc-400"
+              className="border-l-2 border-[var(--biz-border)] pl-2.5 text-[var(--biz-text-muted)]"
             >
               <summary className="cursor-pointer text-[11px]">思考过程</summary>
               <div
@@ -181,12 +183,12 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
           <details
             key={i}
             data-tool={block.toolName}
-            className="rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 group"
+            className="rounded border border-[var(--biz-border)] text-[var(--biz-text-muted)] text-[var(--biz-text)] group"
           >
-            <summary className="cursor-pointer select-none px-2 py-1 flex items-baseline gap-1.5 min-w-0 text-[11.5px] hover:bg-zinc-100 dark:hover:bg-zinc-800/50 rounded">
+            <summary className="cursor-pointer select-none px-2 py-1 flex items-baseline gap-1.5 min-w-0 text-[11.5px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] rounded">
               <span className="font-medium shrink-0">{block.toolName}</span>
               {preview && (
-                <span className="truncate text-zinc-400 dark:text-zinc-500 min-w-0">
+                <span className="truncate text-[var(--biz-text-muted)] min-w-0">
                   {preview}
                 </span>
               )}

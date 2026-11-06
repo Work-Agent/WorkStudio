@@ -30,6 +30,12 @@ interface SettingsPageDef {
 
 const PAGES: SettingsPageDef[] = [
   {
+    id: 'appearance',
+    label: '外观与皮肤',
+    desc: '全局皮肤 · 跟随系统 · 编辑字号',
+    icon: 'palette',
+  },
+  {
     id: 'welcome',
     label: '欢迎',
     desc: '打开工作区 / 新建文件',
@@ -44,38 +50,38 @@ const PAGES: SettingsPageDef[] = [
   },
   {
     id: 'browser',
-    label: '浏览器',
+    label: '网站采集',
     desc: '归档白名单 · 域名分组',
     icon: 'globe',
   },
   {
     id: 'plugins',
-    label: '插件',
+    label: '文档插件',
     desc: 'zip 安装 · 本地路径 · 内置插件',
     icon: 'package',
   },
   {
     id: 'updates',
-    label: '软件更新',
+    label: '关于与更新',
     desc: '版本检查 · 安装包下载',
     icon: 'download',
   },
   {
     id: 'models',
-    label: '模型配置',
+    label: '模型连接',
     desc: '供应商登录 · 模型目录 · API Key',
     icon: 'cpu',
   },
   {
     id: 'extensions',
-    label: 'Pi 扩展',
+    label: '助手扩展',
     desc: '社区包安装 · 已加载扩展',
     icon: 'puzzle',
   },
   { id: 'skills', label: '技能', desc: '已加载清单 · 装载诊断', icon: 'book' },
   {
     id: 'sessions',
-    label: '会话管理',
+    label: '会话历史',
     desc: '会话列表 · 切换 · 删除与停止',
     icon: 'messages',
   },
@@ -93,7 +99,7 @@ const PAGES: SettingsPageDef[] = [
   },
   {
     id: 'resources',
-    label: '资源索引',
+    label: '资源诊断',
     desc: '资源地图 · 重新索引',
     icon: 'folder-tree',
   },

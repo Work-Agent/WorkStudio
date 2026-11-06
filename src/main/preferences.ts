@@ -1,3 +1,7 @@
+import {
+  normalizeAppearance,
+  type AppearanceSettings,
+} from '../shared/appearance';
 /**
  * 应用偏好与工作区策略（architecture.md §2.6）。
  *
@@ -17,6 +21,7 @@ const NAMESPACE = 'workspaceStudio';
 
 export interface UserPreferences {
   theme: 'light' | 'dark';
+  appearance: AppearanceSettings;
   locale: string | null;
   /** 网络代理（http://127.0.0.1:7890），null = 未设置走环境变量 / 直连。 */
   proxy: string | null;
@@ -25,16 +30,21 @@ export interface UserPreferences {
 }
 
 export interface WorkspacePolicy {
+  disabledSkills: string[];
   browser: { allowlist: string[] };
 }
 
 const DEFAULT_USER: UserPreferences = {
   theme: 'dark',
+  appearance: normalizeAppearance(),
   locale: null,
   proxy: null,
   githubToken: null,
 };
-const DEFAULT_POLICY: WorkspacePolicy = { browser: { allowlist: [] } };
+const DEFAULT_POLICY: WorkspacePolicy = {
+  disabledSkills: [],
+  browser: { allowlist: [] },
+};
 
 /** 用户级设置文件（同时是 pi 的 global settings）。 */
 function userSettingsFile(): string {
@@ -53,6 +63,12 @@ export function readUserPreferences(): UserPreferences {
       raw['theme'] === 'light' || raw['theme'] === 'dark'
         ? raw['theme']
         : DEFAULT_USER.theme,
+    appearance: normalizeAppearance(
+      (raw['appearance'] && typeof raw['appearance'] === 'object'
+        ? raw['appearance']
+        : {}) as Partial<AppearanceSettings>,
+      raw['theme'] === 'light' ? 'light' : 'dark',
+    ),
     locale: typeof raw['locale'] === 'string' ? raw['locale'] : null,
     proxy:
       typeof raw['proxy'] === 'string' && raw['proxy'].trim()
@@ -81,6 +97,11 @@ export function readWorkspacePolicy(wsId: string): WorkspacePolicy {
       ? (browser as { allowlist?: unknown }).allowlist
       : undefined;
   return {
+    disabledSkills: Array.isArray(raw['disabledSkills'])
+      ? raw['disabledSkills'].filter(
+          (name): name is string => typeof name === 'string',
+        )
+      : [],
     browser: {
       allowlist: Array.isArray(allowlist)
         ? allowlist.filter(
@@ -93,10 +114,11 @@ export function readWorkspacePolicy(wsId: string): WorkspacePolicy {
 
 export function writeWorkspacePolicy(
   wsId: string,
-  patch: { browser?: { allowlist?: string[] } },
+  patch: { browser?: { allowlist?: string[] }; disabledSkills?: string[] },
 ): WorkspacePolicy {
   const current = readWorkspacePolicy(wsId);
   const next: WorkspacePolicy = {
+    disabledSkills: patch.disabledSkills ?? current.disabledSkills,
     browser: { ...current.browser, ...patch.browser },
   };
   writeNamespace(workspaceSettingsFile(wsId), { ...next });
@@ -134,7 +156,10 @@ function readNamespace(file: string): Record<string, unknown> {
 }
 
 function writeNamespace(file: string, value: Record<string, unknown>): void {
-  const doc = { ...readJson(file), [NAMESPACE]: value };
+  const doc = {
+    ...readJson(file),
+    [NAMESPACE]: { ...readNamespace(file), ...value },
+  };
   const tmp = `${file}.tmp`;
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, 'utf-8');

@@ -314,13 +314,9 @@
   <body>
     <div class="wrap">
       <header>
-        <h1>Pi 扩展</h1>
+        <h1>助手扩展</h1>
         <p>
-          从 pi.dev 社区目录浏览安装 Pi 包（扩展 / 技能 / 提示词 /
-          主题）。安装写入 <code>settings.json</code> 的
-          <code>packages</code> 并落盘依赖；安装 /
-          卸载后自动热重载当前会话资源。 技能清单见「技能」页，WorkStudio
-          插件见「插件」页。
+          管理助手的额外工具、技能与运行扩展。安装范围区分应用默认和当前工作区，文档插件在能力管理中单独管理。
         </p>
       </header>
 
@@ -379,7 +375,7 @@
       };
 
       const state = {
-        tab: 'browse',
+        tab: 'installed',
         query: '',
         type: '',
         page: 0,
@@ -717,6 +713,7 @@
       $('tab-browse').onclick = () => {
         state.tab = 'browse';
         render();
+        if (!state.packages.length) void loadCatalog(false);
       };
       $('tab-installed').onclick = () => {
         state.tab = 'installed';
@@ -772,7 +769,6 @@
       });
       window.extension.bus.loaded();
       void loadConfigured();
-      void loadCatalog(false);
     </script>
   </body>
 </html>

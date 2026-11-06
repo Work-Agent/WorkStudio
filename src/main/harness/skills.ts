@@ -20,10 +20,15 @@ export interface SkillInfoView {
   source: string;
   manualOnly: boolean;
   builtin: boolean;
+  enabled?: boolean;
 }
 
 export class SkillsManager {
   private active = new Set<string>();
+  private disabled = new Set<string>();
+  setDisabled(names: string[]): void {
+    this.disabled = new Set(names);
+  }
   private infos: SkillInfoView[] = [];
   private diagnostics: Array<{ type: string; message: string; path?: string }> =
     [];
@@ -61,7 +66,10 @@ export class SkillsManager {
   }
 
   getSkillInfos(): SkillInfoView[] {
-    return this.infos;
+    return this.infos.map((info) => ({
+      ...info,
+      enabled: !this.disabled.has(info.name),
+    }));
   }
 
   getDiagnostics(): Array<{ type: string; message: string; path?: string }> {
@@ -79,9 +87,15 @@ export class SkillsManager {
     skills: Skill[],
     diagnostics: ResourceDiagnostic[],
   ): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
-    if (this.active.size === 0) return { skills, diagnostics };
+    if (this.active.size === 0)
+      return {
+        skills: skills.filter((s) => !this.disabled.has(s.name)),
+        diagnostics,
+      };
     return {
-      skills: skills.filter((s) => this.active.has(s.name)),
+      skills: skills.filter(
+        (s) => this.active.has(s.name) && !this.disabled.has(s.name),
+      ),
       diagnostics,
     };
   }

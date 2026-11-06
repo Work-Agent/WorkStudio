@@ -1,3 +1,11 @@
+import { nativeTheme } from 'electron';
+import {
+  normalizeAppearance,
+  resolveAppearance,
+  type AppearanceSettings,
+  type AppearanceSnapshot,
+} from '../../shared/appearance';
+import { readUserPreferences, writeUserPreferences } from '../preferences';
 /**
  * App 层中间件：多视图管理的唯一实现。
  *
@@ -49,6 +57,11 @@ export class ViewsCapability implements Capability {
 
   private viewsState!: StateHandle<ViewSnapshot[]>;
   private themeState!: StateHandle<Theme>;
+  private appearanceState!: StateHandle<AppearanceSnapshot>;
+  private readonly onSystemTheme = (): void => {
+    if (readUserPreferences().appearance.mode === 'system')
+      this.publishAppearance();
+  };
 
   constructor(private readonly electron: ElectronCapability) {}
 
@@ -62,6 +75,7 @@ export class ViewsCapability implements Capability {
       this.viewRegistry,
       this.electron,
       this.providers,
+      (request) => this.dialogs.ask(request),
     );
     this.system = new SystemViews(this.electron, this.viewRegistry, (input) =>
       this.createView(input),
@@ -85,14 +99,22 @@ export class ViewsCapability implements Capability {
 
     this.viewsState = global.state<ViewSnapshot[]>('/views');
     this.themeState = global.state<Theme>('/theme');
+    this.appearanceState = global.state<AppearanceSnapshot>('/appearance');
+    global.handle('/appearance/set', (call) => {
+      const current = readUserPreferences();
+      const patch = call.input as Partial<AppearanceSettings> | undefined;
+      const appearance = normalizeAppearance(
+        { ...current.appearance, ...patch },
+        current.theme,
+      );
+      writeUserPreferences({ appearance });
+      return this.publishAppearance();
+    });
 
     global.handle('/views/open', (call) =>
       this.open(call as RouteCall<OpenViewInput>),
     );
-    global.handle('/views/close-all', () => {
-      this.runtime.closeAll();
-      return null;
-    });
+    global.handle('/views/close-all', () => this.runtime.closeAll());
     for (const action of [
       'activate',
       'close',
@@ -115,6 +137,15 @@ export class ViewsCapability implements Capability {
 
     global.handle('/theme/set', (call) =>
       this.setTheme(call as RouteCall<{ theme?: Theme }>),
+    );
+    global.handle('/native/window-move/begin', () =>
+      this.electron.native.beginWindowMove(),
+    );
+    global.handle('/native/window-move/update', () =>
+      this.electron.native.updateWindowMove(),
+    );
+    global.handle('/native/window-move/end', () =>
+      this.electron.native.endWindowMove(),
     );
     global.handle('/native/open-external', (call) => {
       const input = call.input as { url?: string } | undefined;
@@ -156,6 +187,15 @@ export class ViewsCapability implements Capability {
     });
 
     this.viewRegistry.onChange(() => {
+      for (const view of this.viewRegistry.list()) {
+        if (this.viewRegistry.get(view.id)?.sessionId)
+          this.electron.views.send(view.id, CH_BUS, {
+            type: 'document-state',
+            dirty: view.dirty,
+            conflict: view.conflict,
+            missing: view.missing,
+          });
+      }
       this.viewsState.publish(this.viewRegistry.list());
     });
   }
@@ -163,6 +203,8 @@ export class ViewsCapability implements Capability {
   /** 启动阶段：视图身份 → 系统视图 → 主题 / 现场 / 布局。 */
   activate(): void {
     this.system.ensure();
+    nativeTheme.on('updated', this.onSystemTheme);
+    this.publishAppearance();
     this.electron.theme.apply(this.theme);
     this.themeState.publish(this.theme);
     this.dialogs.activate();
@@ -178,6 +220,7 @@ export class ViewsCapability implements Capability {
   }
 
   dispose(): void {
+    nativeTheme.removeListener('updated', this.onSystemTheme);
     this.unsubscribe?.();
     this.unsubscribe = null;
   }
@@ -274,6 +317,10 @@ export class ViewsCapability implements Capability {
           this.electron.views.send(record.id, CH_BUS, {
             type: 'theme',
             theme: this.theme,
+            appearance: resolveAppearance(
+              readUserPreferences().appearance,
+              nativeTheme.shouldUseDarkColors,
+            ),
           });
         },
         onCrash: () => this.viewRegistry.setState(record.id, 'crashed'),
@@ -396,11 +443,38 @@ export class ViewsCapability implements Capability {
       };
     }
 
+    const settingsFamily = (value: string | null): string | null => {
+      const id = value?.match(/^\/settings\/page\/([^/]+)$/)?.[1];
+      if (!id || ['welcome', 'sessions'].includes(id)) return null;
+      return ['plugins', 'skills', 'extensions'].includes(id)
+        ? 'capabilities'
+        : 'settings';
+    };
+    const family = settingsFamily(path);
+    const reusable = family
+      ? this.viewRegistry
+          .list()
+          .find((view) => settingsFamily(view.contentPath) === family)
+      : undefined;
+    if (reusable && !(await this.runtime.prepare([reusable.id])))
+      return { id: reusable.id, type: reusable.type, title: reusable.title };
     const spec = await provider.resolve({
       ...call,
       params: { ...call.params, ...match(provider.path, path) },
       input: { path },
     });
+    if (reusable) {
+      this.viewRegistry.replacePage(reusable.id, {
+        contentPath: path,
+        title: spec.title,
+        url: spec.url,
+        grants: spec.grants,
+      });
+      this.electron.views.navigate(reusable.id, spec.url);
+      this.viewRegistry.setActive(reusable.id);
+      this.electron.views.activate(reusable.id);
+      return { id: reusable.id, type: reusable.type, title: spec.title };
+    }
     const record = this.createView({ ...spec, contentPath: path });
     this.viewRegistry.setActive(record.id);
     this.electron.views.activate(record.id);
@@ -409,8 +483,19 @@ export class ViewsCapability implements Capability {
   }
 
   /** 工作区换代 / 退出：关闭所有内容视图（系统视图保留）。 */
-  closeAll(): void {
-    this.runtime.closeAll();
+  closeAll(guard = true): Promise<boolean> {
+    return this.runtime.closeAll(guard);
+  }
+  prepareClose(): Promise<boolean> {
+    return this.runtime.prepare();
+  }
+  isPageDirty(sessionId: string): boolean {
+    return this.viewRegistry.findBySessionId(sessionId)?.dirty ?? false;
+  }
+  ask(
+    request: Omit<import('../../shared/types').UiDialogRequest, 'id' | 'type'>,
+  ): Promise<import('../../shared/types').UiDialogResponse> {
+    return this.dialogs.ask(request);
   }
 
   /** Agent 对话框应答回传（由组合根绑定到 DialogHost）。 */
@@ -427,19 +512,39 @@ export class ViewsCapability implements Capability {
     this.dialogs.resolve(id);
   }
 
+  private publishAppearance(): AppearanceSnapshot {
+    const snapshot = resolveAppearance(
+      readUserPreferences().appearance,
+      nativeTheme.shouldUseDarkColors,
+    );
+    this.theme = snapshot.theme;
+    this.electron.theme.apply(snapshot.theme);
+    this.themeState.publish(snapshot.theme);
+    this.appearanceState.publish(snapshot);
+    for (const view of this.viewRegistry.list())
+      this.electron.views.send(view.id, CH_BUS, {
+        type: 'theme',
+        theme: snapshot.theme,
+        appearance: snapshot,
+      });
+    this.scene.publishLayout();
+    return snapshot;
+  }
+
   private setTheme(call: RouteCall<{ theme?: Theme }>): Theme {
     const theme = call.input?.theme;
     if (theme !== 'light' && theme !== 'dark') {
       throw new RouteFailure('invalid', 'theme must be light or dark');
     }
-    this.theme = theme;
-    this.electron.theme.write(theme);
-    this.electron.theme.apply(theme);
-    this.themeState.publish(theme);
-    for (const view of this.viewRegistry.list()) {
-      this.electron.views.send(view.id, CH_BUS, { type: 'theme', theme });
-    }
-    this.scene.publishLayout();
+    writeUserPreferences({
+      theme,
+      appearance: {
+        ...readUserPreferences().appearance,
+        mode: 'fixed',
+        skin: theme === 'dark' ? 'black' : 'porcelain',
+      },
+    });
+    this.publishAppearance();
     return theme;
   }
 }

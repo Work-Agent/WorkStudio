@@ -176,11 +176,9 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>浏览器 · 归档白名单</h1>
+      <h1>网站资料采集范围</h1>
       <p class="sub">
-        名单内的域名（含子域）在侧栏按域分组；行上是页面标题与网址，点开即在浏览器里
-        打开该页面。页面快照存到工作区
-        <code>sites/&lt;域&gt;/</code>，仅供侧车读取。
+        允许归档的网站按当前工作区保存，域名规则包含子域名。添加域名不会自动访问网站；名单外页面作为临时网页打开。
       </p>
       <div class="card">
         <div class="row">
@@ -246,8 +244,8 @@
       }
 
       async function save(next) {
+        await call(await allowlistPath('/set'), { list: next });
         domains = next;
-        await call(await allowlistPath('/set'), { list: domains });
         render();
       }
 
@@ -262,12 +260,19 @@
         try {
           await save([...domains, domain]);
           input.value = '';
+          window.extension.bus.send({ type: 'dirty', dirty: false });
           toast('已添加');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         }
       };
 
+      $('domain').addEventListener('input', () =>
+        window.extension.bus.send({
+          type: 'dirty',
+          dirty: !!$('domain').value.trim(),
+        }),
+      );
       $('domain').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') $('add').click();
       });

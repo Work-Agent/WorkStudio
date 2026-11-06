@@ -58,7 +58,7 @@ import { PageSessions } from './ura/page-sessions';
 import { PluginService } from './plugins/service';
 import { PluginCatalogService } from './plugins/catalog';
 import { BUNDLED_GITHUB_TOKEN } from './plugins/github';
-import { readUserPreferences } from './preferences';
+import { readUserPreferences, readWorkspacePolicy } from './preferences';
 import { setProxySource } from './net/proxy';
 import { UpdateService } from './update/updater';
 import { UpdatesService } from './service/updates';
@@ -183,6 +183,7 @@ export class App {
     });
 
     const skills = new SkillsManager();
+    skills.setDisabled(readWorkspacePolicy(initial.id).disabledSkills);
     let sessions: SessionsService | null = null;
     const agent = await AgentHost.bootstrap(
       {
@@ -261,11 +262,16 @@ export class App {
       settingsPages: () => this.settings.pages(),
       viewHost: {
         list: () =>
-          this.views.list().map((view) => ({
-            ...view,
-            document: view.contentPath ? { id: view.contentPath } : undefined,
-            temporary: false,
-          })),
+          this.views.list().map((view) => {
+            const sessionId = this.views.get(view.id)?.sessionId;
+            return {
+              ...view,
+              document: sessionId
+                ? { id: this.resources?.page(sessionId)?.ref }
+                : undefined,
+              temporary: false,
+            };
+          }),
       },
     });
     const packages = new PiPackageService({
@@ -279,6 +285,7 @@ export class App {
     this.resources = new ResourcesService({
       ura: ura.ura,
       pages: new PageSessions(ura.ura),
+      isDirty: (id) => this.viewsCapability?.isPageDirty(id) ?? false,
     });
     this.lists = lists;
     ura.map.restart();
@@ -290,6 +297,7 @@ export class App {
     });
     this.piconf = new PiConfService({
       settings: settingsFor(initial.id),
+      workspaceId: () => workspaces.current?.id ?? initial.id,
       models: new ModelConfigStore(env.dataRoot),
       packages,
       skills,
@@ -341,6 +349,12 @@ export class App {
     );
     if (!installedViews) throw new Error('views capability is not installed');
     this.viewsCapability = installedViews;
+    this.workspaces.beforeChange = () => this.prepareClose();
+    this.runtime.setCloseGuard(async () => {
+      if (!(await this.prepareClose(true))) return false;
+      await this.viewsCapability.closeAll(false);
+      return true;
+    });
     this.browserAutomation = new BrowserAutomation(this.viewsCapability);
 
     registerRoutes(this.router, {
@@ -369,9 +383,10 @@ export class App {
 
     this.workspaces.onClose(() => {
       this.resources.reset();
-      this.viewsCapability.closeAll();
+      void this.viewsCapability.closeAll(false);
     });
     this.workspaces.onOpen(async (meta) => {
+      skills.setDisabled(readWorkspacePolicy(meta.id).disabledSkills);
       await agent.setWorkspace(meta.path);
       this.piconf.setSettings(settingsFor(meta.id));
       await this.sessions.reloadWorkspace();
@@ -435,6 +450,50 @@ export class App {
       { type: 'service', id: 'lists', base: '' },
       `/workspaces/${workspace.id}/lists/refresh`,
     );
+  }
+
+  private preparingClose = false;
+
+  async prepareClose(exiting = false): Promise<boolean> {
+    if (this.preparingClose) return false;
+    this.preparingClose = true;
+    try {
+      if (!this.viewsCapability) return true;
+      if (this.agentHost?.getSnapshot().isStreaming) {
+        const response = await this.viewsCapability.ask({
+          dialogType: 'select',
+          title: '助手仍在执行',
+          message: '离开前需要停止当前任务。已经完成的文件操作不会撤销。',
+          options: ['停止后继续'],
+        });
+        if (response.cancelled || response.value !== '停止后继续') return false;
+        try {
+          await this.sessions.abort();
+        } catch {
+          return false;
+        }
+        if (this.agentHost.getSnapshot().isStreaming) return false;
+      }
+      if (
+        exiting &&
+        this.plugins.task &&
+        ['running', 'cancelling'].includes(this.plugins.task.status)
+      ) {
+        const response = await this.viewsCapability.ask({
+          dialogType: 'select',
+          title: '插件仍在安装',
+          message:
+            '关闭前需要取消安装并等待当前步骤结束，防止留下未确认的安装状态。',
+          options: ['取消安装后继续'],
+        });
+        if (response.cancelled || response.value !== '取消安装后继续')
+          return false;
+        await this.plugins.cancelAndWait();
+      }
+      return await this.viewsCapability.prepareClose();
+    } finally {
+      this.preparingClose = false;
+    }
   }
 
   async release(): Promise<void> {

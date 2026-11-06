@@ -184,13 +184,14 @@
       async function save() {
         if (!state.meta || state.readOnly || !state.dirty) return;
         try {
-          const result = await ura.page.save(sessionId, state.content);
+          const content = state.content;
+          const result = await ura.page.save(sessionId, content);
           if (!result.ok) {
             toast('内容已被外部修改：请重新加载后再保存', true);
             return;
           }
-          state.original = state.content;
-          setDirty(false);
+          state.original = content;
+          setDirty(state.content !== content);
           toast('已保存');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);

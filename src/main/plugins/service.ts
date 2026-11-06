@@ -1,3 +1,4 @@
+import type { InstallObserver } from '../../shared/plugin-install';
 // ─── 插件来源管理（zip / 本地路径） ─────────────────────────────────
 //
 // 可安装清单随源码维护（PLUGINS.md），构建期解析成静态数组
@@ -72,6 +73,7 @@ export class PluginService {
   async start(): Promise<void> {
     await mkdir(this.options.root, { recursive: true });
     await mkdir(this.installedRoot(), { recursive: true });
+    await mkdir(join(this.options.root, 'recovery'), { recursive: true });
     // 解压沙盒：目录常驻、内容瞬态——启动清空，覆盖安装中断留下的残留
     await rm(this.stagingRoot(), { recursive: true, force: true });
     await mkdir(this.stagingRoot(), { recursive: true });
@@ -124,7 +126,11 @@ export class PluginService {
     return installed.path ?? join(this.installedRoot(), installed.id);
   }
 
-  async install(raw: string): Promise<PluginSource> {
+  async install(
+    raw: string,
+    observer: InstallObserver = {},
+  ): Promise<PluginSource> {
+    observer.signal?.throwIfAborted();
     const source = raw.trim();
     if (!source) throw new Error('插件来源不能为空');
     const declared = PLUGIN_REGISTRY.find((entry) => entry.source === source);
@@ -134,12 +140,22 @@ export class PluginService {
       const path = entry.path ?? resolve(this.options.cwd(), source);
       if (/\.zip$/i.test(path)) {
         // 本地 zip：与远程同一套解压安装流程，只是字节来自磁盘
-        return this.installZipBytes(await readLocalZip(path), source, entry);
+        observer.progress?.({
+          phase: 'download',
+          message: '正在读取本地安装包',
+        });
+        const bytes = await readLocalZip(path);
+        observer.signal?.throwIfAborted();
+        return this.installZipBytes(bytes, source, entry, observer);
       }
+      observer.progress?.({ phase: 'verify', message: '正在检查本地插件目录' });
       const manifest = await readManifest(path);
+      observer.signal?.throwIfAborted();
       if (!manifest)
         throw new Error(`不是插件目录（缺少 workstudio 清单）：${path}`);
+      observer.progress?.({ phase: 'install', message: '正在登记本地插件' });
       const label = entry.label ?? manifest.label;
+      const previous = this.installed[source];
       this.installed[source] = {
         id: manifest.id,
         version: manifest.version,
@@ -147,7 +163,13 @@ export class PluginService {
         path,
         ...(label ? { label } : {}),
       };
-      await this.persistInstalled();
+      try {
+        await this.persistInstalled();
+      } catch (error) {
+        if (previous) this.installed[source] = previous;
+        else delete this.installed[source];
+        throw error;
+      }
       log.info('plugin source installed', source);
       return {
         source,
@@ -159,8 +181,15 @@ export class PluginService {
       };
     }
 
-    const bytes = await download(source);
-    return this.installZipBytes(bytes, source, entry);
+    observer.progress?.({
+      phase: 'download',
+      received: 0,
+      total: null,
+      message: '正在下载安装包',
+    });
+    const bytes = await download(source, observer);
+    observer.signal?.throwIfAborted();
+    return this.installZipBytes(bytes, source, entry, observer);
   }
 
   /** 卸载：只删安装目录与安装索引；清单条目保留，可再装。 */
@@ -186,17 +215,35 @@ export class PluginService {
     bytes: Uint8Array,
     source: string,
     entry: PluginRegistryEntry,
+    observer: InstallObserver,
   ): Promise<PluginSource> {
+    observer.signal?.throwIfAborted();
+    observer.progress?.({
+      phase: 'verify',
+      message: '正在校验安装包与插件信息',
+    });
     const hash = createHash('sha256').update(bytes).digest('hex');
     if (entry.sha256 && hash !== entry.sha256)
       throw new Error(`sha256 不匹配：期望 ${entry.sha256}，实际 ${hash}`);
 
     const staging = join(this.stagingRoot(), randomUUID());
+    const backup = join(this.options.root, 'recovery', randomUUID());
+    const previous = { ...this.installed };
+    let target: string | null = null;
+    let backedUp = false;
+    let placed = false;
+    let committed = false;
     try {
-      const manifest = await extractZip(bytes, staging);
-      const target = join(this.installedRoot(), manifest.id);
-      await rmTree(target);
+      const manifest = await extractZip(bytes, staging, observer.signal);
+      observer.signal?.throwIfAborted();
+      observer.progress?.({ phase: 'install', message: '正在安装插件文件' });
+      target = join(this.installedRoot(), manifest.id);
+      if (existsSync(target)) {
+        await rename(target, backup);
+        backedUp = true;
+      }
       await rename(staging, target);
+      placed = true;
       const label = entry.label ?? manifest.label;
       const sha256 = entry.sha256 ?? hash;
       this.installed[source] = {
@@ -207,7 +254,11 @@ export class PluginService {
         sha256,
         ...(label ? { label } : {}),
       };
+      // 文件落位与索引提交为不可中断区；只有提交成功后才删除旧版本。
       await this.persistInstalled();
+      committed = true;
+      if (backedUp)
+        await rm(backup, { recursive: true, force: true }).catch(() => {});
       log.info('plugin source installed', source);
       return {
         source,
@@ -218,10 +269,20 @@ export class PluginService {
         ...(label ? { label } : {}),
       };
     } catch (error) {
-      await rm(staging, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
+      if (!committed) {
+        this.installed = previous;
+        try {
+          if (placed && target) await rmTree(target);
+          if (backedUp && target) await rename(backup, target);
+        } catch (recovery) {
+          throw new Error(
+            `安装失败，旧版本恢复尚未确认，请检查插件目录。${String(error)}；${String(recovery)}`,
+          );
+        }
+      }
       throw error;
+    } finally {
+      await rm(staging, { recursive: true, force: true }).catch(() => {});
     }
   }
 
@@ -336,24 +397,48 @@ export class PluginService {
 async function fetchBytes(
   url: string,
   headers: Record<string, string>,
+  observer: InstallObserver,
 ): Promise<Uint8Array> {
   ensureProxy();
   const fetchOnce = async (): Promise<Uint8Array> => {
     const response = await undiciFetch(url, {
       headers,
-      signal: AbortSignal.timeout(300_000),
+      signal: observer.signal
+        ? AbortSignal.any([observer.signal, AbortSignal.timeout(300_000)])
+        : AbortSignal.timeout(300_000),
     });
     if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
     const length = Number(response.headers.get('content-length') ?? '0');
     if (length > MAX_ZIP_BYTES) throw new Error('插件 zip 超过大小上限');
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_ZIP_BYTES)
-      throw new Error('插件 zip 超过大小上限');
-    return new Uint8Array(buffer);
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    if (!response.body) throw new Error('下载响应没有内容');
+    for await (const chunk of response.body) {
+      observer.signal?.throwIfAborted();
+      received += chunk.byteLength;
+      if (received > MAX_ZIP_BYTES) throw new Error('插件 zip 超过大小上限');
+      chunks.push(chunk);
+      observer.progress?.({
+        phase: 'download',
+        received,
+        total:
+          length > 0 && !response.headers.get('content-encoding')
+            ? length
+            : null,
+      });
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
   };
   try {
     return await fetchOnce();
   } catch (error) {
+    observer.signal?.throwIfAborted();
     log.warn(
       'download interrupted, retry once',
       url,
@@ -364,11 +449,18 @@ async function fetchBytes(
 }
 
 /** zip 远程下载：统一走 fetchBytes（代理 / 重试 / 超时 / 上限）。 */
-async function download(source: string): Promise<Uint8Array> {
-  return fetchBytes(source, {
-    'User-Agent': 'work-studio',
-    ...githubHeaders(source),
-  });
+async function download(
+  source: string,
+  observer: InstallObserver,
+): Promise<Uint8Array> {
+  return fetchBytes(
+    source,
+    {
+      'User-Agent': 'work-studio',
+      ...githubHeaders(source),
+    },
+    observer,
+  );
 }
 
 async function readLocalZip(path: string): Promise<Uint8Array> {
@@ -388,6 +480,7 @@ interface Manifest {
 async function extractZip(
   bytes: Uint8Array,
   staging: string,
+  signal?: AbortSignal,
 ): Promise<Manifest> {
   await mkdir(staging, { recursive: true });
   const files = unzipSync(bytes);
@@ -410,6 +503,7 @@ async function extractZip(
       : rootFile.slice(0, -'package.json'.length);
 
   for (const name of names) {
+    signal?.throwIfAborted();
     if (prefix && !name.startsWith(prefix)) continue;
     const relative = prefix ? name.slice(prefix.length) : name;
     const safe = normalizeZipPath(relative);

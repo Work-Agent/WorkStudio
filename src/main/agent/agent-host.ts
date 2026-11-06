@@ -328,12 +328,17 @@ export class AgentHost {
     newSession?: boolean;
     activeSkills?: string[];
   }): Promise<void> {
+    const skillsChanged =
+      params.activeSkills &&
+      JSON.stringify(params.activeSkills) !==
+        JSON.stringify(this.deps.skills.getActive());
     if (params.activeSkills) this.deps.skills.setActive(params.activeSkills);
     const isEmpty = this.session.sessionManager.getEntries().length === 0;
     if (params.newSession && !isEmpty) {
       this.pendingReason = 'new';
       await this.runtime.newSession();
     }
+    if (skillsChanged) await this.reloadResources();
     const session = this.session;
     if (params.newSession) {
       const name =
@@ -357,7 +362,9 @@ export class AgentHost {
         type: 'error',
         message: e instanceof Error ? e.message : String(e),
       } as AppInternalEvent);
+      throw e;
     } finally {
+      this.bridge.flush();
       this.deps.onTurnFinished();
     }
   }

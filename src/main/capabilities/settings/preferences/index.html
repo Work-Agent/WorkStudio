@@ -263,87 +263,91 @@
       <header>
         <h1>偏好设置</h1>
         <p>
-          两层配置：<b>App 默认</b> 对所有工作区生效，<b>本工作区</b>
-          只对当前工作区生效。 生效值 = 两层深度合并（工作区覆盖
-          App）；清空某字段即删除该键，回落到下一层或 pi
-          默认。未列出的字段原样保真。
+          应用默认供所有工作区继承。当前工作区的单独设置优先；清空选项并保存即可恢复继承。
         </p>
       </header>
 
-      <section class="card">
-        <h3>App 默认 <span class="scope">settings.json</span></h3>
+      <label style="display: block; margin-top: 22px"
+        >设置作用范围<select id="settings-scope" style="margin-top: 8px">
+          <option value="project">当前工作区</option>
+          <option value="global">应用默认 · 所有工作区</option>
+        </select></label
+      >
+      <section class="card" id="scope-global" hidden>
+        <h3>App 默认 <span class="scope">其他工作区继承此处</span></h3>
         <div class="path" id="path-global"></div>
         <div class="grid" id="grid-global"></div>
         <div class="row-end">
           <span class="hint" id="hint-global"></span>
-          <button onclick="load()">重新加载</button>
+          <button onclick="restoreScope('global')">恢复默认</button>
           <button class="primary" onclick="save('global')">
             保存 App 默认
           </button>
         </div>
       </section>
 
-      <section class="card">
-        <h3>
-          本工作区 <span class="scope">ws/&lt;wsId&gt;/settings.json</span>
-        </h3>
+      <section class="card" id="scope-project">
+        <h3>本工作区 <span class="scope">未设置时继承应用默认</span></h3>
         <div class="path" id="path-project"></div>
         <div class="grid" id="grid-project"></div>
         <div class="row-end">
           <span class="hint" id="hint-project"></span>
+          <button onclick="restoreScope('project')">恢复继承</button>
           <button class="primary" onclick="save('project')">
             保存本工作区
           </button>
         </div>
       </section>
 
-      <section class="card">
-        <h3>本工作区 · 注册项 <span class="scope">URA 注册表</span></h3>
-        <p class="hint" style="margin: -4px 0 12px">
-          应用级注册表在启动时装配；这里只展示本工作区当前可用的实现。
-        </p>
-        <div class="reg-groups" id="registry"></div>
-        <div class="reg-group">
-          <div class="reg-title">
-            绑定（(transport, mime) → codec / presenter）
+      <details style="margin-top: 24px">
+        <summary>高级资源管道与绑定</summary>
+        <section class="card">
+          <h3>本工作区 · 注册项 <span class="scope">URA 注册表</span></h3>
+          <p class="hint" style="margin: -4px 0 12px">
+            应用级注册表在启动时装配；这里只展示本工作区当前可用的实现。
+          </p>
+          <div class="reg-groups" id="registry"></div>
+          <div class="reg-group">
+            <div class="reg-title">
+              绑定（(transport, mime) → codec / presenter）
+            </div>
+            <div id="bindings"></div>
+            <div
+              style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px"
+            >
+              <input
+                id="b-transport"
+                placeholder="transport: file / https / *"
+                style="flex: 1; min-width: 120px"
+              />
+              <input
+                id="b-mime"
+                placeholder="mime: text/html / *"
+                style="flex: 1; min-width: 120px"
+              />
+              <input
+                id="b-codec"
+                placeholder="codec id（可选）"
+                style="flex: 1; min-width: 120px"
+              />
+              <input
+                id="b-presenter"
+                placeholder="presenter（可选）"
+                style="flex: 1; min-width: 120px"
+              />
+              <button onclick="addBinding()">写入</button>
+            </div>
           </div>
-          <div id="bindings"></div>
-          <div
-            style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px"
-          >
-            <input
-              id="b-transport"
-              placeholder="transport: file / https / *"
-              style="flex: 1; min-width: 120px"
-            />
-            <input
-              id="b-mime"
-              placeholder="mime: text/html / *"
-              style="flex: 1; min-width: 120px"
-            />
-            <input
-              id="b-codec"
-              placeholder="codec id（可选）"
-              style="flex: 1; min-width: 120px"
-            />
-            <input
-              id="b-presenter"
-              placeholder="presenter（可选）"
-              style="flex: 1; min-width: 120px"
-            />
-            <button onclick="addBinding()">写入</button>
+          <div class="reg-diag" id="registry-diag"></div>
+          <div class="row-end">
+            <span class="hint"></span>
+            <button onclick="loadRegistry()">刷新注册项</button>
           </div>
-        </div>
-        <div class="reg-diag" id="registry-diag"></div>
-        <div class="row-end">
-          <span class="hint"></span>
-          <button onclick="loadRegistry()">刷新注册项</button>
-        </div>
-      </section>
+        </section>
+      </details>
 
       <p class="foot">
-        写入即落盘（主进程原子写 + JSON 未知字段保真）；pi
-        在会话重建时读取新值。
+        保存后用于后续会话。当前会话的模型与思考档位可在助手输入区单独选择。
       </p>
     </div>
     <div class="toast" id="toast"></div>
@@ -436,6 +440,11 @@
         ],
       };
 
+      FIELDS.project.unshift(
+        ...FIELDS.global.filter(
+          (field) => !['theme', 'workspaceStudio.proxy'].includes(field.path),
+        ),
+      );
       let view = null;
 
       const bridge = window.appBridge;
@@ -481,6 +490,14 @@
       function renderScope(scope, own, effective) {
         const grid = $('grid-' + scope);
         grid.innerHTML = '';
+        const advanced = document.createElement('details');
+        advanced.className = 'wide';
+        const summary = document.createElement('summary');
+        summary.textContent = '高级运行参数与资源路径';
+        advanced.append(summary);
+        const advancedGrid = document.createElement('div');
+        advancedGrid.className = 'grid';
+        advanced.append(advancedGrid);
         for (const f of FIELDS[scope]) {
           const val = getByPath(own, f.path);
           const eff = getByPath(effective, f.path);
@@ -582,15 +599,82 @@
               '</span></label>' +
               control;
           }
-          grid.appendChild(div);
+          const input = div.querySelector('input,select,textarea');
+          const label = div.querySelector('label');
+          if (input && label) {
+            input.id = scope + '-' + f.path;
+            label.htmlFor = input.id;
+          }
+          if (
+            [
+              'defaultThinkingLevel',
+              'compaction.enabled',
+              'retry.enabled',
+              'retry.maxRetries',
+              'workspaceStudio.proxy',
+              'enabledModels',
+            ].includes(f.path)
+          )
+            grid.appendChild(div);
+          else advancedGrid.appendChild(div);
         }
+        if (advancedGrid.children.length) grid.append(advanced);
       }
 
+      function restoreScope(scope) {
+        $('grid-' + scope)
+          .querySelectorAll('[data-path]')
+          .forEach((el) => {
+            if (el.type === 'checkbox') el.checked = false;
+            else el.value = '';
+          });
+        dirtyScopes.add(scope);
+        window.extension.bus.send({ type: 'dirty', dirty: true });
+        toast('已恢复继承值，保存后生效');
+      }
+      const dirtyScopes = new Set();
+      $('settings-scope').addEventListener('change', async (e) => {
+        const next = e.target.value;
+        const current = next === 'global' ? 'project' : 'global';
+        if (dirtyScopes.has(current)) {
+          e.target.value = current;
+          const response = await call('/dialogs/ask', {
+            dialogType: 'select',
+            title: '切换范围前保存设置？',
+            message: '应用默认和当前工作区分别保存。',
+            options: ['保存并切换', '放弃修改'],
+          });
+          if (response.cancelled) return;
+          if (response.value === '保存并切换') {
+            await save(current);
+            if (dirtyScopes.has(current)) return;
+          } else {
+            dirtyScopes.delete(current);
+            window.extension.bus.send({
+              type: 'dirty',
+              dirty: dirtyScopes.size > 0,
+            });
+            render();
+          }
+        }
+        e.target.value = next;
+        $('scope-global').hidden = next !== 'global';
+        $('scope-project').hidden = next !== 'project';
+      });
+      document.addEventListener('input', (e) => {
+        const grid = e.target.closest('[id^=grid-]');
+        if (grid && e.target.matches('[data-path]')) {
+          dirtyScopes.add(grid.id.slice(5));
+          window.extension.bus.send({ type: 'dirty', dirty: true });
+        }
+      });
       function render() {
         $('path-global').textContent = shortPath(view.paths.global);
         $('path-project').textContent = shortPath(view.paths.project);
-        renderScope('global', view.global, view.effective);
-        renderScope('project', view.project, view.effective);
+        if (!dirtyScopes.has('global'))
+          renderScope('global', view.global, view.effective);
+        if (!dirtyScopes.has('project'))
+          renderScope('project', view.project, view.effective);
       }
 
       /** 控件值 → 设置值（null = 删除该键）。 */
@@ -622,6 +706,11 @@
           if (!same) changes.push({ path, value: next });
         });
         if (!changes.length) {
+          dirtyScopes.delete(scope);
+          window.extension.bus.send({
+            type: 'dirty',
+            dirty: dirtyScopes.size > 0,
+          });
           toast('没有改动');
           return;
         }
@@ -633,6 +722,11 @@
           for (const change of changes) {
             view = await call(path, change);
           }
+          dirtyScopes.delete(scope);
+          window.extension.bus.send({
+            type: 'dirty',
+            dirty: dirtyScopes.size > 0,
+          });
           render();
           toast(
             '已保存 ' +
@@ -641,6 +735,7 @@
               (scope === 'global' ? 'App 默认' : '本工作区'),
           );
         } catch (e) {
+          window.extension.bus.send({ type: 'save-result', ok: false });
           toast('保存失败：' + (e && e.message ? e.message : e), true);
         }
       }
@@ -821,6 +916,10 @@
       );
       window.extension.bus.on((msg) => {
         if (msg && msg.type === 'theme') applyTheme(msg.theme);
+        if (msg?.type === 'action' && msg.id === 'save')
+          void (async () => {
+            for (const scope of [...dirtyScopes]) await save(scope);
+          })();
       });
       window.extension.bus.loaded();
       load();
