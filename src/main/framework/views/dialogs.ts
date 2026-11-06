@@ -2,7 +2,7 @@
 import type { StateHandle } from '../../core/handles';
 import { RouteFailure } from '../../core/failure';
 import type { RouteCall } from '../../core/types';
-import type { UiDialogResponse } from '../../../shared/types';
+import type { UiDialogRequest, UiDialogResponse } from '../../../shared/types';
 import type { GlobalRegistration } from '../middleware';
 
 export interface DialogView {
@@ -31,6 +31,10 @@ export interface DialogsDeps {
 export class DialogsController {
   private readonly dialogs: DialogView[] = [];
   private dialogSeq = 0;
+  private readonly pending = new Map<
+    string,
+    (response: UiDialogResponse) => void
+  >();
   private responder: ((response: UiDialogResponse) => void) | null = null;
   private readonly notices: AppNotice[] = [];
   private noticeSeq = 0;
@@ -42,6 +46,9 @@ export class DialogsController {
   install(global: GlobalRegistration): void {
     this.dialogState = global.state<DialogView[]>('/dialogs');
     this.noticeState = global.state<AppNotice[]>('/notices');
+    global.handle('/dialogs/ask', (call) =>
+      this.ask(call.input as Omit<UiDialogRequest, 'id' | 'type'>),
+    );
     global.handle('/dialogs/open', (call) =>
       this.open(call as RouteCall<{ request?: unknown }>),
     );
@@ -70,6 +77,21 @@ export class DialogsController {
   activate(): void {
     this.dialogState.publish([...this.dialogs]);
     this.noticeState.publish([...this.notices]);
+  }
+
+  ask(
+    request: Omit<UiDialogRequest, 'id' | 'type'>,
+  ): Promise<UiDialogResponse> {
+    const id = `app-dialog-${++this.dialogSeq}`;
+    return new Promise((resolve) => {
+      this.pending.set(id, resolve);
+      this.dialogs.push({
+        id,
+        request: { ...request, id, type: 'dialog' },
+        status: 'open',
+      });
+      this.publishDialogs();
+    });
   }
 
   setResponder(responder: (response: UiDialogResponse) => void): void {
@@ -119,7 +141,11 @@ export class DialogsController {
     dialog.status = response.cancelled ? 'cancelled' : 'resolved';
     dialog.response = response;
     this.publishDialogs();
-    this.responder?.(response);
+    const resolve = this.pending.get(id);
+    if (resolve) {
+      this.pending.delete(id);
+      resolve(response);
+    } else this.responder?.(response);
     return null;
   }
 

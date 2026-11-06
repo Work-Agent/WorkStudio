@@ -226,75 +226,11 @@
   <body>
     <div class="wrap">
       <header>
-        <h1>软件更新</h1>
+        <h1>关于与更新</h1>
         <p>
-          对比 <b>GitHub Releases</b> 最新发布与当前版本，有新版则按平台 /
-          架构下载对应安装包。下载走「偏好设置 → 网络代理」（未设置时回落
-          <code>https_proxy</code> 环境变量）；国内网络建议配置代理。
+          查看当前版本、检查更新并下载对应平台的安装包。下载完成后按系统提示安装。
         </p>
       </header>
-
-      <section class="card">
-        <h3>
-          GitHub Token
-          <span class="scope">settings.json · workspaceStudio.githubToken</span>
-        </h3>
-        <p class="desc">
-          默认使用安装包内置的只读 token（2026-12-05 到期），私有仓库读 Releases
-          开箱可用；此处填写可覆盖，清空保存则回退内置。建议 fine-grained
-          token，只授本仓库 <code>Contents: Read-only</code>； 明文存在本机
-          settings.json。
-        </p>
-        <div class="token-row">
-          <input
-            id="token"
-            type="password"
-            placeholder="github_pat_… / ghp_…（留空 = 未配置）"
-            spellcheck="false"
-            autocomplete="off"
-          />
-          <button
-            id="btn-eye"
-            type="button"
-            class="eye"
-            title="显示 / 隐藏 Token"
-            onclick="toggleTokenVisibility()"
-          >
-            <svg
-              id="eye-open"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            <svg
-              id="eye-closed"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              style="display: none"
-            >
-              <path
-                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-              />
-              <line x1="1" y1="1" x2="23" y2="23" />
-            </svg>
-          </button>
-          <button class="primary" onclick="saveToken()">保存 Token</button>
-        </div>
-      </section>
 
       <section class="card">
         <div class="meta">
@@ -327,6 +263,72 @@
         </div>
       </section>
 
+      <details style="margin-top: 24px">
+        <summary>更新网络与访问设置（高级）</summary>
+        <section class="card">
+          <h3>
+            GitHub Token
+            <span class="scope"
+              >settings.json · workspaceStudio.githubToken</span
+            >
+          </h3>
+          <p class="desc">
+            默认使用安装包内置的只读 token（2026-12-05 到期），私有仓库读
+            Releases 开箱可用；此处填写可覆盖，清空保存则回退内置。建议
+            fine-grained token，只授本仓库 <code>Contents: Read-only</code>；
+            明文存在本机 settings.json。
+          </p>
+          <div class="token-row">
+            <input
+              id="token"
+              type="password"
+              placeholder="github_pat_… / ghp_…（留空 = 未配置）"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button
+              id="btn-eye"
+              type="button"
+              class="eye"
+              title="显示 / 隐藏 Token"
+              onclick="toggleTokenVisibility()"
+            >
+              <svg
+                id="eye-open"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg
+                id="eye-closed"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                style="display: none"
+              >
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+            <button class="primary" onclick="saveToken()">保存 Token</button>
+          </div>
+        </section>
+      </details>
       <p class="foot">
         下载完成后自动打开安装包，按平台流程完成安装 （mac 挂载 dmg / win
         运行安装器 / linux 运行 AppImage）；安装包保留在系统下载目录。
@@ -478,6 +480,9 @@
         $('eye-closed').style.display = show ? '' : 'none';
       }
 
+      $('token').addEventListener('input', () =>
+        window.extension.bus.send({ type: 'dirty', dirty: true }),
+      );
       async function saveToken() {
         const value = $('token').value.trim();
         try {
@@ -485,6 +490,7 @@
             path: 'workspaceStudio.githubToken',
             value: value || null,
           });
+          window.extension.bus.send({ type: 'dirty', dirty: false });
           toast(value ? 'Token 已保存' : 'Token 已清空');
         } catch (e) {
           toast('保存失败：' + (e && e.message ? e.message : e), true);

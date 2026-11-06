@@ -1,3 +1,4 @@
+import type { AppearanceSnapshot } from './appearance';
 /**
  * 视图总线类型化消息（architecture.md §3.3）。
  *
@@ -26,6 +27,7 @@ export interface ViewContentMessage {
 export interface ViewThemeMessage {
   type: 'theme';
   theme: 'light' | 'dark';
+  appearance?: AppearanceSnapshot;
 }
 
 /** 声明式动作下发（如 html-editor 的 layout-switch）。 */
@@ -87,7 +89,13 @@ export interface ViewLogMessage {
   message: string;
 }
 
+export interface ViewSaveResultMessage {
+  type: 'save-result';
+  ok: boolean;
+  message?: string;
+}
 export type ViewBusMessageFromView =
+  | ViewSaveResultMessage
   | ViewLoadedMessage
   | ViewDirtyMessage
   | ViewActionStateMessage

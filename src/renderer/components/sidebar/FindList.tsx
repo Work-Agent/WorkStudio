@@ -18,19 +18,22 @@ interface Hit {
   display: string;
 }
 
-export function FindList() {
-  const [query, setQuery] = useState('');
+export function FindList({
+  query: controlled,
+  hideInput = false,
+}: {
+  query?: string;
+  hideInput?: boolean;
+}) {
+  const [localQuery, setQuery] = useState('');
+  const query = controlled ?? localQuery;
   const [hits, setHits] = useState<Hit[]>([]);
-  const [root, setRoot] = useState('');
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     inputRef.current?.focus();
-    void cmd<{ root: string }>('ura.workspace').then((res) => {
-      if (res.ok && res.data?.root) setRoot(res.data.root.replace(/\/$/, ''));
-    });
   }, []);
 
   useEffect(() => {
@@ -39,11 +42,13 @@ export function FindList() {
       return;
     }
     if (timer.current) clearTimeout(timer.current);
+    let current = true;
     timer.current = setTimeout(() => {
       const pattern = query.includes('*') ? query.trim() : `*${query.trim()}*`;
       setLoading(true);
       void cmd<ListEntry[]>('ura.find', { pattern, limit: 200 })
         .then((res) => {
+          if (!current) return;
           const items = res.ok ? res.data : [];
           setHits(
             items.map((item) => ({
@@ -53,9 +58,12 @@ export function FindList() {
             })),
           );
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (current) setLoading(false);
+        });
     }, 180);
     return () => {
+      current = false;
       if (timer.current) clearTimeout(timer.current);
     };
   }, [query]);
@@ -64,12 +72,9 @@ export function FindList() {
     () =>
       hits.map((hit) => ({
         ...hit,
-        display:
-          root && hit.ref.startsWith(root)
-            ? hit.ref.slice(root.length + 1)
-            : hit.ref,
+        display: displayPath(hit.ref),
       })),
-    [hits, root],
+    [hits],
   );
 
   const open = (ref: string, name: string): void => {
@@ -86,9 +91,9 @@ export function FindList() {
 
   return (
     <div className="flex flex-col h-full" data-testid="sidebar-find">
-      <div className="px-2 pt-1 pb-2">
-        <div className="flex items-center gap-1.5 h-8 px-2 rounded-lg border border-zinc-300 dark:border-[#2a2d2e] bg-white dark:bg-[#202124]">
-          <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+      <div className="px-2 pt-1 pb-2" hidden={hideInput}>
+        <div className="flex items-center gap-1.5 h-8 px-2 rounded-lg border border-[var(--biz-border)] dark:border-[var(--biz-border)] bg-[var(--biz-surface)]">
+          <Search className="w-3.5 h-3.5 text-[var(--biz-text-muted)] shrink-0" />
           <input
             ref={inputRef}
             data-testid="sidebar-find-input"
@@ -102,12 +107,13 @@ export function FindList() {
               if (event.key === 'Enter' && rows[0])
                 open(rows[0].ref, rows[0].name);
             }}
-            placeholder="搜索项目资源…"
+            aria-label="查找资料"
+            placeholder="按名称或路径查找…"
             spellCheck={false}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[12px] text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[12px] text-[var(--biz-text)] placeholder:text-[var(--biz-text-muted)]"
           />
         </div>
-        <div className="mt-1.5 px-1 text-[10.5px] text-zinc-400 dark:text-zinc-600 select-none">
+        <div className="mt-1.5 px-1 text-[10.5px] text-[var(--biz-text-muted)] select-none">
           {loading
             ? '查找中…'
             : query.trim()
@@ -115,28 +121,37 @@ export function FindList() {
               : '输入名称或路径片段（支持 * 通配）'}
         </div>
       </div>
+      {hideInput && (
+        <p
+          role="status"
+          className="px-2 pb-2 text-[11px] text-[var(--biz-text-muted)]"
+        >
+          {loading ? '查找中…' : `${rows.length} 个结果 · 按名称或路径匹配`}
+        </p>
+      )}
       <div className="flex-1 overflow-y-auto px-1 pb-1 space-y-0.5">
         {rows.map((row) => (
-          <div
+          <button
+            type="button"
             key={row.ref}
             data-testid="sidebar-find-item"
             title={displayPath(row.ref)}
             onClick={() => open(row.ref, row.name)}
-            className="flex items-start gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors"
+            className="flex items-start gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] transition-colors"
           >
-            <FileText className="w-4 h-4 mt-0.5 shrink-0 text-zinc-400" />
+            <FileText className="w-4 h-4 mt-0.5 shrink-0 text-[var(--biz-text-muted)]" />
             <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] leading-tight text-zinc-800 dark:text-zinc-100 truncate">
+              <div className="text-[12.5px] leading-tight text-[var(--biz-text)] truncate">
                 {row.name}
               </div>
-              <div className="mt-1 text-[10.5px] leading-tight text-zinc-400 dark:text-zinc-500 truncate">
+              <div className="mt-1 text-[10.5px] leading-tight text-[var(--biz-text-muted)] truncate">
                 {row.display}
               </div>
             </div>
-          </div>
+          </button>
         ))}
         {!loading && query.trim() !== '' && rows.length === 0 && (
-          <p className="px-2 py-3 text-[11px] text-zinc-400 dark:text-zinc-600 italic">
+          <p className="px-2 py-3 text-[11px] text-[var(--biz-text-muted)] italic">
             没有匹配的资源。
           </p>
         )}

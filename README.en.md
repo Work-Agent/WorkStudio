@@ -96,7 +96,7 @@ Workspace (aggregate root)
 │   ├─ Context: system prompt · resource map · selected skill set
 │   ├─ Messages and tool calls (truth lives in pi)
 │   └─ Runtime: streaming · queue · model tier
-├─ Scene: theme · column widths · open-set key · assistant form
+├─ Scene: column widths · open-set key · assistant form
 └─ View collection: tab order · active slot · pinned slots
 
 Cross-cutting capability
@@ -134,6 +134,18 @@ The price is a heavier product than a chat box: it needs a workspace, native vie
 
 Conclusion: the primary subject is files, sessions are the process, plugins are extensions — the product can only be Studio.
 
+The workbench follows “material → processing → checking deliverables”:
+
+| Area                  | Responsibility                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Left material sidebar | Expand sources inline and find by name or path; keep material accessible while management pages are open            |
+| Central content       | Documents, websites and welcome; capability management and settings each reuse a management tab                     |
+| Right assistant       | Open conversation tabs, execution state, tool steps and deliverables to inspect; full history is managed separately |
+
+The title-bar background and address display move the main window between displays. Buttons retain normal clicks, and a dedicated action copies the address.
+The welcome page selects registered workspaces or another directory. Unavailable directories are identified and custom names survive switching.
+Closing, rereading, bulk closing, switching workspaces and quitting protect drafts with save/discard/cancel. External changes and failed saves preserve drafts and allow saving a copy.
+
 ## 4. Overall architecture
 
 ```
@@ -164,7 +176,7 @@ Conclusion: the primary subject is files, sessions are the process, plugins are 
 - **AppHost owns orchestration state**: active workspace, epochs, switching transactions and outlets; it does not absorb lower-layer state.
 - **The capability layer keeps two blocks**: surfaces (plugins · settings · browser) sit side by side by delivery; Agent harness is organised vertically by session. Both share domain services and the pipeline.
 - **List structure lives in App**: groups, row templates, fields and actions are defined by App; data is resolved in the workspace; the renderer uses ListHost against the spec.
-- **Switch granularity**: extensions are installed globally and enabled per workspace; skills are installed globally, defaulted per workspace, and activated per session.
+- **Capability boundaries**: document plugins are installed and loaded by the app; assistant extensions retain Pi package user/project scope; skills are enabled per workspace and can be limited for each request.
 - **Resources / pages / skills load by level**: App loads global resources and plugins, the workspace loads workspace resources, the session only activates; all resource directories live under the app-private data directory.
 - **Independent from the pi CLI**: pi runs only as a library; neither `~/.pi` nor the real workspace `.pi` is read.
 - **Config layout**: the data root is pi's agentDir; pi-native config follows pi's layout, project settings and scene live under the app-private workspace directory; view plugins and pi extensions stay separate under `plugins/` and `extensions/`; see [architecture §2.6–2.7](docs/architecture.md#26-存储布局).
@@ -378,7 +390,7 @@ plugin-docx.zip
 
 - **The catalog is a compile-time asset**: adding or removing a plugin means editing this file and rebuilding; the runtime neither parses nor rewrites it, and an invalid catalog fails the build.
 - **Rendered from build data**: the plugin settings page receives the catalog inlined at build time and never reads Markdown at runtime.
-- **Installed state is tracked apart**: installed = found under `installed/` and registered successfully; uninstalling only deletes `installed/<id>`, the catalog entry remains.
+- **Installation and loading are distinct**: installed means files and installation records have been committed; loaded means capability registration succeeded. A loading failure keeps the installation record and supports a separate reload. Uninstalling retains the installable catalog entry.
 - **Ad-hoc installs only record state**: manual URLs, dragged-in zips or folders, and community-catalog installs are recorded in the local install index, not in the catalog.
 - **One plugin directory**: `<appData>/plugins/` holds `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
 - **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `apiVersion` → atomically replace `installed/<id>`; local zips follow the same extraction flow (nothing to compare a remote hash against, so only the content hash is recorded).
@@ -400,6 +412,17 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 - **Model and config page**: a newly added custom model is written with `compat.supportsDeveloperRole: false` by default, since third-party endpoints generally accept only the `system` instruction role; existing model entries are never rewritten or migrated.
 - Pages read only their own partition and whitelisted commands, never connecting to sources directly.
 
+| Settings entry             | User task                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Appearance                 | Black (pure black default), Graphite, Porcelain and Mist; follow the system with separate light/dark choices; shared editor font size |
+| Preferences                | Distinguish app defaults from workspace overrides; restore inheritance and protect unsaved form changes                               |
+| Model connections          | Connect a provider before selecting an available default model; custom endpoints are advanced options                                 |
+| Capabilities               | Keep document plugins, skills and assistant extensions distinct, with their sources, scopes and actual runtime states                 |
+| Resource diagnostics       | Use the sidebar's source state, counts and errors; reveal registry details on demand                                                  |
+| Storage, About and updates | Common locations and version status first; advanced paths and access tokens on demand                                                 |
+
+Appearance is an app preference that survives workspace changes and restarts. The shell, built-in pages, assistant and editors stay in sync. Websites and document previews retain their own colors; third-party pages can still receive light/dark themes.
+
 ## 6. State and communication
 
 ### 6.1 Three levels of state
@@ -413,8 +436,10 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 - **Workspace-level data lists are managed by AppHost**: AppHost creates, replaces and disposes them through WorkspaceManager; WorkspaceScope is only the active instance.
 - **Session truth lives in pi**: switching delegates to pi; WorkStudio keeps only the projection, and skill activation is resolved per session context.
 - **Resources, pages and skills are loading modes**: App loads global resources, the workspace loads workspace resources, the session activates; all directories live under the app-private data directory, never `~/.pi` or the real workspace `.pi`.
-- **Switch granularity**: extensions inherit the workspace enable policy when a session is created and are not hot-switched mid-session; skills are activated per session.
+- **Capability scopes**: assistant extensions retain Pi package user/project configuration; skill enablement belongs to a workspace, while the turn selection limits the current request.
 - **Switch semantics**: workspace switch = dispose the old scope + load the new one; session switch = pi switch + event-bridge rebind.
+- **Task state**: the assistant reports running, stopping, stopped, unconfirmed, failed and ended from actual execution. Stopping waits for runtime confirmation and does not undo completed file operations. Retry sends the original request again; potential side effects require checking existing results first. Execution ending does not mean the deliverables have been reviewed.
+- **Install state**: downloads show actual byte progress, followed by separate validation, installation and loading stages. Cancellation waits for the current step. Failures support retry or changing the source; integrity failures require a different source. The sidebar retains access to the current task while management pages change; closing waits for cancellation confirmation. Progress belongs to the current process and does not promise restart resumption.
 
 ### 6.2 Communication
 

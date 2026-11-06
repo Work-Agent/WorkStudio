@@ -14,6 +14,14 @@ import { idOf, wsIdOf, type WorkspaceRef } from './shared';
 
 export function routesSessions(r: Router, service: SessionsService): void {
   const list = r.state<SessionListItem[]>('/');
+  const task = r.state('/task');
+  const opened = r.state<string[]>('/opened');
+  r.handle('/tabs/close', (call: RouteCall<{ paths: string[] }>) =>
+    service.closeTabs(call.input.paths),
+  );
+  r.handle('/:sessionId/retry', (call: RouteCall<{ confirmed?: boolean }>) =>
+    service.retry(Boolean(call.input?.confirmed)),
+  );
   const current = r.state<AgentSnapshot>('/current');
   const models = r.state<ModelOption[]>('/models');
   const session = r.state<SessionListItem>('/:sessionId');
@@ -28,6 +36,8 @@ export function routesSessions(r: Router, service: SessionsService): void {
     const wsId = wsIdOf(r);
     if (!wsId) return;
     list.publish({ wsId }, service.list);
+    task.publish({ wsId }, service.task);
+    opened.publish({ wsId }, service.opened);
     if (service.current) current.publish({ wsId }, service.current);
     models.publish({ wsId }, service.models());
     for (const item of service.list) {
@@ -45,6 +55,8 @@ export function routesSessions(r: Router, service: SessionsService): void {
   r.on<WorkspaceRef | null>('/workspaces/current', () => publish());
   r.on<{ id: string }>('/workspaces/closed', (value) => {
     list.drop({ wsId: value.id });
+    task.drop({ wsId: value.id });
+    opened.drop({ wsId: value.id });
     current.drop({ wsId: value.id });
     for (const item of service.list) {
       session.drop({ wsId: value.id, sessionId: item.id });

@@ -332,35 +332,28 @@
   </head>
   <body>
     <div class="wrap">
+      <div
+        id="draft-state"
+        role="status"
+        hidden
+        style="
+          padding: 10px;
+          border: 1px solid var(--border);
+          margin-bottom: 16px;
+        "
+      >
+        有未保存的配置，请在对应表单中保存。
+        <button id="discard-drafts">放弃全部表单修改</button>
+      </div>
       <header>
-        <h1>模型设置</h1>
+        <h1>模型连接</h1>
         <p>
-          内置供应商直接登录（凭证写入
-          <code>auth.json</code>，不回显）；自定义端点写入
-          <code>models.json</code>（保存前经 pi 真实加载校验，失败自动回滚）。
+          先连接服务，再选择可用模型作为新会话默认。保存连接配置不代表已验证实际模型请求。
         </p>
       </header>
 
       <section class="card">
-        <h3>
-          当前默认模型 <span class="scope">会话默认 · settings.json</span>
-        </h3>
-        <div class="status-line" id="status"></div>
-        <div class="row">
-          <div class="field">
-            <label>模型</label>
-            <select id="pick-model"></select>
-          </div>
-          <div class="field">
-            <label>思考档位</label>
-            <select id="pick-thinking"></select>
-          </div>
-          <button class="primary" data-action="apply-model">应用</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <h3>供应商 <span class="scope" id="prov-count"></span></h3>
+        <h3>连接服务 <span class="scope" id="prov-count"></span></h3>
         <div class="row">
           <div class="field">
             <label>筛选</label>
@@ -379,41 +372,57 @@
               padding-bottom: 7px;
             "
           >
-            <input type="checkbox" id="prov-only-ready" />仅显示已认证
+            <input type="checkbox" id="prov-only-ready" checked />仅显示已连接
           </label>
         </div>
         <div id="providers"></div>
       </section>
-
       <section class="card">
-        <h3>新增自定义供应商</h3>
+        <h3>新会话默认模型 <span class="scope">当前会话可单独选择</span></h3>
+        <div class="status-line" id="status"></div>
         <div class="row">
           <div class="field">
-            <label>id（小写字母 / 数字 / 连字符）</label>
-            <input type="text" id="new-id" placeholder="my-provider" />
+            <label>模型</label>
+            <select id="pick-model"></select>
           </div>
           <div class="field">
-            <label>名称</label>
-            <input type="text" id="new-name" placeholder="My Provider" />
+            <label>思考档位</label>
+            <select id="pick-thinking"></select>
           </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Base URL</label>
-            <input
-              type="text"
-              id="new-base"
-              placeholder="https://api.example.com/v1"
-            />
-          </div>
-          <div class="field">
-            <label>API 协议</label>
-            <select id="new-api"></select>
-          </div>
-          <button class="primary" data-action="add-provider">添加</button>
+          <button class="primary" data-action="apply-model">应用</button>
         </div>
       </section>
-
+      <details style="margin-top: 24px">
+        <summary>自定义服务连接（高级）</summary>
+        <section class="card">
+          <h3>新增自定义供应商</h3>
+          <div class="row">
+            <div class="field">
+              <label>id（小写字母 / 数字 / 连字符）</label>
+              <input type="text" id="new-id" placeholder="my-provider" />
+            </div>
+            <div class="field">
+              <label>名称</label>
+              <input type="text" id="new-name" placeholder="My Provider" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Base URL</label>
+              <input
+                type="text"
+                id="new-base"
+                placeholder="https://api.example.com/v1"
+              />
+            </div>
+            <div class="field">
+              <label>API 协议</label>
+              <select id="new-api"></select>
+            </div>
+            <button class="primary" data-action="add-provider">添加</button>
+          </div>
+        </section>
+      </details>
       <p class="foot">
         API 协议：<code>openai-completions</code>（OpenAI 兼容，Ollama / LM
         Studio / vLLM）/ <code>openai-responses</code> /
@@ -499,8 +508,68 @@
       const canLogout = (p) =>
         p.authSource === 'stored' || p.authSource === 'runtime';
 
+      const drafts = new Map();
+      const draftKey = (el) => {
+        const provider = el.closest('.prov');
+        if (provider && (el.dataset.f || el.dataset.mf))
+          return (
+            provider.dataset.pid +
+            ':' +
+            (el.dataset.mf
+              ? 'model:' + el.dataset.mf
+              : 'provider:' + el.dataset.f)
+          );
+        return [
+          'pick-model',
+          'pick-thinking',
+          'new-id',
+          'new-name',
+          'new-base',
+          'new-api',
+        ].includes(el.id)
+          ? el.id
+          : null;
+      };
+      function draftState() {
+        window.extension.bus.send({ type: 'dirty', dirty: drafts.size > 0 });
+        $('draft-state').hidden = !drafts.size;
+      }
+      function restoreDrafts() {
+        document.querySelectorAll('input,select,textarea').forEach((el) => {
+          const value = drafts.get(draftKey(el));
+          if (!value) return;
+          if (el.type === 'checkbox') el.checked = value.checked;
+          else el.value = value.value;
+          if (el.dataset.mf) el.closest('[data-model-form]').hidden = false;
+        });
+      }
+      function clearDrafts(match) {
+        for (const key of drafts.keys()) if (match(key)) drafts.delete(key);
+        draftState();
+      }
+      for (const event of ['input', 'change'])
+        document.addEventListener(event, (e) => {
+          const key = draftKey(e.target);
+          if (!key) return;
+          drafts.set(key, { value: e.target.value, checked: e.target.checked });
+          draftState();
+        });
+      document.addEventListener('click', (e) => {
+        if (e.target.id === 'discard-drafts') {
+          clearDrafts(() => true);
+          render();
+        }
+      });
+
       // ── 渲染 ────────────────────────────────────────────
 
+      document.addEventListener('click', (e) => {
+        if (e.target.closest('#show-providers')) {
+          $('prov-only-ready').checked = false;
+          renderProviders();
+          $('prov-filter').focus();
+        }
+      });
       function renderStatus() {
         const s = state.status ?? {};
         $('status').innerHTML = s.configured
@@ -552,6 +621,8 @@
                 '</optgroup>'
               : '');
         }
+        document.querySelector('[data-action=apply-model]').disabled =
+          !state.catalog.some((m) => m.available);
         $('pick-thinking').innerHTML =
           '<option value="">（不变）</option>' +
           state.levels
@@ -567,6 +638,7 @@
             )
             .join('');
         $('new-api').innerHTML = apiOptions('openai-completions');
+        restoreDrafts();
       }
 
       function renderProviders() {
@@ -587,7 +659,8 @@
           '）';
         $('providers').innerHTML = list.length
           ? list.map(renderProvider).join('')
-          : '<div class="empty">没有匹配的供应商。</div>';
+          : '<div class="empty">尚无匹配的连接。<button id="show-providers">查找服务并连接</button></div>';
+        restoreDrafts();
       }
 
       function renderProvider(p) {
@@ -780,6 +853,19 @@
           return el ? el.value : '';
         };
         try {
+          if (
+            ['new-model', 'edit-model'].includes(action) &&
+            [...drafts.keys()].some((key) => key.startsWith(pid + ':model:'))
+          ) {
+            const response = await call('/dialogs/ask', {
+              dialogType: 'select',
+              title: '替换未保存的模型表单？',
+              message: '请取消后保存当前模型，或放弃修改再编辑其他模型。',
+              options: ['放弃修改'],
+            });
+            if (response.cancelled) return;
+            clearDrafts((key) => key.startsWith(pid + ':model:'));
+          }
           if (action === 'apply-model') {
             const pick = $('pick-model').value;
             if (!pick) throw new Error('先在「供应商」中登录并添加模型');
@@ -791,6 +877,7 @@
             const level = $('pick-thinking').value;
             if (level) payload.thinkingLevel = level;
             state.status = await call('/piconf/agent/configure', payload);
+            clearDrafts((key) => key.startsWith('pick-'));
             render();
             toast('已应用默认模型');
           } else if (action === 'add-provider') {
@@ -804,6 +891,7 @@
               providerId: id,
               config,
             });
+            clearDrafts((key) => key.startsWith('new-'));
             $('new-id').value = $('new-name').value = $('new-base').value = '';
             await refresh();
             toast('已添加供应商 ' + id);
@@ -821,6 +909,7 @@
                 type: 'api_key',
                 apiKey: key,
               });
+              clearDrafts((key) => key === pid + ':provider:apiKey');
               await refresh();
               toast('已登录 ' + pid + '（凭证已写入 auth.json）');
             } finally {
@@ -861,6 +950,11 @@
               config,
             });
             await refresh();
+            clearDrafts(
+              (key) =>
+                key.startsWith(pid + ':provider:') && !key.endsWith(':apiKey'),
+            );
+            render();
             toast('已保存供应商 ' + pid);
           } else if (action === 'delete-provider') {
             if (
@@ -871,6 +965,7 @@
               return;
             await call('/piconf/models/delete-provider', { providerId: pid });
             await refresh();
+            clearDrafts((key) => key.startsWith(pid + ':'));
             toast('已删除供应商 ' + pid);
           } else if (action === 'use-model') {
             await call('/piconf/agent/configure', {
@@ -926,6 +1021,7 @@
               ? ['text', 'image']
               : ['text'];
             await call('/piconf/models/save-model', { providerId: pid, model });
+            clearDrafts((key) => key.startsWith(pid + ':model:'));
             await refresh();
             toast('已保存模型 ' + model.id);
           } else if (action === 'delete-model') {

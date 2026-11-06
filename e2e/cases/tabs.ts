@@ -17,13 +17,13 @@ export default defineCase({
       const views = await ctx.appBridge.peek<ViewInfo[]>('/views');
       return (views?.length ?? 0) >= 2;
     }, '打开两个设置页后标签数不足');
-    await ctx.expect.text('doc-tabs', '插件');
-    await ctx.expect.text('doc-tabs', '模型配置');
+    await ctx.expect.text('doc-tabs', '文档插件');
+    await ctx.expect.text('doc-tabs', '模型连接');
 
-    await ctx.clickTitle('模型配置');
+    await ctx.clickTitle('模型连接');
     await ctx.expect.poll(async () => {
       const views = await ctx.appBridge.peek<ViewInfo[]>('/views');
-      return views?.find((view) => view.active)?.title === '模型配置';
-    }, '点击标签后模型配置未激活');
+      return views?.find((view) => view.active)?.title === '模型连接';
+    }, '点击标签后模型连接未激活');
   },
 });

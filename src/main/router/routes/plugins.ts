@@ -43,6 +43,14 @@ export function routesPlugins(r: Router, service: PluginsService): void {
   const installed = r.state('/installed');
   const runtime = r.state('/runtime');
   const catalog = r.state('/catalog');
+  const task = r.state('/task');
+  task.publish(service.task);
+  service.onTask((value) => task.publish(value));
+  r.handle('/install/cancel', () => service.cancelInstall());
+  r.handle('/install/retry', () => service.retryInstall());
+  r.handle('/reload', (call: RouteCall<{ source: string }>) =>
+    service.install(call.input.source, true),
+  );
 
   const publish = (): void => {
     installed.publish(service.installed());
@@ -119,6 +127,8 @@ export function routesPlugins(r: Router, service: PluginsService): void {
         watch: [
           '/plugins/installed',
           '/plugins/catalog',
+          '/plugins/task',
+          '/plugins/runtime',
           '/settings/pages',
           '/workspaces/**',
           '/piconf',

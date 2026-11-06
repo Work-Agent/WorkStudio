@@ -78,6 +78,8 @@ export class SystemViews {
           '/notify',
           '/native/**',
           '/piconf/**',
+          '/settings/open',
+          '/workspaces/:wsId/resources/pages/open',
           '/workspaces/:wsId/sessions/**',
         ],
         watch: [

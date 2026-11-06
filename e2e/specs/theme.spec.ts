@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { closeApp, launchApp, shellWindow } from '../support/fixtures';
+import {
+  closeApp,
+  launchApp,
+  shellWindow,
+  windowByUrl,
+} from '../support/fixtures';
 
 test('主题切换并在重启后保留', async () => {
   const first = await launchApp();
@@ -14,7 +19,14 @@ test('主题切换并在重启后保留', async () => {
     .toBe(true);
 
   const shell = await shellWindow(first.app);
-  await shell.getByTitle('切换为亮色').click();
+  await shell.evaluate(() =>
+    window.appBridge!.call('/settings/open', { pageId: 'appearance' }),
+  );
+  const appearance = await windowByUrl(
+    first.app,
+    /settings\/appearance\/index\.html/,
+  );
+  await appearance.getByRole('button', { name: '使用雾蓝皮肤' }).click();
   await expect
     .poll(() =>
       shell.evaluate(() => document.documentElement.classList.contains('dark')),
@@ -32,6 +44,15 @@ test('主题切换并在重启后保留', async () => {
         ),
       )
       .toBe(false);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          getComputedStyle(document.documentElement)
+            .getPropertyValue('--biz-bg')
+            .trim(),
+        ),
+      )
+      .toBe('#f4f8fc');
   } finally {
     await closeApp(second);
   }

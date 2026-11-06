@@ -66,7 +66,7 @@ function workspaceInfo(
     createdAt: meta.createdAt,
     lastOpenedAt: meta.lastOpenedAt,
     current: meta.id === currentId,
-    exists: true,
+    exists: meta.exists,
   };
 }
 
@@ -133,6 +133,10 @@ export async function initAppRoutes(): Promise<void> {
         setCurrentWorkspacePath(current?.path ?? null);
         const status = useAppStore.getState().status;
         useAppStore.setState({
+          workspaces: useAppStore.getState().workspaces.map((workspace) => ({
+            ...workspace,
+            current: workspace.wsId === currentId,
+          })),
           status: {
             ...status,
             ...(current ? { workspacePath: current.path } : {}),
@@ -146,11 +150,11 @@ export async function initAppRoutes(): Promise<void> {
         break;
       }
       default: {
-        if (frame.path.endsWith('/lists')) {
+        if (currentId && frame.path === `/workspaces/${currentId}/lists`) {
           useWorkspaceStore.setState({
             groups: (frame.value as ListSnapshot).groups,
           });
-        } else if (frame.path.startsWith('/scene/')) {
+        } else if (currentId && frame.path === `/scene/${currentId}`) {
           const scene = frame.value as {
             sidebarCollapsed?: boolean;
             aiOpen?: boolean;
@@ -167,7 +171,10 @@ export async function initAppRoutes(): Promise<void> {
               : {}),
             ...(scene.paneWidths ? { paneWidths: scene.paneWidths } : {}),
           });
-        } else if (frame.path.endsWith('/sessions/current')) {
+        } else if (
+          currentId &&
+          frame.path === `/workspaces/${currentId}/sessions/current`
+        ) {
           const snapshot = frame.value as AgentSnapshot | null;
           if (snapshot) {
             const status = useAppStore.getState().status;

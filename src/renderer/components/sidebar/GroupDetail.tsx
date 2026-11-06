@@ -71,23 +71,23 @@ function ItemRow({ item, group }: { item: ListItem; group: ListGroup }) {
       className={`group relative flex items-center px-2 py-1.5 rounded-lg transition-colors min-h-[42px] ${
         disabled
           ? 'cursor-not-allowed opacity-50'
-          : 'cursor-pointer hover:bg-zinc-200 dark:hover:bg-[#2a2c2d]'
+          : 'cursor-pointer hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]'
       } ${active ? '' : ''}`}
       title={disabled ? `${item.title}（无可用入口）` : item.title}
       aria-disabled={disabled || undefined}
     >
       {active && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[#4F6BED] rounded-r" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[var(--biz-accent)] rounded-r" />
       )}
       <div
         className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
           group.tone && group.section !== 'resources'
             ? group.tone
             : isData
-              ? 'bg-teal-100 dark:bg-[#1a2a25] text-teal-600 dark:text-teal-500'
+              ? 'bg-teal-100 bg-[var(--biz-surface)] text-teal-600 dark:text-teal-500'
               : isWeb
-                ? 'bg-sky-100 dark:bg-[#1a2430] text-sky-600 dark:text-sky-500'
-                : 'bg-zinc-200 dark:bg-[#32363a] text-zinc-500 dark:text-zinc-400'
+                ? 'bg-sky-100 bg-[var(--biz-surface)] text-sky-600 dark:text-sky-500'
+                : 'bg-[var(--biz-surface)] text-[var(--biz-text-muted)] text-[var(--biz-text-muted)]'
         }`}
       >
         {iconUrl && !iconBroken ? (
@@ -104,17 +104,17 @@ function ItemRow({ item, group }: { item: ListItem; group: ListGroup }) {
       <div className="ml-2 flex-1 overflow-hidden min-w-0">
         {!collapsed && (
           <>
-            <h4 className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 truncate leading-none">
+            <h4 className="text-[13px] font-medium text-[var(--biz-text)] truncate leading-none">
               {item.title}
             </h4>
             <div className="flex items-center justify-between mt-[5px]">
-              <span className="text-[12px] truncate text-zinc-400 dark:text-zinc-500 leading-none">
+              <span className="text-[12px] truncate text-[var(--biz-text-muted)] leading-none">
                 {isData
                   ? 'schema-only · 数据经工具查询'
                   : (item.subtitle ?? '')}
               </span>
               {time > 0 && (
-                <span className="text-[11px] text-zinc-400 dark:text-zinc-500 shrink-0 ml-1.5">
+                <span className="text-[11px] text-[var(--biz-text-muted)] shrink-0 ml-1.5">
                   {formatTime(time)}
                 </span>
               )}

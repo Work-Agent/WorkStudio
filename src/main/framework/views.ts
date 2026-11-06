@@ -5,7 +5,7 @@
  * 原生身份（webContents ↔ viewId）由 IPC 适配层接入时再补。
  */
 
-import { matchPattern } from '../core/paths';
+import { matchPattern, substituteSelf } from '../core/paths';
 import type { Frame, Grant, Origin, ViewType } from '../core/types';
 
 export type ViewSink = (frame: Frame) => void;
@@ -114,6 +114,22 @@ export class ViewRegistry {
       .map(snapshotOf);
   }
 
+  replacePage(
+    id: string,
+    input: { contentPath: string; title: string; url: string; grants: Grant },
+  ): void {
+    const record = this.records.get(id);
+    if (!record) return;
+    Object.assign(record, input, {
+      state: 'loading',
+      dirty: false,
+      conflict: false,
+      missing: false,
+    });
+    record.subscriptions.clear();
+    this.notify();
+  }
+
   bind(id: string, externalId: string): void {
     const record = this.records.get(id);
     if (!record) return;
@@ -143,7 +159,11 @@ export class ViewRegistry {
     const record = this.records.get(id);
     if (!record) return false;
     const patterns = op === 'call' ? record.grants.call : record.grants.watch;
-    return Boolean(patterns?.some((pattern) => matchPattern(pattern, path)));
+    return Boolean(
+      patterns?.some((pattern) =>
+        matchPattern(substituteSelf(pattern, id), path),
+      ),
+    );
   }
 
   watch(id: string, paths: string[]): void {

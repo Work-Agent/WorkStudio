@@ -2,16 +2,25 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'navigation.sidebar',
-  title: '侧栏在资源 / 插件 / 设置之间切换',
+  title: '资料栏常驻，能力与设置在中央打开',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ctx.clickTestId('sidebar-nav-plugins');
-    await ctx.expect.attribute('sidebar-nav-plugins', 'data-active', 'true');
-
-    await ctx.clickTestId('sidebar-nav-settings');
-    await ctx.expect.attribute('sidebar-nav-settings', 'data-active', 'true');
-
-    await ctx.clickTestId('sidebar-nav-resources');
-    await ctx.expect.attribute('sidebar-nav-resources', 'data-active', 'true');
+    for (const [entry, title] of [
+      ['sidebar-nav-plugins', '文档插件'],
+      ['sidebar-nav-settings', '外观与皮肤'],
+    ]) {
+      await ctx.clickTestId(entry);
+      await ctx.expect.poll(
+        async () =>
+          (
+            await ctx.appBridge.peek<Array<{ active: boolean; title: string }>>(
+              '/views',
+            )
+          )?.some((view) => view.active && view.title === title) ?? false,
+        '管理页面没有打开',
+      );
+      await ctx.expect.text('sidebar', '工作区资料');
+      await ctx.expect.visible('sidebar-find-input');
+    }
   },
 });

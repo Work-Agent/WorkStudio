@@ -13,11 +13,27 @@ interface ViewInfo {
  */
 export default defineCase({
   id: 'plugin.entry',
-  title: '侧栏插件行打开插件配置页',
+  title: '能力管理的配置入口打开插件配置页',
   tags: ['dev', 'ci'],
   async run(ctx) {
     await ctx.clickTestId('sidebar-nav-plugins');
-    await ctx.clickText('HTML 阅读器', { exact: true });
+    const management = await ctx.waitForPage(/settings\/plugins\/index\.html/);
+    await ctx.expect.poll(
+      async () =>
+        management.evaluate(() =>
+          Boolean(
+            document.querySelector('[data-plugin-settings="html-viewer"]'),
+          ),
+        ),
+      '插件配置入口不存在',
+    );
+    await management.evaluate(() => {
+      (
+        document.querySelector(
+          '[data-plugin-settings="html-viewer"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
 
     const page = await ctx.waitForPage(/html-viewer\/settings\.html/);
     await ctx.expect.poll(

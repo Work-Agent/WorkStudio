@@ -356,6 +356,8 @@ export interface ExtensionInstance {
 
 /** 插件运行时信息（供 UI 展示）。 */
 export interface PluginInfo {
+  loaded?: boolean;
+  error?: string;
   id: string;
   name: string;
   version: string;

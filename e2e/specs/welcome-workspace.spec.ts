@@ -70,9 +70,9 @@ test('欢迎页列出已有工作区并通过点击切换', async ({ studio }, t
   await page.screenshot({ path: testInfo.outputPath('workspace-picker.png') });
   await panel.getByRole('button', { name: /产品设计/ }).click();
   await expect.poll(() => currentPath(shell)).toBe(studio.target);
-  await expect(shell.getByTestId('workspace-select')).toContainText('product');
+  await expect(shell.getByTestId('workspace-select')).toContainText('产品设计');
   await expect(
-    shell.getByTestId('sidebar-group').filter({ hasText: '本地文档' }),
+    shell.getByTestId('resource-group').filter({ hasText: '本地文档' }),
   ).toBeVisible();
   await shell.getByTitle('新增', { exact: true }).click();
   const next = await windowByUrl(studio.app, /settings\/welcome\/index\.html/);

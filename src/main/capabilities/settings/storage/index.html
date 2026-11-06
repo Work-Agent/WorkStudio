@@ -211,16 +211,22 @@
       <header>
         <h1>存储与数据</h1>
         <p>
-          全部应用数据落在应用自持目录（与用户全局 pi
-          隔离，不污染工作区）；会话与场景（scene.json）按工作区隔离；写入一律原子替换。
+          查看资料、应用设置和会话的存放位置。更改目录与迁移已有数据分别处理。
         </p>
       </header>
 
       <section class="card" id="card-workspace"></section>
+      <h2 style="font-size: 15px; margin-top: 24px">应用数据</h2>
+      <p class="foot">
+        更改应用数据位置将在重启后生效，不会自动迁移原目录内容。
+      </p>
       <section class="card" id="card-config"></section>
-      <section class="card" id="card-sessions"></section>
-      <section class="card" id="card-plugins"></section>
-      <section class="card" id="card-versions"></section>
+      <details style="margin-top: 24px">
+        <summary>会话目录与高级信息</summary>
+        <section class="card" id="card-sessions"></section>
+        <section class="card" id="card-plugins"></section>
+        <section class="card" id="card-versions"></section>
+      </details>
 
       <p class="foot">
         会话目录变更会立刻以新目录重建会话域（当前会话回到新任务态）；旧目录中的会话文件不会移动。
@@ -229,7 +235,7 @@
     <div class="toast" id="toast"></div>
 
     <script>
-      const state = { view: null, editing: false, saving: false };
+      const state = { view: null, editing: false, saving: false, draft: '' };
       const bridge = window.appBridge;
       async function call(path, input) {
         const result = await bridge.call(path, input);
@@ -286,17 +292,9 @@
         if (!v) return;
         $('card-workspace').innerHTML =
           '<h3>工作区</h3>' +
-          pathRow('当前工作区', 'wsId ' + v.workspaceId, v.workspacePath) +
-          pathRow(
-            '工作区设置',
-            'project 层 settings.json',
-            v.workspaceSettings,
-          ) +
-          pathRow(
-            '界面状态',
-            '主题 / 栏宽 / 打开集合 / 会话现场',
-            v.sceneFile,
-          ) +
+          pathRow('当前工作区', '本工作区的资料目录', v.workspacePath) +
+          pathRow('工作区设置', '本工作区的偏好覆盖', v.workspaceSettings) +
+          pathRow('界面状态', '栏宽、打开集合与会话现场', v.sceneFile) +
           pathRow('站点快照', '白名单域归档（随内容版本管理）', v.sitesDir);
 
         $('card-config').innerHTML =
@@ -320,7 +318,7 @@
           '</span></div>' +
           (state.editing
             ? '<input type="text" id="dir" placeholder="绝对路径，或相对工作区（如 .pi/sessions）；留空 = 默认" value="' +
-              esc(configured || '') +
+              esc(state.draft) +
               '" />' +
               '<button class="primary" id="dir-save"' +
               (state.saving ? ' disabled' : '') +
@@ -378,6 +376,7 @@
             value: value === '' ? null : value,
           });
           state.editing = false;
+          window.extension.bus.send({ type: 'dirty', dirty: false });
           toast('已更新会话目录');
           await refresh();
         } catch (e) {
@@ -411,6 +410,7 @@
         }
         if (e.target.closest('[data-edit-dir]')) {
           state.editing = true;
+          state.draft = state.view.sessionsDirConfigured || '';
           render();
           document.getElementById('dir')?.focus();
           return;
@@ -426,7 +426,18 @@
         }
         if (e.target.closest('#dir-cancel')) {
           state.editing = false;
+          window.extension.bus.send({ type: 'dirty', dirty: false });
           render();
+        }
+      });
+
+      document.addEventListener('input', (e) => {
+        if (e.target.id === 'dir') {
+          state.draft = e.target.value;
+          window.extension.bus.send({
+            type: 'dirty',
+            dirty: state.draft !== (state.view.sessionsDirConfigured || ''),
+          });
         }
       });
 

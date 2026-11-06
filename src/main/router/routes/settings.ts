@@ -17,6 +17,9 @@ export function routesSettings(r: Router, service: SettingsService): void {
   };
   publish();
 
+  r.on('/workspaces/current', publish);
+  r.on('/piconf', publish);
+
   r.handle('/refresh', () => {
     publish();
     return { ok: true };
@@ -30,6 +33,7 @@ export function routesSettings(r: Router, service: SettingsService): void {
     return { ok: true };
   });
   r.handle('/open', async (call: RouteCall<{ pageId: string }>) => {
+    storage.publish(service.storage());
     const target = service.page(call.input.pageId);
     if (!target) {
       throw new RouteFailure(
@@ -59,6 +63,8 @@ export function routesSettings(r: Router, service: SettingsService): void {
         grants: {
           call: [
             '/settings/**',
+            '/dialogs/ask',
+            '/appearance/**',
             '/plugins/**',
             '/piconf/**',
             '/updates/**',
@@ -67,8 +73,11 @@ export function routesSettings(r: Router, service: SettingsService): void {
           ],
           watch: [
             '/settings/pages',
+            '/appearance',
             '/plugins/installed',
             '/plugins/catalog',
+            '/plugins/task',
+            '/plugins/runtime',
             '/piconf',
             '/updates/status',
             '/workspaces/**',

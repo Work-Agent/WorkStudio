@@ -1,3 +1,4 @@
+import { fileRef } from '../../../shared/ura';
 import { RouteFailure } from '../../core/failure';
 import { appPageUrl } from '../../core/paths';
 import type { RouteCall } from '../../core/types';
@@ -24,7 +25,8 @@ export function routesResources(r: Router, service: ResourcesService): void {
   service.onResourceChange((ref) => {
     // 外部变化直接归约进页面状态；渲染层只订阅 page 状态，不接收 change 事件。
     for (const info of service.pages()) {
-      if (info.ref === ref) void service.reloadPage(info.id).catch(() => {});
+      if (info.ref === ref)
+        void service.reloadPage(info.id, true).catch(() => {});
     }
   });
   r.on<{ id: string }>('/workspaces/closed', (value) => {
@@ -108,6 +110,28 @@ export function routesResources(r: Router, service: ResourcesService): void {
     (call: RouteCall<{ content: string | Uint8Array }>) =>
       service.savePage(String(call.params['pageId']), call.input.content),
   );
+  r.handle(
+    '/pages/:pageId/save-copy',
+    async (call: RouteCall<{ content: string }>) => {
+      const info = service.page(String(call.params['pageId']));
+      if (!info) throw new RouteFailure('unknown', '页面不存在');
+      const path = await r.call<string | null>('/native/save-file', {
+        title: '另存草稿副本',
+        defaultPath: decodeURIComponent(new URL(info.ref).pathname).replace(
+          /(\.[^./]+)$/,
+          '-草稿$1',
+        ),
+      });
+      if (!path) return { saved: false };
+      if (fileRef(path) === info.ref)
+        throw new RouteFailure(
+          'invalid',
+          '副本请选择其他文件名，原文件不会被覆盖',
+        );
+      await service.write(fileRef(path), call.input.content);
+      return { saved: true, ref: fileRef(path) };
+    },
+  );
   r.handle('/pages/:pageId/reload', (call: RouteCall<null>) =>
     service.reloadPage(String(call.params['pageId'])),
   );
@@ -118,6 +142,8 @@ export function routesResources(r: Router, service: ResourcesService): void {
 
   r.view({
     path: '/workspaces/:wsId/resources/pages/:pageId',
+    refresh: (path) =>
+      service.reloadPage(path.split('/').pop()!).then(() => {}),
     resolve: (call) => {
       const info = service.page(String(call.params['pageId']));
       if (!info)
@@ -128,13 +154,14 @@ export function routesResources(r: Router, service: ResourcesService): void {
       return {
         type: 'page',
         url: `${appPageUrl(info.page)}?session=${info.id}`,
-        title: info.ref,
+        title: decodeURIComponent(info.ref.split('/').pop() ?? info.ref),
         sessionId: info.id,
         content: () => service.pageContent(info.id),
         preload: 'page',
         grants: {
           call: [
             '/workspaces/:wsId/resources/pages/:pageId/**',
+            '/views/self/**',
             '/notify',
             '/native/**',
           ],

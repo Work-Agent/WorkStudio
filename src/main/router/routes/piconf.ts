@@ -122,6 +122,11 @@ export function routesPiConf(r: Router, service: PiConfService): void {
     (call: RouteCall<{ source: string; scope: 'user' | 'project' }>) =>
       service.removePackage(call.input.source, call.input.scope),
   );
+  r.handle(
+    '/skills/set-enabled',
+    (call: RouteCall<{ name: string; enabled: boolean }>) =>
+      service.setSkillEnabled(call.input.name, call.input.enabled),
+  );
   r.handle('/skills/set-active', (call: RouteCall<{ names: string[] }>) => ({
     active: service.setActiveSkills(call.input.names),
   }));

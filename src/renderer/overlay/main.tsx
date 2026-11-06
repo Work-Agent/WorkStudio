@@ -5,7 +5,7 @@
  * 收到 dialog 请求 → 展示模态卡片；用户操作 → overlay.respond；
  * 收到 dialogResolved（超时 / 会话关闭等主进程裁决）→ 撤卡。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { UiDialogRequest } from '../../shared/types';
 
@@ -19,10 +19,34 @@ interface Props {
 }
 
 function DialogCard({ dialog, onRespond }: Props) {
-  const [text, setText] = useState(dialog.prefill ?? dialog.placeholder ?? '');
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    card.current?.querySelector<HTMLElement>('input,textarea,button')?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [dialog.id]);
+  const [text, setText] = useState(dialog.prefill ?? '');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Tab') {
+        const nodes = Array.from(
+          card.current?.querySelectorAll<HTMLElement>(
+            'button,input,textarea',
+          ) ?? [],
+        );
+        const first = nodes[0],
+          last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
       if (e.key === 'Escape') onRespond({ cancelled: true });
       if (
         e.key === 'Enter' &&
@@ -38,11 +62,20 @@ function DialogCard({ dialog, onRespond }: Props) {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/35">
-      <div className="w-[min(560px,calc(100vw-48px))] rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-[#1E2021] shadow-2xl">
-        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+      <div
+        ref={card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+        className="w-[min(560px,calc(100vw-48px))] rounded-xl border border-[var(--biz-border)] bg-[var(--biz-surface)] shadow-2xl"
+      >
+        <div
+          id="dialog-title"
+          className="px-4 py-3 border-b border-[var(--biz-border)] text-[13px] font-medium text-[var(--biz-text)]"
+        >
           {dialog.title}
         </div>
-        <div className="px-4 py-3 text-[12px] text-zinc-700 dark:text-zinc-200 space-y-2">
+        <div className="px-4 py-3 text-[12px] text-[var(--biz-text)] space-y-2">
           {dialog.message && (
             <div className="whitespace-pre-wrap">{dialog.message}</div>
           )}
@@ -51,7 +84,7 @@ function DialogCard({ dialog, onRespond }: Props) {
               {(dialog.options ?? []).map((option) => (
                 <button
                   key={option}
-                  className="text-left px-2 py-1.5 rounded hover:bg-zinc-200/70 dark:hover:bg-zinc-700/50"
+                  className="text-left px-2 py-1.5 rounded hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
                   onClick={() => onRespond({ value: option })}
                 >
                   {option}
@@ -64,7 +97,7 @@ function DialogCard({ dialog, onRespond }: Props) {
               autoFocus
               type={dialog.secret ? 'password' : 'text'}
               autoComplete="off"
-              className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#181A1B] px-2 py-1.5 outline-none focus:border-[#4F6BED]"
+              className="w-full rounded-md border border-[var(--biz-border)] bg-[var(--biz-surface)] px-2 py-1.5 outline-none focus:border-[var(--biz-accent)]"
               placeholder={dialog.placeholder}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -76,22 +109,22 @@ function DialogCard({ dialog, onRespond }: Props) {
           {dialog.dialogType === 'editor' && (
             <textarea
               autoFocus
-              className="w-full h-48 resize-none rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-[#181A1B] px-2 py-1.5 outline-none focus:border-[#4F6BED]"
+              className="w-full h-48 resize-none rounded-md border border-[var(--biz-border)] bg-[var(--biz-surface)] px-2 py-1.5 outline-none focus:border-[var(--biz-accent)]"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
           )}
         </div>
-        <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-2">
+        <div className="px-4 py-3 border-t border-[var(--biz-border)] flex justify-end gap-2">
           <button
-            className="px-3 py-1 rounded-md text-[12px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/50"
+            className="px-3 py-1 rounded-md text-[12px] text-[var(--biz-text-muted)] text-[var(--biz-text)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]"
             onClick={() => onRespond({ cancelled: true })}
           >
             取消
           </button>
           {dialog.dialogType === 'confirm' && (
             <button
-              className="px-3 py-1 rounded-md text-[12px] bg-[#4F6BED] text-white hover:bg-[#3D56E0]"
+              className="px-3 py-1 rounded-md text-[12px] bg-[var(--biz-accent)] text-[var(--biz-primary-ink)] hover:bg-[var(--biz-accent-hover)]"
               onClick={() => onRespond({ confirmed: true })}
             >
               确认
@@ -100,7 +133,7 @@ function DialogCard({ dialog, onRespond }: Props) {
           {(dialog.dialogType === 'input' ||
             dialog.dialogType === 'editor') && (
             <button
-              className="px-3 py-1 rounded-md text-[12px] bg-[#4F6BED] text-white hover:bg-[#3D56E0]"
+              className="px-3 py-1 rounded-md text-[12px] bg-[var(--biz-accent)] text-[var(--biz-primary-ink)] hover:bg-[var(--biz-accent-hover)]"
               onClick={() => onRespond({ value: text })}
             >
               提交

@@ -52,6 +52,7 @@ export interface PluginHostOptions {
 export class PluginHost {
   private readonly packages = new Map<string, PluginPackage>();
   private readonly diagnostics: string[] = [];
+  private readonly loadErrors = new Map<string, string>();
   private readonly settings = new Map<string, Record<string, unknown>>();
   private importEpoch = 0;
 
@@ -100,8 +101,13 @@ export class PluginHost {
       this.importEpoch += 1;
       const url = `${pathToFileURL(pkg.uraEntry).href}?v=${this.importEpoch}`;
       await this.registry.runAs(pkg.id, () => import(url));
+      this.loadErrors.delete(pkg.id);
     } catch (error) {
-      this.diagnostics.push(`插件装载失败：${pkg.id} · ${messageOf(error)}`);
+      const message = messageOf(error);
+      this.loadErrors.set(pkg.id, message);
+      listRegistry.revokeOwner(pkg.id);
+      this.registry.revokeOwner(pkg.id);
+      this.diagnostics.push(`插件装载失败：${pkg.id} · ${message}`);
     }
   }
 
@@ -125,6 +131,8 @@ export class PluginHost {
       );
     }
     await this.loadPackage(pkg);
+    if (this.loadErrors.has(pkg.id))
+      throw new Error(this.loadErrors.get(pkg.id));
     return pkg;
   }
 
@@ -150,7 +158,8 @@ export class PluginHost {
   getPage(id: string): PluginPageEntry | null {
     const pkg = this.packages.get(id);
     // 只有配置页（没有渲染页）的插件同样可打开：出口选择交给调用方。
-    if (!pkg || (!pkg.page && !pkg.settings)) return null;
+    if (!pkg || this.loadErrors.has(id) || (!pkg.page && !pkg.settings))
+      return null;
     return {
       id: pkg.id,
       label: pkg.label,
@@ -191,6 +200,11 @@ export class PluginHost {
       id: pkg.id,
       name: pkg.label,
       version: pkg.version,
+      loaded: !this.loadErrors.has(pkg.id),
+      ...(this.loadErrors.has(pkg.id)
+        ? { error: this.loadErrors.get(pkg.id) }
+        : {}),
+
       ...(pkg.description ? { description: pkg.description } : {}),
       ...(pkg.author ? { author: pkg.author } : {}),
       ...(pkg.iconUrl ? { iconUrl: pkg.iconUrl } : {}),

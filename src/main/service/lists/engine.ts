@@ -18,6 +18,7 @@ interface ListView {
   url: string;
   temporary?: boolean;
   active: boolean;
+  dirty?: boolean;
   document?: { id?: string };
 }
 
@@ -84,7 +85,12 @@ export class ListsService {
               : undefined;
         if (!view) continue;
         item.meta = { ...item.meta, viewId: view.id };
-        item.state = { ...item.state, open: true, active: view.active };
+        item.state = {
+          ...item.state,
+          open: true,
+          active: view.active,
+          dirty: view.dirty,
+        };
       }
     }
   }

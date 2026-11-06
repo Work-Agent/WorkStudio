@@ -19,9 +19,11 @@ const MENU_SOURCE = 'workspace';
 export function WorkspaceSelect() {
   const workspacePath = useAppStore((s) => s.status.workspacePath);
   const workspaces = useAppStore((s) => s.workspaces);
-  const workspaceName = workspacePath
-    ? (workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? workspacePath)
-    : '选择工作区';
+  const workspaceName =
+    workspaces.find((ws) => ws.path === workspacePath)?.name ??
+    (workspacePath
+      ? (workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? workspacePath)
+      : '选择工作区');
 
   const pickWorkspace = async (): Promise<void> => {
     const dir = await cmd<string | null>('agent.pickWorkspace').then((r) =>
@@ -35,11 +37,11 @@ export function WorkspaceSelect() {
   const openMenu = (): void => {
     const items: PopupMenuItem[] = [];
     const current = workspacePath;
-    for (const ws of workspaces.slice(0, 8)) {
+    for (const ws of workspaces) {
       items.push({
         id: `ws:${ws.path}`,
         label: `${ws.current ? '✓ ' : ''}${ws.name}`,
-        disabled: ws.current,
+        disabled: ws.current || !ws.exists,
       });
     }
     if (items.length === 0) {
@@ -76,12 +78,12 @@ export function WorkspaceSelect() {
     <button
       data-testid="workspace-select"
       onClick={openMenu}
-      className="flex items-center gap-1.5 min-w-0 max-w-full rounded-md px-1.5 py-0.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-[#2f3233] transition-colors"
+      className="flex items-center gap-1.5 min-w-0 max-w-full rounded-md px-1.5 py-0.5 text-[var(--biz-text-muted)] text-[var(--biz-text)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] transition-colors"
       title={workspaceName}
     >
-      <FolderOpen className="w-3 h-3 shrink-0 text-[#4F6BED]" />
+      <FolderOpen className="w-3 h-3 shrink-0 text-[var(--biz-accent)]" />
       <span className="text-[12px] truncate">{workspaceName}</span>
-      <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" />
+      <ChevronDown className="w-3 h-3 shrink-0 text-[var(--biz-text-muted)]" />
     </button>
   );
 }

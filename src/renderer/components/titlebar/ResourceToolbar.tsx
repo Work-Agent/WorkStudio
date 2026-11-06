@@ -12,6 +12,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Copy,
   LoaderCircle,
   RefreshCw,
   Zap,
@@ -22,6 +23,7 @@ import { runViewCommand, useWorkspaceStore } from '../../state/workspace';
 import { displayPath } from '../../api/pathDisplay';
 import { FALLBACK_ACTION, TITLEBAR_ACTIONS } from './actions';
 import { rendererIcon } from './icons';
+import { notifyError } from '../../state/notifications';
 
 /** 动作描述符：按类型注册（渲染图标 + 行为）。 */
 interface ToolbarAction {
@@ -105,7 +107,7 @@ export function ResourceToolbar() {
   return (
     <div
       data-testid="resource-url-bar"
-      className="no-drag flex items-center gap-1.5 w-full max-w-[680px] h-8 pl-3 pr-1.5 rounded-full bg-white dark:bg-[#202124] border border-zinc-300/80 dark:border-zinc-700/60 shadow-sm shadow-black/[0.04] dark:shadow-none transition-colors"
+      className="flex items-center gap-1.5 w-full max-w-[680px] h-8 pl-3 pr-1.5 rounded-full bg-[var(--biz-surface)] border border-[var(--biz-border)] shadow-sm shadow-black/[0.04] dark:shadow-none transition-colors"
       title={url}
     >
       {active.renderer?.iconUrl ? (
@@ -118,19 +120,38 @@ export function ResourceToolbar() {
           }}
         />
       ) : (
-        <KindIcon className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+        <KindIcon className="w-3.5 h-3.5 shrink-0 text-[var(--biz-text-muted)]" />
       )}
       <span
-        className="flex-1 min-w-0 text-[12px] font-mono text-zinc-700 dark:text-zinc-300 truncate select-text"
+        data-testid="resource-address"
+        className="flex-1 min-w-0 text-[12px] font-mono text-[var(--biz-text)] truncate select-none"
         title={url}
       >
         {url}
       </span>
       {loading && (
         <span title="加载中…">
-          <LoaderCircle className="w-3.5 h-3.5 animate-spin text-[#4F6BED] shrink-0" />
+          <LoaderCircle className="w-3.5 h-3.5 animate-spin text-[var(--biz-accent)] shrink-0" />
         </span>
       )}
+      <button
+        type="button"
+        title="复制地址"
+        aria-label="复制地址"
+        data-testid="url-action-copy"
+        className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface-hover)]"
+        onClick={() => {
+          void navigator.clipboard.writeText(url).then(
+            () => window.appBridge?.call('/notify', { message: '地址已复制' }),
+            (error: unknown) =>
+              notifyError(
+                error instanceof Error ? error.message : '地址复制失败',
+              ),
+          );
+        }}
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
       {actions.map((action) => (
         <button
           key={action.id}
@@ -138,8 +159,8 @@ export function ResourceToolbar() {
           disabled={action.disabled}
           className={`h-6 w-6 shrink-0 rounded-full flex items-center justify-center transition-colors disabled:opacity-35 disabled:cursor-default ${
             action.active
-              ? 'text-[#4F6BED] dark:text-[#6c86f0]'
-              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#2f3233] hover:text-zinc-900 dark:hover:text-zinc-100'
+              ? 'text-[var(--biz-accent)] dark:text-[var(--biz-accent)]'
+              : 'text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)]'
           }`}
           title={action.title}
           data-testid={`url-action-${action.id}`}

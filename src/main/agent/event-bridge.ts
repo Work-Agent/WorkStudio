@@ -101,7 +101,7 @@ export class EventBridge {
     }, FLUSH_INTERVAL_MS);
   }
 
-  private flush(): void {
+  flush(): void {
     if (this.queue.length === 0) return;
     const frames = this.queue;
     this.queue = [];

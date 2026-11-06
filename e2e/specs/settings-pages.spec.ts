@@ -2,6 +2,9 @@ import { expect, test } from '../support/app';
 import { windowByUrl } from '../support/fixtures';
 
 const PAGES = [
+  'appearance',
+  'plugins',
+  'updates',
   'storage',
   'workspaces',
   'browser',

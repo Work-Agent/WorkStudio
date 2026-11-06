@@ -38,7 +38,7 @@ export function App() {
 
   // TitleBar 插件 / 设置入口已移入 Sidebar 顶部导航（SidebarNav）
   return (
-    <div className="fixed inset-0 overflow-hidden bg-zinc-100 dark:bg-[#1a1c1d] text-zinc-900 dark:text-zinc-100 font-sans">
+    <div className="fixed inset-0 overflow-hidden bg-[var(--biz-surface)] text-[var(--biz-text)] font-sans">
       {/* 壳层几何由 CSS 变量驱动（ShellLayout 同步）；React 不因拖拽重渲染。 */}
       <div className="shell-titlebar">
         <TitleBar />

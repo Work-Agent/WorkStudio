@@ -22,15 +22,12 @@ export function routesWorkspaces(r: Router, service: WorkspacesService): void {
   r.handle('/open', (call: RouteCall<{ path: string }>) =>
     service.open(call.input.path),
   );
-  r.handle('/close', () => {
-    service.close();
-    return { ok: true };
-  });
+  r.handle('/close', async () => ({ ok: await service.close() }));
   r.handle('/rename', (call: RouteCall<{ id: string; name: string }>) =>
     service.rename(call.input.id, call.input.name),
   );
-  r.handle('/delete', (call: RouteCall<{ id: string }>) => {
-    service.remove(call.input.id);
+  r.handle('/delete', async (call: RouteCall<{ id: string }>) => {
+    await service.remove(call.input.id);
     return { ok: true };
   });
 }

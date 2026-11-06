@@ -42,25 +42,27 @@ export function OpenItem({
       data-active={active ? 'true' : 'false'}
       onClick={onClick}
       className={`group relative flex items-center px-2 py-1.5 cursor-pointer transition-colors min-h-[42px] ${
-        active ? '' : 'hover:bg-zinc-200 dark:hover:bg-[#2a2c2d]'
+        active
+          ? ''
+          : 'hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)]'
       }`}
       title={label}
     >
       {active && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[#4F6BED] rounded-r" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[var(--biz-accent)] rounded-r" />
       )}
       {avatar ? (
         <span
           className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-medium ${
             active
-              ? 'bg-zinc-300 dark:bg-[#3a3d3e] text-zinc-600 dark:text-zinc-300'
-              : 'bg-zinc-200 dark:bg-[#32363a] text-zinc-500 dark:text-zinc-400'
+              ? 'bg-[var(--biz-surface)] dark:bg-[var(--biz-surface-hover)] text-[var(--biz-text-muted)] text-[var(--biz-text)]'
+              : 'bg-[var(--biz-surface)] text-[var(--biz-text-muted)] text-[var(--biz-text-muted)]'
           }`}
         >
           {avatar}
         </span>
       ) : (
-        <span className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-zinc-200 dark:bg-[#32363a] text-zinc-500 dark:text-zinc-400">
+        <span className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[var(--biz-surface)] text-[var(--biz-text-muted)]">
           {icon}
         </span>
       )}
@@ -68,13 +70,13 @@ export function OpenItem({
         {!collapsed && (
           <>
             <div className="flex justify-between items-center gap-1">
-              <span className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 truncate leading-none">
+              <span className="text-[13px] font-medium text-[var(--biz-text)] truncate leading-none">
                 {label}
               </span>
             </div>
             {meta && (
               <div className="flex justify-between items-center mt-[5px]">
-                <span className="text-[12px] truncate text-zinc-400 dark:text-zinc-500 leading-none">
+                <span className="text-[12px] truncate text-[var(--biz-text-muted)] leading-none">
                   {meta}
                 </span>
               </div>

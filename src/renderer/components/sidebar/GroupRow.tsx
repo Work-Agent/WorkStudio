@@ -48,12 +48,12 @@ export function GroupRow({
       onClick={onClick}
       data-testid="sidebar-group"
       data-group={groupKey}
-      className={`group relative flex items-center px-2 py-[5px] min-h-[45px] cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors rounded-lg ${
-        active ? 'bg-zinc-200/60 dark:bg-[#2a2d2e]' : ''
+      className={`group relative flex items-center px-2 py-[5px] min-h-[45px] cursor-pointer hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] transition-colors rounded-lg ${
+        active ? 'bg-[var(--biz-surface)] bg-[var(--biz-surface)]' : ''
       }`}
     >
       {active && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[#4F6BED] rounded-r" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[var(--biz-accent)] rounded-r" />
       )}
       <div
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden ${bg}`}
@@ -73,17 +73,17 @@ export function GroupRow({
       {!collapsed && (
         <div className="ml-2 flex-1 overflow-hidden min-w-0">
           <div className="flex justify-between items-center gap-1">
-            <h4 className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-100 truncate leading-none">
+            <h4 className="text-[12px] font-semibold text-[var(--biz-text)] truncate leading-none">
               {title}
             </h4>
           </div>
           <div className="flex justify-between items-center mt-[5px]">
             <p
-              className={`text-[12px] truncate text-zinc-400 dark:text-zinc-500 leading-none ${countLabelClass ?? ''}`}
+              className={`text-[12px] truncate text-[var(--biz-text-muted)] leading-none ${countLabelClass ?? ''}`}
             >
               {label}
             </p>
-            <span className="text-[11px] text-zinc-400 dark:text-zinc-500 shrink-0 leading-none">
+            <span className="text-[11px] text-[var(--biz-text-muted)] shrink-0 leading-none">
               {latest > 0 ? formatTime(latest) : '—'}
             </span>
           </div>
@@ -96,7 +96,7 @@ export function GroupRow({
     return <div className="rounded-lg">{header}</div>;
   }
   return (
-    <div className="rounded-lg bg-zinc-200/60 dark:bg-[#2a2d2e] overflow-hidden">
+    <div className="rounded-lg bg-[var(--biz-surface)] overflow-hidden">
       <div className="rounded-t-lg">{header}</div>
       {activeRow}
     </div>

@@ -1,3 +1,4 @@
+import type { UiDialogRequest, UiDialogResponse } from '../../../shared/types';
 /** 视图集合运行时：关闭族 / 标签命令 / 快捷键。 */
 import type { WebContents } from 'electron';
 import { CH_BUS } from '../../../shared/channels';
@@ -12,10 +13,87 @@ export class ViewRuntime {
     private readonly registry: ViewRegistry,
     private readonly electron: ElectronCapability,
     private readonly providers: ProviderRegistry,
+    private readonly ask: (
+      request: Omit<UiDialogRequest, 'id' | 'type'>,
+    ) => Promise<UiDialogResponse>,
   ) {}
 
-  closeAll(): void {
+  private preparing = false;
+
+  async prepare(
+    ids = this.registry.list().map((view) => view.id),
+  ): Promise<boolean> {
+    if (this.preparing) return false;
+    this.preparing = true;
+    try {
+      for (const id of ids) {
+        const view = this.registry.get(id);
+        if (!view?.dirty) continue;
+        this.registry.setActive(id);
+        this.electron.views.activate(id);
+        const manualSave = /\/(models|storage|updates|browser)$/.test(
+          view.contentPath ?? '',
+        );
+        const response = await this.ask({
+          dialogType: 'select',
+          title: '要保存修改吗？',
+          message: `${view.title} 有未保存的修改。${manualSave ? '\n请取消后，在对应表单中保存设置。' : ''}${view.conflict ? '\n外部文件已变化，请取消后先另存草稿或检查文件。' : ''}`,
+          options:
+            view.conflict || manualSave
+              ? ['放弃修改']
+              : ['保存并继续', '放弃修改'],
+        });
+        if (response.cancelled || !response.value) return false;
+        if (response.value === '放弃修改') continue;
+        if (view.conflict || !(await this.save(id))) return false;
+      }
+      return true;
+    } finally {
+      this.preparing = false;
+    }
+  }
+
+  private save(id: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const wc = this.electron.views.webContents(id);
+      if (!wc) {
+        resolve(false);
+        return;
+      }
+      let finished = false;
+      const finish = (ok: boolean): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        off();
+        wc.removeListener('ipc-message', onBus);
+        resolve(ok);
+      };
+      const off = this.registry.onChange(() => {
+        if (this.registry.get(id)?.dirty === false) finish(true);
+      });
+      const onBus = (
+        _event: unknown,
+        channel: string,
+        message: { type?: string; ok?: boolean },
+      ): void => {
+        if (
+          channel === CH_BUS &&
+          message?.type === 'save-result' &&
+          !message.ok
+        )
+          finish(false);
+      };
+      wc.on('ipc-message', onBus);
+      const timer = setTimeout(() => finish(false), 8000);
+      this.electron.views.send(id, CH_BUS, { type: 'action', id: 'save' });
+    });
+  }
+
+  async closeAll(guard = true): Promise<boolean> {
+    if (guard && !(await this.prepare())) return false;
     for (const view of this.registry.list()) this.close(view.id);
+    return true;
   }
 
   close(id: string): void {
@@ -35,10 +113,32 @@ export class ViewRuntime {
     }
   }
 
-  command(action: string, call: RouteCall): null {
+  async command(action: string, call: RouteCall): Promise<null> {
     const id = String(call.params['viewId']);
     const record = this.registry.get(id);
     if (!record) throw new RouteFailure('unknown', `view ${id} not found`);
+    const list = this.registry.list();
+    const index = list.findIndex((view) => view.id === id);
+    const targets =
+      action === 'close-others'
+        ? list.filter((view) => view.id !== id).map((view) => view.id)
+        : action === 'close-to-left'
+          ? list.slice(0, index).map((view) => view.id)
+          : action === 'close-to-right'
+            ? list.slice(index + 1).map((view) => view.id)
+            : [id];
+    if (
+      [
+        'close',
+        'reload',
+        'navigate',
+        'close-others',
+        'close-to-left',
+        'close-to-right',
+      ].includes(action) &&
+      !(await this.prepare(targets))
+    )
+      return null;
     switch (action) {
       case 'activate':
         this.registry.setActive(id);
@@ -48,6 +148,10 @@ export class ViewRuntime {
         this.close(id);
         break;
       case 'reload':
+        if (record.contentPath)
+          await this.providers
+            .match(record.contentPath)
+            ?.refresh?.(record.contentPath);
         this.electron.views.reload(id);
         break;
       case 'navigate': {
@@ -96,7 +200,7 @@ export class ViewRuntime {
         const input = call.input as { action?: string } | undefined;
         this.electron.views.send(id, CH_BUS, {
           type: 'action',
-          action: String(input?.action ?? ''),
+          id: String(input?.action ?? ''),
         });
         break;
       }
@@ -114,7 +218,13 @@ export class ViewRuntime {
         const active = this.registry.list().find((view) => view.active)?.id;
         if (!active) return;
         event.preventDefault();
-        this.close(active);
+        void this.command('close', {
+          path: `/views/${active}/close`,
+          base: '',
+          params: { viewId: active },
+          input: null,
+          origin: { type: 'service', id: 'views', base: '' },
+        });
         return;
       }
       const digit = Number.parseInt(input.key, 10);

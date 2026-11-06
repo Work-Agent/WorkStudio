@@ -40,6 +40,9 @@ export class PageSessions {
   constructor(private readonly ura: Ura) {}
 
   async open(ref: string): Promise<PageOpenTarget> {
+    const live = this.byRef.get(ref);
+    if (live && this.entries.has(live))
+      return { type: 'page', info: this.entries.get(live)!.info };
     const opened = await this.ura.read(ref, { as: 'editor' });
     if (opened.presentation.type === 'browser') {
       return { type: 'browser', url: opened.presentation.url };
@@ -86,6 +89,13 @@ export class PageSessions {
   async save(id: string, content: string | Uint8Array): Promise<CommitResult> {
     const entry = this.require(id);
     const binary = content instanceof Uint8Array;
+    if (
+      (await this.baseOf(entry.info.ref, entry.encoding === 'base64')) !==
+      entry.base
+    )
+      throw new Error(
+        '文件已被外部修改。草稿已保留，请另存副本或重新读取后再保存。',
+      );
     const { version } = await this.ura.write(entry.info.ref, content);
     entry.info = {
       ...entry.info,

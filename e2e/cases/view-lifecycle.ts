@@ -16,10 +16,10 @@ export default defineCase({
 
     await ctx.expect.poll(async () => {
       const views = await ctx.appBridge.peek<ViewInfo[]>('/views');
-      return views?.some((view) => view.title === '插件') ?? false;
+      return views?.some((view) => view.title === '文档插件') ?? false;
     }, '设置视图未出现在视图列表');
     const view = (await ctx.appBridge.peek<ViewInfo[]>('/views'))?.find(
-      (item) => item.title === '插件',
+      (item) => item.title === '文档插件',
     );
     if (!view) throw new Error('设置视图不存在');
 

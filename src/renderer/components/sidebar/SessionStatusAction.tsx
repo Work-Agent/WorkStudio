@@ -42,7 +42,7 @@ export function SessionStatusAction({
             e.stopPropagation();
             onStop?.();
           }}
-          className="flex h-full w-full items-center justify-center text-[#4F6BED] hover:text-red-500 transition-colors"
+          className="flex h-full w-full items-center justify-center text-[var(--biz-accent)] hover:text-red-500 transition-colors"
           title="执行中 · 点击停止"
         >
           <LoaderCircle className="w-3 h-3 animate-spin" />
@@ -62,7 +62,7 @@ export function SessionStatusAction({
           }}
           className={`flex h-full w-full items-center justify-center rounded transition-colors ${
             idleClass ??
-            'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200'
+            'text-[var(--biz-text-muted)] hover:text-[var(--biz-text-muted)] dark:hover:text-[var(--biz-text)]'
           }`}
           title={idleTitle}
         >

@@ -6,6 +6,7 @@
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import scrollbarCss from '../shared/styles/scrollbar.css?raw';
+import settingsCss from '../shared/styles/settings.css?raw';
 import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels';
 import type { AppBridge } from '../shared/electron';
 import type {
@@ -80,7 +81,13 @@ function formatPath(value: unknown): string {
   path = normalizePath(path);
   const roots = [
     ['workspace', normalizePath(pathRoots.workspacePath)],
-    ['dataRoot', normalizePath(pathRoots.dataRoot)],
+    [
+      'app/workspace',
+      pathRoots.dataRoot && pathRoots.workspaceId
+        ? `${normalizePath(pathRoots.dataRoot)}/workspaces/${pathRoots.workspaceId}`
+        : '',
+    ],
+    ['app', normalizePath(pathRoots.dataRoot)],
     ['app', normalizePath(pathRoots.appPath)],
   ] as const;
   for (const [label, root] of roots) {
@@ -125,8 +132,27 @@ const api = {
         pageCall(`/${encodeURIComponent(id)}/get`),
       open: <T = unknown>(ref: string): Promise<T> =>
         pageCall('/open', { ref }),
-      save: <T = unknown>(id: string, content: string): Promise<T> =>
-        pageCall(`/${encodeURIComponent(id)}/save`, { content }),
+      save: async <T = unknown>(id: string, content: string): Promise<T> => {
+        try {
+          const result = await pageCall<T>(`/${encodeURIComponent(id)}/save`, {
+            content,
+          });
+          ipcRenderer.send(CH_BUS, { type: 'save-result', ok: true });
+          documentSaveError = '';
+          renderDocumentBar();
+          return result;
+        } catch (error) {
+          documentSaveError =
+            error instanceof Error ? error.message : String(error);
+          ipcRenderer.send(CH_BUS, {
+            type: 'save-result',
+            ok: false,
+            message: documentSaveError,
+          });
+          renderDocumentBar();
+          throw error;
+        }
+      },
       /** 二进制保存（OOXML 等）；返回 CommitResult，冲突稿为 base64。 */
       saveBytes: <T = unknown>(id: string, data: Uint8Array): Promise<T> =>
         pageCall(`/${encodeURIComponent(id)}/save`, { content: data }),
@@ -206,3 +232,161 @@ if (process.contextIsolated) {
 } else {
   (window as unknown as { appBridge: unknown }).appBridge = appBridgeImpl;
 }
+
+/** 统一内置设置页导航；页面继续拥有各自的数据与保存行为。 */
+function installSettingsNavigation(): void {
+  const match = decodeURIComponent(location.pathname).match(
+    /\/settings\/([^/]+)\/index\.html$/,
+  );
+  const page = match?.[1];
+  if (!page || page === 'welcome' || page === 'sessions') return;
+  const capability = ['plugins', 'skills', 'extensions'].includes(page);
+  const items = capability
+    ? [
+        ['plugins', '文档插件'],
+        ['skills', '技能'],
+        ['extensions', '助手扩展'],
+      ]
+    : [
+        ['appearance', '外观与皮肤'],
+        ['preferences', '偏好设置'],
+        ['models', '模型连接'],
+        ['workspaces', '工作区'],
+        ['browser', '网站采集'],
+        ['storage', '存储与数据'],
+        ['resources', '资源诊断'],
+        ['updates', '关于与更新'],
+      ];
+  const nav = document.createElement('nav');
+  nav.className = 'ws-settings-navigation';
+  nav.setAttribute('aria-label', capability ? '能力管理分类' : '设置分类');
+  const title = document.createElement('strong');
+  title.textContent = capability ? '能力管理' : '设置';
+  nav.append(title);
+  for (const [id, label] of items) {
+    const button = document.createElement('button');
+    button.textContent = label!;
+    if (id === page) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => {
+      void appBridgeApi.call('/settings/open', { pageId: id });
+    });
+    nav.append(button);
+  }
+  document.body.classList.add('ws-settings-page');
+  document.body.prepend(nav);
+  const style = document.createElement('style');
+  style.textContent = settingsCss;
+  document.head.append(style);
+}
+document.addEventListener('DOMContentLoaded', installSettingsNavigation, {
+  once: true,
+});
+
+/** 内置文本资料共用保存反馈；作品 iframe 与外部网页保持自己的外观。 */
+let documentSaveError = '';
+let documentState = { dirty: false, conflict: false, missing: false };
+const resourceSession = new URLSearchParams(location.search).get('session');
+function renderDocumentBar(): void {
+  if (!resourceSession || !document.body) return;
+  let bar = document.getElementById('ws-document-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'ws-document-bar';
+    const status = document.createElement('span');
+    status.id = 'ws-document-status';
+    status.setAttribute('role', 'status');
+    status.style.flex = '1';
+    bar.append(status);
+    const add = (label: string, action: () => void): void => {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.addEventListener('click', action);
+      bar!.append(button);
+    };
+    add('保存', () => {
+      void appBridgeApi.call('/views/self/action', { action: 'save' });
+    });
+    add('另存副本', () => {
+      void (async () => {
+        const editor =
+          document.querySelector<HTMLTextAreaElement>('#source, #editor');
+        if (!editor) {
+          documentSaveError = '此编辑器请使用插件自身的另存功能。';
+          renderDocumentBar();
+          return;
+        }
+        try {
+          const result = await pageCall<{ saved: boolean; ref?: string }>(
+            `/${encodeURIComponent(resourceSession)}/save-copy`,
+            { content: editor.value },
+          );
+          if (result.saved) {
+            documentSaveError = '草稿副本已保存，原文档编辑仍然保留。';
+            renderDocumentBar();
+          }
+        } catch (error) {
+          documentSaveError =
+            error instanceof Error ? error.message : String(error);
+          renderDocumentBar();
+        }
+      })();
+    });
+    add('重新读取', () => {
+      void appBridgeApi.call('/views/self/reload').then((r) => {
+        if (!r.ok) {
+          documentSaveError = r.error.message;
+          renderDocumentBar();
+        }
+      });
+    });
+    document.body.prepend(bar);
+    const style = document.createElement('style');
+    style.textContent =
+      '#ws-document-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--panel);color:var(--fg);font:12px/1.6 -apple-system,sans-serif;flex:none}#ws-document-bar button{font:inherit;color:inherit;border:1px solid var(--border);background:var(--bg);padding:3px 8px;border-radius:5px;cursor:pointer}#ws-document-bar[data-warning=true]{border-left:3px solid var(--warn)}';
+    document.head.append(style);
+  }
+  const status = document.getElementById('ws-document-status');
+  if (status)
+    status.textContent =
+      documentSaveError ||
+      (documentState.missing
+        ? '文件无法访问，草稿仍保留，可另存副本。'
+        : documentState.conflict
+          ? '外部文件已修改。请保留草稿副本，或放弃修改后重新读取。'
+          : documentState.dirty
+            ? '● 未保存'
+            : '✓ 已保存');
+  bar.dataset.warning = String(
+    Boolean(
+      documentSaveError || documentState.missing || documentState.conflict,
+    ),
+  );
+}
+ipcRenderer.on(
+  CH_BUS,
+  (
+    _event,
+    message: {
+      type: string;
+      dirty?: boolean;
+      conflict?: boolean;
+      missing?: boolean;
+    },
+  ) => {
+    if (message.type === 'document-state') {
+      documentState = {
+        dirty: Boolean(message.dirty),
+        conflict: Boolean(message.conflict),
+        missing: Boolean(message.missing),
+      };
+      renderDocumentBar();
+    }
+    if (message.type === 'content') {
+      documentSaveError = '';
+      renderDocumentBar();
+    }
+  },
+);
+document.addEventListener('DOMContentLoaded', renderDocumentBar, {
+  once: true,
+});

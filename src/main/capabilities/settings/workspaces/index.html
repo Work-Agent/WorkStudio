@@ -200,9 +200,7 @@
         <div class="grow">
           <h1>工作区</h1>
           <p>
-            每个工作区一份独立现场（会话 / 设置 /
-            界面状态）。切换工作区是原子换代：
-            资源网关、会话域、技能与浏览器策略全部重绑。
+            每个工作区拥有独立的资料、会话与设置。切换前会处理未保存内容及正在执行的任务。
           </p>
         </div>
         <button class="primary" id="pick">打开工作区…</button>
@@ -277,8 +275,6 @@
               esc(label) +
               '">' +
               esc(label) +
-              ' · wsId ' +
-              esc(ws.wsId) +
               '</div>' +
               '</div>' +
               '<span class="time">最近 ' +
@@ -314,7 +310,7 @@
             ...item,
             wsId: item.id,
             current: item.id === current?.id,
-            exists: true,
+            exists: item.exists,
           }));
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
@@ -326,8 +322,8 @@
         state.busy = path;
         render();
         try {
-          await call('/workspaces/open', { path });
-          toast('已切换工作区');
+          const opened = await call('/workspaces/open', { path });
+          if (opened?.path === path) toast('已切换工作区');
         } catch (e) {
           toast(e && e.message ? e.message : String(e), true);
         } finally {

@@ -147,3 +147,172 @@ test('内容视图打开后立即有首帧（不是空白视图）', async ({
 
   await backToMainList(shell);
 });
+
+test('整个顶部支持拖动，按钮保留点击且地址可以复制', async ({
+  shell,
+  electron,
+}) => {
+  const original = await electron.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getBounds(),
+  );
+  try {
+    await electron.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setSize(960, 650),
+    );
+    await shell.evaluate(() =>
+      window.appBridge!.call('/settings/open', { pageId: 'appearance' }),
+    );
+    const titlebar = shell.getByTestId('window-titlebar');
+    await expect(titlebar).toBeVisible();
+    await expect(shell.getByTestId('window-drag-handle')).toHaveCount(0);
+    const bounds = await titlebar.boundingBox();
+    expect(bounds?.width).toBeGreaterThanOrEqual(960);
+    expect(bounds?.height).toBeGreaterThanOrEqual(32);
+    for (const region of [titlebar, shell.getByTestId('resource-address')]) {
+      expect(
+        await region.evaluate((el) =>
+          getComputedStyle(el).getPropertyValue('app-region'),
+        ),
+      ).toBe(isMac ? 'no-drag' : 'drag');
+    }
+    const before = await electron.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getBounds(),
+    );
+    await shell.evaluate(() => {
+      const original = navigator.clipboard.writeText;
+      (
+        window as typeof window & { restoreTitlebarCopy?: () => void }
+      ).restoreTitlebarCopy = () => {
+        navigator.clipboard.writeText = original;
+        delete document.documentElement.dataset.testCopiedAddress;
+      };
+      navigator.clipboard.writeText = async (text) => {
+        document.documentElement.dataset.testCopiedAddress = text;
+      };
+    });
+    try {
+      await shell
+        .getByRole('button', { name: '复制地址', exact: true })
+        .click();
+      await expect
+        .poll(() =>
+          shell.evaluate(
+            () => document.documentElement.dataset.testCopiedAddress,
+          ),
+        )
+        .toBe('settings://appearance');
+      expect(
+        await electron.app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].getBounds(),
+        ),
+      ).toEqual(before);
+    } finally {
+      await shell.evaluate(() => {
+        const state = window as typeof window & {
+          restoreTitlebarCopy?: () => void;
+        };
+        state.restoreTitlebarCopy?.();
+        delete state.restoreTitlebarCopy;
+      });
+    }
+    expect(
+      await shell
+        .getByTestId('workspace-select')
+        .evaluate((el) => getComputedStyle(el).getPropertyValue('app-region')),
+    ).toBe('no-drag');
+  } finally {
+    await electron.app.evaluate(
+      ({ BrowserWindow }, bounds) =>
+        BrowserWindow.getAllWindows()[0].setBounds(bounds),
+      original,
+    );
+  }
+});
+
+test('主窗口移动采用屏幕坐标，结束后不再响应位移', async ({
+  shell,
+  electron,
+}) => {
+  const original = await electron.app.evaluate(({ BrowserWindow, screen }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const original = win.getBounds();
+    const area = screen.getDisplayMatching(original).workArea;
+    win.setBounds({ x: area.x + 40, y: area.y + 40, width: 960, height: 600 });
+    const state = globalThis as typeof globalThis & {
+      windowMoveTest?: {
+        original: typeof screen.getCursorScreenPoint;
+        point: { x: number; y: number };
+      };
+    };
+    state.windowMoveTest = {
+      original: screen.getCursorScreenPoint,
+      point: { x: area.x + 200, y: area.y + 100 },
+    };
+    screen.getCursorScreenPoint = () => ({ ...state.windowMoveTest!.point });
+    return original;
+  });
+  try {
+    const before = await electron.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getBounds(),
+    );
+    expect(
+      await shell.evaluate(() =>
+        window.appBridge!.call('/native/window-move/begin'),
+      ),
+    ).toMatchObject({ ok: true, data: true });
+    await electron.app.evaluate(() => {
+      const state = globalThis as typeof globalThis & {
+        windowMoveTest: { point: { x: number; y: number } };
+      };
+      state.windowMoveTest.point.x += 50;
+      state.windowMoveTest.point.y += 60;
+    });
+    expect(
+      await shell.evaluate(() =>
+        window.appBridge!.call('/native/window-move/update'),
+      ),
+    ).toMatchObject({ ok: true, data: true });
+    const moved = await electron.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getBounds(),
+    );
+    expect(moved).toEqual({ ...before, x: before.x + 50, y: before.y + 60 });
+    await shell.evaluate(() =>
+      window.appBridge!.call('/native/window-move/end'),
+    );
+    if (isMac)
+      expect(
+        await electron.app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].isVisibleOnAllWorkspaces(),
+        ),
+      ).toBe(false);
+    await electron.app.evaluate(() => {
+      const state = globalThis as typeof globalThis & {
+        windowMoveTest: { point: { x: number; y: number } };
+      };
+      state.windowMoveTest.point.y += 100;
+    });
+    expect(
+      await shell.evaluate(() =>
+        window.appBridge!.call('/native/window-move/update'),
+      ),
+    ).toMatchObject({ ok: true, data: false });
+    expect(
+      await electron.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getBounds(),
+      ),
+    ).toEqual(moved);
+  } finally {
+    await shell.evaluate(() =>
+      window.appBridge!.call('/native/window-move/end'),
+    );
+    await electron.app.evaluate(({ BrowserWindow, screen }, bounds) => {
+      const state = globalThis as typeof globalThis & {
+        windowMoveTest?: { original: typeof screen.getCursorScreenPoint };
+      };
+      if (state.windowMoveTest)
+        screen.getCursorScreenPoint = state.windowMoveTest.original;
+      delete state.windowMoveTest;
+      BrowserWindow.getAllWindows()[0].setBounds(bounds);
+    }, original);
+  }
+});

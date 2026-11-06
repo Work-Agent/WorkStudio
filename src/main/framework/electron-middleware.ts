@@ -1,3 +1,8 @@
+import {
+  appearanceCss,
+  resolveAppearance,
+  SKINS,
+} from '../../shared/appearance';
 /**
  * Electron 中间件：主进程全局能力的提供者。
  *
@@ -131,6 +136,9 @@ interface ScenePort {
 }
 
 interface NativePort {
+  beginWindowMove(): boolean;
+  updateWindowMove(): boolean;
+  endWindowMove(): void;
   openExternal(url: string): void;
   openPath(path: string): void;
   pickDirectory(): Promise<string | null>;
@@ -157,8 +165,16 @@ export class ElectronCapability implements Capability {
   readonly native: NativePort;
 
   private win: BrowserWindow | null = null;
+  private windowMove: {
+    bounds: Rectangle;
+    pointer: { x: number; y: number };
+    restoreSingleSpace: boolean;
+  } | null = null;
   private layout: LayoutSnapshot | null = null;
+  private closeGuard: (() => Promise<boolean>) | null = null;
   private currentTheme: Theme;
+  private readonly skinCss = new WeakMap<WebContents, string>();
+  private readonly skinQueue = new WeakMap<WebContents, Promise<void>>();
   private readonly bootLog: string;
   private readonly dataRoot: string;
   private readonly viewsById = new Map<string, ViewEntry>();
@@ -185,7 +201,10 @@ export class ElectronCapability implements Capability {
     const info = initDataRoot();
     this.dataRoot = info.root;
     this.bootLog = join(info.root, 'logs', 'boot.log');
-    this.currentTheme = readUserPreferences().theme;
+    this.currentTheme = resolveAppearance(
+      readUserPreferences().appearance,
+      nativeTheme.shouldUseDarkColors,
+    ).theme;
     this.env = {
       dataRoot: info.root,
       appPath: electron.getAppPath(),
@@ -265,6 +284,9 @@ export class ElectronCapability implements Capability {
     };
 
     this.native = {
+      beginWindowMove: () => this.beginWindowMove(),
+      updateWindowMove: () => this.updateWindowMove(),
+      endWindowMove: () => this.finishWindowMove(),
       openExternal: (url) => {
         void shell.openExternal(url);
       },
@@ -285,17 +307,23 @@ export class ElectronCapability implements Capability {
         });
         return result.canceled ? null : (result.filePath ?? null);
       },
-      popupMenu: async (items) => {
-        const result = await dialog.showMessageBox({
-          type: 'question',
-          message: '选择操作',
-          detail: '请选择一项',
-          buttons: items.map((item) => item.label),
-          cancelId: -1,
-          noLink: true,
-        });
-        return items[result.response]?.id ?? null;
-      },
+      popupMenu: (items) =>
+        new Promise<string | null>((resolveSelection) => {
+          let selected: string | null = null;
+          const menu = Menu.buildFromTemplate(
+            items.map((item) => ({
+              label: item.label,
+              enabled: !item.disabled,
+              click: () => {
+                selected = item.id;
+              },
+            })),
+          );
+          menu.popup({
+            ...(this.win ? { window: this.win } : {}),
+            callback: () => resolveSelection(selected),
+          });
+        }),
     };
   }
 
@@ -375,6 +403,56 @@ export class ElectronCapability implements Capability {
   }
   // ─── 窗口 / 视图 ───────────────────────────────────────
 
+  /** 窗口位移使用全局屏幕 DIP，不受工作区视图边界或当前显示器约束。 */
+  private beginWindowMove(): boolean {
+    const win = this.win;
+    if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized())
+      return false;
+    this.finishWindowMove(false, false);
+    const restoreSingleSpace =
+      process.platform === 'darwin' && !win.isVisibleOnAllWorkspaces();
+    // 拖动期间跨越当前桌面空间；松手后重新归属目标屏幕，恢复单桌面行为。
+    if (restoreSingleSpace)
+      win.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    this.windowMove = {
+      bounds: win.getBounds(),
+      pointer: screen.getCursorScreenPoint(),
+      restoreSingleSpace,
+    };
+    return true;
+  }
+
+  private updateWindowMove(): boolean {
+    const win = this.win,
+      start = this.windowMove;
+    if (!win || win.isDestroyed() || !start) return false;
+    const pointer = screen.getCursorScreenPoint();
+    win.setBounds(
+      {
+        ...start.bounds,
+        x: Math.round(start.bounds.x + pointer.x - start.pointer.x),
+        y: Math.round(start.bounds.y + pointer.y - start.pointer.y),
+      },
+      false,
+    );
+    return true;
+  }
+
+  private finishWindowMove(commit = true, focus = true): void {
+    const start = this.windowMove,
+      win = this.win;
+    if (!start) return;
+    if (commit) this.updateWindowMove();
+    this.windowMove = null;
+    if (start.restoreSingleSpace && win && !win.isDestroyed()) {
+      win.setVisibleOnAllWorkspaces(false, { skipTransformProcessType: true });
+      if (focus) win.focus();
+    }
+  }
+
   private bounds(): WindowBounds | null {
     if (!this.win || this.win.isDestroyed()) return null;
     const { width, height } = this.win.getContentBounds();
@@ -392,6 +470,10 @@ export class ElectronCapability implements Capability {
   private addListener<T>(set: Set<T>, listener: T): () => void {
     set.add(listener);
     return () => set.delete(listener);
+  }
+
+  setCloseGuard(guard: () => Promise<boolean>): void {
+    this.closeGuard = guard;
   }
 
   private createWindow(): BrowserWindow {
@@ -417,17 +499,47 @@ export class ElectronCapability implements Capability {
       },
     });
     this.attach(window.webContents);
+    window.webContents.on('did-start-navigation', () => {
+      this.finishWindowMove(false, false);
+    });
+    window.webContents.on('render-process-gone', () => {
+      this.finishWindowMove(false, false);
+    });
     window.once('ready-to-show', () => window.show());
     window.on('resize', () => {
       if (this.layout) this.applyLayout(this.layout);
     });
     window.on('blur', () => {
+      this.finishWindowMove(false, false);
       for (const listener of this.blurListeners) listener();
     });
+    let approvedClose = false;
+    let checkingClose = false;
+    window.on('close', (event) => {
+      if (approvedClose || !this.closeGuard) return;
+      event.preventDefault();
+      if (checkingClose) return;
+      checkingClose = true;
+      void this.closeGuard()
+        .then((ok) => {
+          checkingClose = false;
+          if (ok && !window.isDestroyed()) {
+            approvedClose = true;
+            window.close();
+          }
+        })
+        .catch(() => {
+          checkingClose = false;
+        });
+    });
     window.on('closed', () => {
+      this.windowMove = null;
       if (this.win === window) this.win = null;
       this.viewsById.clear();
     });
+    window.webContents.on('did-finish-load', () =>
+      this.applyAppearanceTo(window.webContents),
+    );
     void window.loadURL(this.rendererUrl('index.html'));
     return window;
   }
@@ -477,6 +589,8 @@ export class ElectronCapability implements Capability {
     view.webContents.on('did-finish-load', () => {
       // 首帧兜底：加载完成后再写一次几何（隐藏期设过几何的视图尤其需要）。
       if (this.viewsById.get(input.viewId) === entry) this.reapplyBounds(entry);
+      if (input.type !== 'web' && input.type !== 'capture')
+        this.applyAppearanceTo(view.webContents);
       hooks?.onReady?.();
     });
     view.webContents.on('render-process-gone', () => hooks?.onCrash?.());
@@ -517,7 +631,10 @@ export class ElectronCapability implements Capability {
     const entry = this.viewsById.get(viewId);
     if (!entry) return;
     entry.view.setVisible(visible);
-    if (visible) this.reapplyBounds(entry);
+    if (visible) {
+      this.reapplyBounds(entry);
+      if (entry.type === 'overlay') entry.view.webContents.focus();
+    }
   }
 
   private applyLayout(next: LayoutSnapshot): void {
@@ -645,11 +762,46 @@ export class ElectronCapability implements Capability {
     applyShellCsp(target, Boolean(process.env['ELECTRON_RENDERER_URL']));
   }
 
+  private applyAppearanceTo(wc: WebContents): void {
+    const css = appearanceCss(
+      resolveAppearance(
+        readUserPreferences().appearance,
+        nativeTheme.shouldUseDarkColors,
+      ),
+    );
+    const update = async (): Promise<void> => {
+      if (wc.isDestroyed()) return;
+      const previous = this.skinCss.get(wc);
+      const key = await wc.insertCSS(css, { cssOrigin: 'user' });
+      this.skinCss.set(wc, key);
+      if (previous && !wc.isDestroyed())
+        await wc.removeInsertedCSS(previous).catch(() => {});
+    };
+    const pending = (this.skinQueue.get(wc) ?? Promise.resolve())
+      .then(update)
+      .catch(() => {});
+    this.skinQueue.set(wc, pending);
+  }
+
   private applyTheme(next: Theme): void {
     this.currentTheme = next;
-    nativeTheme.themeSource = next === 'light' ? 'light' : 'dark';
+    nativeTheme.themeSource =
+      readUserPreferences().appearance.mode === 'system' ? 'system' : next;
+    if (this.win && !this.win.isDestroyed())
+      this.applyAppearanceTo(this.win.webContents);
+    for (const entry of this.viewsById.values()) {
+      if (entry.type !== 'web' && entry.type !== 'capture')
+        this.applyAppearanceTo(entry.view.webContents);
+    }
     if (this.win && !this.win.isDestroyed()) {
-      this.win.setBackgroundColor(next === 'light' ? '#f4f4f5' : '#1a1c1d');
+      this.win.setBackgroundColor(
+        SKINS[
+          resolveAppearance(
+            readUserPreferences().appearance,
+            nativeTheme.shouldUseDarkColors,
+          ).effectiveSkin
+        ].bg,
+      );
       // 原生三键由覆盖层绘制，配色不随 nativeTheme 自动更新，需显式同步。
       this.applyTitleBarOverlay(this.win);
     }

@@ -50,7 +50,20 @@ export class Bootstrap {
       if (closing) return;
       closing = true;
       event.preventDefault();
-      void core.release().finally(() => electron.exit(0));
+      void core
+        .prepareClose(true)
+        .then(async (allowed) => {
+          if (!allowed) {
+            closing = false;
+            return;
+          }
+          await core.release();
+          electron.exit(0);
+        })
+        .catch((error) => {
+          closing = false;
+          core.reportFatal(error);
+        });
     });
 
     void electron

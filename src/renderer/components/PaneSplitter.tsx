@@ -24,13 +24,15 @@ export function PaneSplitter() {
     >
       {/* 与 TabsBar / SidebarNav / 助手 tabs 下边框同一条线 */}
       <div
-        className="absolute left-0 right-0 h-px bg-zinc-200 dark:bg-zinc-800 pointer-events-none"
+        className="absolute left-0 right-0 h-px bg-[var(--biz-surface)] pointer-events-none"
         style={{ top: 'calc(var(--wb-tabbar-h) - 1px)' }}
       />
       {/* 视觉线体：1px 常显分隔线，hover / 拖拽时变靛蓝 */}
       <div
         className={`absolute inset-y-0 right-0 w-px transition-colors ${
-          active ? 'bg-[#4F6BED]' : 'bg-zinc-300 dark:bg-zinc-800'
+          active
+            ? 'bg-[var(--biz-accent)]'
+            : 'bg-[var(--biz-surface)] bg-[var(--biz-surface)]'
         }`}
       />
     </div>

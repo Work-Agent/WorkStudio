@@ -57,6 +57,11 @@
   height: var(--titlebar-height, 2.5rem);
 }
 
+.titlebar[data-manual-move='true'] {
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+
 .titlebar button,
 .titlebar input,
 .titlebar select,
@@ -302,4 +307,242 @@
 .md-chat input[type='checkbox'] {
   margin-right: 5px;
   vertical-align: -1px;
+}
+
+/* 资料工作台：共享语义颜色与紧凑的文档导航。 */
+.wb-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--biz-surface);
+  color: var(--biz-text);
+  border-right: 1px solid var(--biz-border);
+}
+.wb-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 12px 10px;
+  font-size: 12px;
+}
+.wb-sidebar-heading strong {
+  font-weight: 500;
+}
+.wb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 5px;
+  color: var(--biz-text-muted);
+  flex-shrink: 0;
+}
+.wb-icon:hover {
+  background: var(--biz-surface-hover);
+}
+.wb-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--biz-border);
+  background: var(--biz-bg);
+  border-radius: 6px;
+  padding: 7px 8px;
+  margin: 0 10px 14px;
+  color: var(--biz-text-muted);
+}
+.wb-search input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  background: transparent;
+}
+.wb-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 7px 16px;
+}
+.wb-source {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 5px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 5px;
+}
+.wb-source span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-source small {
+  color: var(--biz-text-muted);
+}
+.wb-source:hover,
+.wb-file:hover {
+  background: var(--biz-surface-hover);
+}
+.wb-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 8px 7px 26px;
+  border-radius: 5px;
+  font-size: 12px;
+  text-align: left;
+}
+.wb-file svg {
+  flex-shrink: 0;
+  color: var(--biz-text-muted);
+}
+.wb-file span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-file.is-active {
+  background: var(--biz-accent-dim);
+  color: var(--biz-accent);
+  box-shadow: inset 2px 0 var(--biz-accent);
+}
+.wb-tree-note {
+  font-size: 11px;
+  color: var(--biz-text-muted);
+  padding: 5px 8px 12px 25px;
+}
+.wb-sidebar-footer {
+  margin-top: auto;
+  padding: 8px;
+  border-top: 1px solid var(--biz-border);
+}
+.wb-sidebar-footer button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  text-align: left;
+}
+.wb-sidebar-footer button:hover {
+  background: var(--biz-surface-hover);
+}
+.wb-button {
+  padding: 7px 12px;
+  border: 1px solid var(--biz-border);
+  border-radius: 6px;
+  background: var(--biz-surface);
+  color: var(--biz-text);
+  font-size: 12px;
+}
+.wb-button:hover {
+  background: var(--biz-surface-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+.wb-task {
+  padding: 13px;
+  margin-top: 14px;
+  border: 1px solid var(--biz-border);
+  border-radius: 8px;
+  background: var(--biz-bg);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.wb-task.is-error {
+  border-left: 2px solid var(--biz-danger);
+}
+.wb-task-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+.wb-task-error {
+  color: var(--biz-danger);
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+.wb-task-meta {
+  color: var(--biz-text-muted);
+  font-size: 11px;
+  margin: 9px 0;
+}
+.wb-task-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0;
+  list-style: none;
+  margin: 14px 0;
+  color: var(--biz-text-muted);
+  font-size: 11px;
+}
+.wb-task-steps li {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.wb-task-steps svg {
+  flex-shrink: 0;
+}
+.wb-task-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.wb-task-confirm {
+  padding: 12px;
+  border-left: 2px solid var(--biz-warning);
+  background: var(--biz-surface);
+  margin-top: 12px;
+}
+.wb-task-artifacts {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.wb-task-artifacts button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 11px;
+  border: 1px solid var(--biz-border);
+  border-radius: 6px;
+  color: var(--biz-accent);
+}
+.wb-task-artifacts small {
+  display: block;
+  color: var(--biz-text-muted);
+  font-size: 11px;
+}
+@keyframes wb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.wb-spinner {
+  animation: wb-spin 1.2s linear infinite;
 }

@@ -74,7 +74,7 @@ export function SidebarNav() {
   return (
     <div
       data-testid="sidebar-nav"
-      className={`shrink-0 h-9 flex border-b border-zinc-200 dark:border-zinc-800 ${
+      className={`shrink-0 h-9 flex border-b border-[var(--biz-border)] ${
         collapsed
           ? 'items-center justify-center px-1'
           : 'items-center gap-0.5 px-1.5'
@@ -86,7 +86,7 @@ export function SidebarNav() {
           data-active="true"
           title={`视图：${active.label}（点击切换）`}
           onClick={openMenu}
-          className="h-7 px-1.5 shrink-0 rounded-md flex items-center gap-0.5 text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10 hover:bg-[#4F6BED]/15 transition-colors"
+          className="h-7 px-1.5 shrink-0 rounded-md flex items-center gap-0.5 text-[var(--biz-accent)] dark:text-[var(--biz-accent)] bg-[var(--biz-accent-dim)] hover:bg-[var(--biz-accent-dim)] transition-colors"
         >
           <active.icon className="w-4 h-4" />
           <ChevronDown className="w-3 h-3 opacity-70" />
@@ -104,8 +104,8 @@ export function SidebarNav() {
               onClick={() => setUiState({ sidebarView: item.id })}
               className={`h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
                 isActive
-                  ? 'text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] hover:text-zinc-900 dark:hover:text-zinc-100'
+                  ? 'text-[var(--biz-accent)] dark:text-[var(--biz-accent)] bg-[var(--biz-accent-dim)]'
+                  : 'text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)]'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -123,8 +123,8 @@ export function SidebarNav() {
           }
           className={`ml-auto h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
             view === 'find'
-              ? 'text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10'
-              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] hover:text-zinc-900 dark:hover:text-zinc-100'
+              ? 'text-[var(--biz-accent)] dark:text-[var(--biz-accent)] bg-[var(--biz-accent-dim)]'
+              : 'text-[var(--biz-text-muted)] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] hover:text-[var(--biz-text)] dark:hover:text-[var(--biz-text)]'
           }`}
         >
           <Search className="w-4 h-4" />

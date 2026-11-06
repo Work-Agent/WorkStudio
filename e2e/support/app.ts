@@ -23,7 +23,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       const shell = await shellWindow(fixture.app);
       const initialWorkspace = await currentPath(shell);
       await use({ ...fixture, initialWorkspace });
-      await closeApp(fixture);
+      await closeApp(fixture, true, true);
     },
     { scope: 'worker' },
   ],

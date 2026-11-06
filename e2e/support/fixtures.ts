@@ -69,8 +69,12 @@ export async function shellWindow(app: ElectronApplication): Promise<Page> {
 export async function closeApp(
   fixture: AppFixture,
   cleanup = true,
+  force = false,
 ): Promise<void> {
-  await fixture.app.close();
+  // 共享测试的失败清理只作用于隔离数据根；退出确认由独立用例验证。
+  if (force)
+    await fixture.app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+  else await fixture.app.close();
   // before-quit 可能有 200ms 收尾；等进程释放单实例锁。
   await new Promise((resolve) => setTimeout(resolve, 300));
   if (cleanup) rmSync(fixture.dataDir, { recursive: true, force: true });
