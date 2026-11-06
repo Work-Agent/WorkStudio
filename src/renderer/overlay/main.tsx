@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { UiDialogRequest } from '../../shared/types';
+import '../index.css';
 
 interface Props {
   dialog: UiDialogRequest;
