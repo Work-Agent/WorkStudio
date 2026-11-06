@@ -53,7 +53,9 @@ export class ResourceMap {
   restart(): void {
     this.watcher?.close();
     this.watcher = null;
-    void this.start();
+    void this.start().catch((error: unknown) => {
+      console.warn('[ura] resource map restart failed', error);
+    });
   }
 
   dispose(): void {
@@ -82,14 +84,23 @@ export class ResourceMap {
   }
 
   async refresh(): Promise<void> {
-    const content = await this.render();
-    const version = digest(content);
-    if (version === this.version) return;
-    const current = await this.readMap();
-    if (current !== content) {
-      await this.ura.write(this.ref, content);
+    try {
+      const content = await this.render();
+      const version = digest(content);
+      if (version === this.version) return;
+      const current = await this.readMap();
+      if (current !== content) {
+        await this.ura.write(this.ref, content);
+      }
+      this.version = version;
+    } catch (error) {
+      // 资源地图是派生文件：工作区不可写（权限被拒 / 只读）不阻断启动，
+      // 版本不推进，下一次变更或重建会重试。
+      console.warn(
+        `[ura] resource map refresh failed: ${this.ref}`,
+        error instanceof Error ? error.message : error,
+      );
     }
-    this.version = version;
   }
 
   private async readMap(): Promise<string | null> {

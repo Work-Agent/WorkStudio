@@ -1,10 +1,15 @@
 /** 工作区持久化：注册表 / 当前工作区 / 恢复 / 命名。 */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import type { WorkspaceMeta } from '../../shared/app';
 import {
   ensureDefaultWorkspace,
-  getCurrentWorkspace,
   getWorkspaceId,
   listWorkspaces,
   registerWorkspace,
@@ -16,7 +21,7 @@ import { getWorkspaceBase } from '../agent/workspace';
 import { readWindowState, writeWindowState } from '../window-state';
 
 export interface WorkspacesStore {
-  /** 默认工作区回落到数据根时的提示（无则 null）。 */
+  /** 工作区回落 / 切换时的提示（无则 null）。 */
   readonly notice: string | null;
   restore(): WorkspaceMeta;
   list(): WorkspaceMeta[];
@@ -34,19 +39,17 @@ export class WorkspacesRepo implements WorkspacesStore {
     return this.fallbackNotice;
   }
 
-  /** 首次启动创建默认工作区；恢复上次窗口工作区，失败回落到最近工作区。 */
+  /** 恢复上次工作区；不可写（目录被删 / macOS 拒绝文稿访问）时选下一个可用者。 */
   restore(): WorkspaceMeta {
-    if (listWorkspaces().length === 0) this.defaultWorkspace();
     const restoredId = readWindowState().workspaceId;
-    const restored = restoredId
-      ? listWorkspaces().find(
-          (meta) => getWorkspaceId(meta.path) === restoredId,
-        )
-      : undefined;
+    const registered = listWorkspaces();
+    const ordered = [
+      ...registered.filter((meta) => getWorkspaceId(meta.path) === restoredId),
+      ...registered.filter((meta) => getWorkspaceId(meta.path) !== restoredId),
+    ];
     const path =
-      restored && existsSync(restored.path)
-        ? restored.path
-        : this.currentOrFallback();
+      ordered.find((meta) => isWritableWorkspace(meta.path))?.path ??
+      this.defaultWorkspace(ordered[0]?.path);
     const id = registerWorkspace(path);
     writeWindowState({ workspaceId: id });
     const meta = this.metaOf(id);
@@ -92,22 +95,15 @@ export class WorkspacesRepo implements WorkspacesStore {
     writeWindowState({ workspaceId: id });
   }
 
-  /** 默认工作区：用户目录不可写时回落到数据根，并留下壳层提示。 */
-  private defaultWorkspace(): string {
+  /** 默认工作区；无可写工作区时用提示说明原因（回落数据根 / 切换目录）。 */
+  private defaultWorkspace(inaccessible?: string): string {
     const { path, fallback } = ensureDefaultWorkspace();
     if (fallback) {
       this.fallbackNotice = `无法写入用户目录，默认工作区已创建在 ${path}`;
+    } else if (inaccessible) {
+      this.fallbackNotice = `无法访问工作区 ${inaccessible}，已切换到 ${path}`;
     }
     return path;
-  }
-
-  /** 已注册工作区均不可访问（如目录被删或权限被拒）时重建默认工作区。 */
-  private currentOrFallback(): string {
-    try {
-      return getCurrentWorkspace();
-    } catch {
-      return this.defaultWorkspace();
-    }
   }
 
   private toView(meta: {
@@ -142,5 +138,18 @@ export class WorkspacesRepo implements WorkspacesStore {
       /* 无文件 */
     }
     return workspaceLabel(path);
+  }
+}
+
+/** 工作区可用 = 是目录且可写；macOS 拒绝文稿访问会在探测写入时暴露。 */
+function isWritableWorkspace(path: string): boolean {
+  const probe = join(path, `.workstudio.${process.pid}.probe`);
+  try {
+    if (!statSync(path).isDirectory()) return false;
+    writeFileSync(probe, '');
+    rmSync(probe, { force: true });
+    return true;
+  } catch {
+    return false;
   }
 }
