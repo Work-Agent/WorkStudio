@@ -29,51 +29,49 @@ The button opens the Releases page; pick the asset for your platform from the la
 
 ### 1.2 Problem analysis: the gap in both workarounds
 
-The fragments are not defects — they are what a job looks like: work naturally spans sources (local files / cloud drives / business systems / web pages / email), formats (documents / spreadsheets / web pages / email / canvases), versions, permissions and contexts. The problem is **the cost of converging them** — every dimension crossed means someone locates, converts, cross-checks and pastes back; the actions are neither reusable nor traceable, so cost grows linearly with the number of tasks. Neither existing answer lowers that cost: without a workbench it is all borne by the person (A); with a coding agent it is converted into an interface mismatch (B).
+Fragmentation in daily work concentrates along five dimensions: source, format, version, permission and context. They are the shape of the work, not a defect. The real cost is convergence: one deliverable passes through six stages — gather, understand, execute, deliver, trace and secure — and at every stage a person must find, convert, cross-check and confirm again.
 
-#### A. Without a workbench: a person carries things between tools
+The actions are neither reusable nor traceable, so the cost scales with the number of tasks (×N). Neither existing answer lowers it: without a workbench, all six costs are borne by the person; with a coding agent, the six costs are rewritten as one programming task.
 
-| Stage      | What happens                                                                                                                                | What it costs                                                                   |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Gather     | Material is scattered across local files, cloud drives, business systems, web pages and email; finding it relies on memory and search terms | You cannot be sure you found it all, or found it at all                         |
-| Gather     | Downloaded copies, saved-as copies and mail attachments coexist with no authoritative version                                               | You work on a stale copy and notice only after editing                          |
-| Gather     | Cloud links, system roles and mailbox delegation each define permissions their own way                                                      | Visibility must be confirmed by hand, item by item                              |
-| Understand | docx, pdf, xlsx, email and web pages each have a dedicated viewer; the same content renders differently in each                             | Time goes into opening and converting; the judgement basis shifts with the tool |
-| Understand | Converting to plain text or a screenshot loses table relations, hierarchy, comments and revision marks                                      | Evidence is lost, conclusions rest on impressions                               |
-| Understand | Business data is visible only through the UI, never as fields                                                                               | Definitions, value ranges and relations are relayed verbally                    |
-| Understand | Rules, templates and approval requirements live in documents and verbal agreements                                                          | Every task re-learns them, and what is learned is recorded nowhere              |
-| Execute    | The person is the process engine, manually copying, comparing, filling and submitting across UIs                                            | Steps cannot be replayed; a handover starts from zero                           |
-| Execute    | No idempotency and no serialization                                                                                                         | Retries create duplicate records; later writes silently overwrite earlier ones  |
-| Deliver    | Output lands as a file first, then is carried back into the business system                                                                 | Attachment names, folder placement and field mapping rely on convention         |
-| Deliver    | Export → edit → import round trips                                                                                                          | Styles, formulas, hyperlinks and revisions are broken                           |
-| Trace      | Nobody can say which material and which version a conclusion rested on; operations are scattered across system logs                         | Review means redoing the work; the next person starts over                      |
-| Security   | Material moves between people and tools as attachments, share links and screenshots                                                         | No record of who saw it or forwarded it; redaction is manual                    |
+#### Five dimensions: one deliverable, five identities
 
-#### B. Delegate to a coding agent: every task becomes a programming task
+| Dimension  | What coexists in one task                                                          | Action each crossing adds | Cost without convergence                                                                    |
+| ---------- | ---------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| Source     | Local folders, cloud shares, business systems, web pages, email                    | Locate                    | You cannot find it all, nor tell whether you did                                            |
+| Format     | docx, xlsx, pdf, email, web pages, canvases                                        | Convert                   | Converting to text or a screenshot loses table relations, hierarchy, comments and revisions |
+| Version    | Final, final(2), system export, mail copy, cloud copy                              | Compare                   | No authoritative version; you edit a stale file and notice afterwards                       |
+| Permission | Cloud links, system roles, mailbox delegation, directory ACLs                      | Confirm                   | Visibility is confirmed by hand; permissions narrow only per directory                      |
+| Context    | Templates, approval rules, departmental definitions, verbal agreements, precedents | Restate                   | Every task re-learns them; what is learned is recorded nowhere                              |
 
-A coding agent is shaped as “one repo + shell + generate code → run → verify”. Applied to work, every task is forced through three stages: **generate a script → run it → have a human check it**. None of the three is a business action; all of them are development actions.
+#### Six costs: every stage makes the person converge again
 
-| Stage    | What happens                                                                                          | What it costs                                                                                                    |
-| -------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Kickoff  | Every task starts by producing a script; before the task begins, the person is already programming    | Changing one cell or exporting one list waits for the script                                                     |
-| Read     | Format parsing (docx layout, scanned pdf, merged xlsx cells, dynamic web content) is the script's job | Every source type needs its own parser; a wrong parse does not fail loudly, it silently drifts                   |
-| Read     | The mapping from business fields to positions inside documents is guessed                             | A wrong mapping yields plausible but unusable output                                                             |
-| Write    | There is no API back into the business system, so the script writes files or simulates clicks         | Write-back is unreliable; export → edit → import breaks styles, formulas and revisions                           |
-| Locate   | Failures surface as stack traces and exceptions meant for developers                                  | The user cannot tell whether the script, the data or the system failed                                           |
-| Verify   | No assertions; correctness depends on reading the script and comparing by hand                        | Verification costs more than doing it yourself; the script becomes one more artifact to check                    |
-| Reuse    | The same intent produces a different implementation every time                                        | Actions cannot accumulate into tools, nor be granted per task or audited afterwards                              |
-| Security | Data lands in working directories, script arguments, session logs and model context as copies         | Copies escape control: who read which fields, when, cannot be answered                                           |
-| Security | Permissions are granted per directory, not per field or per record                                    | Either the whole directory opens up, or the job cannot be done; credentials and sensitive fields have no channel |
-| Security | Redaction and temporary grants are done by hand beforehand, with no expiry                            | One outbound send cannot be recalled, and compliance has no evidence                                             |
-| Barrier  | Judging whether a script is safe, or will corrupt data, requires programming skill                    | Ordinary users can neither confirm what the agent did nor verify it; they can only trust or refuse               |
+| Stage      | What the person does without convergence                                                                                                    | What it costs                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Gather     | Searches all five entry points; downloaded, saved-as and attached copies coexist                                                            | Cannot find it all or tell whether it did; works on a stale copy                                                |
+| Understand | Opens six formats six ways; converts to text or screenshots; business data exists only as UI; rules live in documents and verbal agreements | Judgement shifts with the tool; table relations, comments and revisions vanish; rules are re-learned every task |
+| Execute    | The person is the process engine: copying, comparing, filling and submitting across UIs; no idempotency, no serialization                   | Steps cannot be replayed; retries duplicate records; later writes overwrite earlier ones                        |
+| Deliver    | Output lands as a file and is carried back; export → edit → import round trips                                                              | Styles, formulas, hyperlinks and revisions break                                                                |
+| Trace      | Cannot say which material and which version a conclusion rested on; operations are scattered across logs                                    | Review means redoing the work; a handover starts from zero                                                      |
+| Security   | Material moves as attachments, share links and screenshots; permissions are per directory; redaction is manual                              | No record of who saw it; no expiry, no evidence for compliance                                                  |
+
+The six stages are not one-off: every new task starts again at gather, actions do not accumulate, and the process cannot be traced, so cost grows linearly with the number of tasks.
+
+#### Two workarounds: the cost only changes payer
+
+| Workaround     | Who pays       | What the cost becomes                                         | Where it falls short                                                                                       |
+| -------------- | -------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A No workbench | The person     | All six stages redone by hand                                 | The person becomes the process engine; actions are neither reusable nor traceable                          |
+| B Coding agent | Model + person | The six stages become a script: generate → run → human checks | Parsing, field mapping, write-back and verification are the script's job; ordinary users cannot confirm it |
+
+B does not remove the six stages; it adds one round of programming to each: every source type needs its own parser, field mapping is guessed, write-back lands as files or simulated clicks, failures surface as stack traces, and correctness depends on reading the script.
 
 #### Consolidation
 
-| Pain cluster                                                     | Missing capability                                                                                  | Claim it maps to                   |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| A gather, understand, deliver, security; B read, write, security | Material has one identity, is interpreted once, and is written through one channel                  | **One resource pipeline**          |
-| A execute, deliver; B write, reuse                               | One state, one entry point for human operations and AI execution, writes never overwrite each other | **One state tree, one projection** |
-| A trace; B kickoff, locate, verify, barrier                      | Content is read, edited and verified in place, with actions recorded                                | **Content surfaces stand alone**   |
+| Pain cluster                          | Missing capability                                                                                  | Claim it maps to                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Gather, understand, deliver, security | Material has one identity, is interpreted once, and is written through one channel                  | **One resource pipeline**          |
+| Execute, deliver                      | One state, one entry point for human operations and AI execution, writes never overwrite each other | **One state tree, one projection** |
+| Trace, reuse and barrier              | Content is read, edited and verified in place, with actions recorded                                | **Content surfaces stand alone**   |
 
 The five dimensions stay the same; what changes is who pays for convergence — A leaves it to the person, B turns it into programming. WorkStudio collects it into a pipeline.
 
