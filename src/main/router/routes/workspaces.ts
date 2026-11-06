@@ -18,6 +18,7 @@ export function routesWorkspaces(r: Router, service: WorkspacesService): void {
   service.onClose((id) => closed.emit({ id }));
   publish();
 
+  r.handle('/refresh', () => service.refresh());
   r.handle('/open', (call: RouteCall<{ path: string }>) =>
     service.open(call.input.path),
   );

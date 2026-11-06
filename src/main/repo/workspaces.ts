@@ -66,6 +66,7 @@ export class WorkspacesRepo implements WorkspacesStore {
   }
 
   register(path: string): WorkspaceMeta {
+    if (!isDirectory(path)) throw new Error('工作区目录不存在或不可访问');
     const id = registerWorkspace(path);
     const meta = this.metaOf(id);
     if (!meta) throw new Error(`workspace ${path} not registered`);
@@ -118,6 +119,7 @@ export class WorkspacesRepo implements WorkspacesStore {
       name: this.nameOf(id, meta.path),
       createdAt: meta.createdAt,
       lastOpenedAt: meta.lastOpenedAt,
+      exists: isDirectory(meta.path),
     };
   }
 
@@ -149,6 +151,14 @@ function isWritableWorkspace(path: string): boolean {
     writeFileSync(probe, '');
     rmSync(probe, { force: true });
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
   } catch {
     return false;
   }

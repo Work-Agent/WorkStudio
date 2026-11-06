@@ -13,6 +13,8 @@
         --line: #e4e4e7;
         --card: #ffffff;
         --accent: #4f6bed;
+        --soft: #f0f3ff;
+        --hover: #f4f4f5;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -21,6 +23,8 @@
           --muted: #a1a1aa;
           --line: #2a2d2e;
           --card: #202223;
+          --soft: #2a3149;
+          --hover: #2c2e30;
         }
       }
       * {
@@ -50,6 +54,7 @@
         line-height: 1.6;
       }
       .workspace {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -59,15 +64,136 @@
         background: var(--card);
         margin-bottom: 32px;
       }
-      .workspace .path {
+      .workspace-info {
         flex: 1;
         min-width: 0;
+        display: grid;
+        gap: 3px;
+      }
+      .workspace-caption {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #workspace-name {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .workspace .path {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         color: var(--muted);
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12px;
+      }
+      .folder-icon {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
+      .workspace-icon {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: var(--soft);
+        color: var(--accent);
+      }
+      #open-workspace {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+      #open-workspace[aria-expanded='true'] {
+        background: var(--soft);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .workspace-picker {
+        position: absolute;
+        z-index: 1;
+        top: calc(100% + 8px);
+        right: 0;
+        width: 350px;
+        max-width: 100%;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: 0 10px 32px #0002;
+      }
+      .picker-heading {
+        display: flex;
+        justify-content: space-between;
+        padding: 9px 10px 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #workspace-options {
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .workspace-option,
+      #pick-directory {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 11px 10px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--card);
+        text-align: left;
+      }
+      .workspace-option:not(:disabled):hover,
+      #pick-directory:not(:disabled):hover {
+        background: var(--hover);
+      }
+      .workspace-option.current {
+        background: var(--soft);
+      }
+      .workspace-option .option-body {
+        display: grid;
+        gap: 3px;
+        flex: 1;
+        min-width: 0;
+      }
+      .option-name {
+        overflow-wrap: anywhere;
+      }
+      .option-path,
+      .option-meta {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .option-path {
+        overflow-wrap: anywhere;
+      }
+      .option-meta {
+        flex: none;
+        white-space: nowrap;
+      }
+      .current .option-meta {
+        color: var(--accent);
+      }
+      .workspace-option.unavailable {
+        opacity: 0.6;
+      }
+      button:disabled {
+        cursor: default;
+      }
+      .picker-footer {
+        margin-top: 5px;
+        padding-top: 5px;
+        border-top: 1px solid var(--line);
+      }
+      .picker-message {
+        margin: 0;
+        padding: 12px 10px;
+        color: var(--muted);
       }
       h2 {
         margin: 0 0 12px;
@@ -137,20 +263,68 @@
       #toast.show {
         opacity: 1;
       }
+      @media (max-width: 480px) {
+        main {
+          padding: 32px 16px;
+        }
+        .workspace {
+          flex-wrap: wrap;
+        }
+        #open-workspace {
+          width: 100%;
+          justify-content: center;
+        }
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>欢迎使用 WorkStudio</h1>
-      <p class="lead">
-        打开一个本地目录作为工作区，或直接在当前位置新建文件。文件类型来自已注册的本地文件
-        codec。
-      </p>
+      <p class="lead">选择工作区，继续处理你的资料，或在当前工作区新建文件。</p>
 
-      <div class="workspace">
-        <span id="workspace-name">当前工作区</span>
-        <span class="path" id="workspace-path"></span>
-        <button class="primary" id="open-workspace">打开本地目录</button>
+      <div class="workspace" id="workspace-control">
+        <span class="workspace-icon" aria-hidden="true">
+          <svg
+            class="folder-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />
+          </svg>
+        </span>
+        <div class="workspace-info">
+          <span class="workspace-caption">当前工作区</span>
+          <span id="workspace-name">未打开工作区</span>
+          <span class="path" id="workspace-path"></span>
+        </div>
+        <button
+          class="primary"
+          id="open-workspace"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="workspace-picker"
+        >
+          <span id="workspace-action">选择工作区</span
+          ><span aria-hidden="true">⌄</span>
+        </button>
+        <div
+          class="workspace-picker"
+          id="workspace-picker"
+          role="dialog"
+          aria-label="选择工作区"
+          hidden
+        >
+          <div class="picker-heading">
+            <span>选择工作区</span><span id="workspace-count"></span>
+          </div>
+          <div id="workspace-options"></div>
+          <div class="picker-footer">
+            <button id="pick-directory" type="button">打开其他目录…</button>
+          </div>
+        </div>
       </div>
 
       <section class="section" id="new-file-section">
@@ -161,7 +335,7 @@
         </p>
       </section>
 
-      <div id="toast"></div>
+      <div id="toast" role="status" aria-live="polite"></div>
     </main>
     <script>
       const bridge = window.appBridge;
@@ -179,6 +353,14 @@
       const fileRef = (path) =>
         `file://${path.startsWith('/') ? path : `/${path}`}`;
       const el = (id) => document.getElementById(id);
+      const picker = {
+        workspaces: [],
+        current: null,
+        open: false,
+        busy: false,
+        loading: false,
+        error: '',
+      };
 
       let toastTimer;
       function toast(message) {
@@ -198,9 +380,9 @@
           ? shortPath(workspace.path)
           : '';
         el('new-file-section').hidden = !workspace;
-        el('open-workspace').textContent = workspace
+        el('workspace-action').textContent = workspace
           ? '切换工作区'
-          : '打开本地目录';
+          : '选择工作区';
 
         const codecs = state.codecs || [];
         const list = el('codecs');
@@ -227,7 +409,12 @@
 
       async function load() {
         try {
-          render(await call('/piconf/welcome'));
+          const [state, current] = await Promise.all([
+            call('/piconf/welcome'),
+            bridge.peek('/workspaces/current'),
+          ]);
+          picker.current = current;
+          render({ ...state, workspace: current });
         } catch (error) {
           toast(error && error.message ? error.message : String(error));
         }
@@ -253,13 +440,152 @@
         }
       }
 
-      el('open-workspace').addEventListener('click', async () => {
+      function recentTime(timestamp) {
+        const minutes = Math.max(
+          0,
+          Math.floor((Date.now() - timestamp) / 60000),
+        );
+        if (minutes < 1) return '刚刚';
+        if (minutes < 60) return `${minutes} 分钟前`;
+        if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
+        if (minutes < 10080) return `${Math.floor(minutes / 1440)} 天前`;
+        return new Date(timestamp).toLocaleDateString('zh-CN');
+      }
+
+      function renderChoices() {
+        el('workspace-count').textContent = picker.loading
+          ? ''
+          : `${picker.workspaces.length} 个`;
+        el('pick-directory').disabled = picker.busy;
+        el('open-workspace').disabled = picker.busy;
+        const options = el('workspace-options');
+        options.replaceChildren();
+        if (picker.loading || picker.error || !picker.workspaces.length) {
+          const message = document.createElement('p');
+          message.className = 'picker-message';
+          message.textContent = picker.loading
+            ? '正在加载工作区…'
+            : picker.error || '尚未打开过工作区';
+          options.appendChild(message);
+          return;
+        }
+        for (const ws of picker.workspaces) {
+          const current = ws.id === picker.current?.id;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className =
+            'workspace-option' +
+            (current ? ' current' : '') +
+            (!ws.exists ? ' unavailable' : '');
+          button.disabled = picker.busy || current || !ws.exists;
+          button.innerHTML =
+            '<span class="option-body"><span class="option-name"></span><span class="option-path"></span></span><span class="option-meta"></span>';
+          button.querySelector('.option-name').textContent = ws.name;
+          const parts = ws.path.replace(/\\/g, '/').split('/').filter(Boolean);
+          button.querySelector('.option-path').textContent = current
+            ? shortPath(ws.path)
+            : `…/${parts.slice(-2).join('/')}`;
+          button.querySelector('.option-meta').textContent = current
+            ? '✓ 当前'
+            : !ws.exists
+              ? '目录不存在'
+              : recentTime(ws.lastOpenedAt);
+          button.addEventListener('click', () => switchTo(ws.path));
+          options.appendChild(button);
+        }
+      }
+
+      function closePicker(restoreFocus = false) {
+        picker.open = false;
+        el('workspace-picker').hidden = true;
+        el('open-workspace').setAttribute('aria-expanded', 'false');
+        if (restoreFocus) el('open-workspace').focus();
+      }
+
+      async function openPicker(focusFirst = false) {
+        picker.open = true;
+        picker.loading = true;
+        picker.error = '';
+        el('workspace-picker').hidden = false;
+        el('open-workspace').setAttribute('aria-expanded', 'true');
+        renderChoices();
         try {
-          const path = await call('/native/pick-directory');
-          if (!path) return;
+          const [workspaces, current] = await Promise.all([
+            call('/workspaces/refresh'),
+            bridge.peek('/workspaces/current'),
+          ]);
+          picker.workspaces = workspaces;
+          picker.current = current;
+        } catch (error) {
+          picker.error = '无法加载工作区，请重新打开选择面板重试';
+          toast(error && error.message ? error.message : String(error));
+        } finally {
+          picker.loading = false;
+          renderChoices();
+          if (focusFirst && picker.open) {
+            el('workspace-picker')
+              .querySelector('button:not(:disabled)')
+              ?.focus();
+          }
+        }
+      }
+
+      async function switchTo(path) {
+        if (picker.busy) return;
+        picker.busy = true;
+        renderChoices();
+        el('workspace-picker').setAttribute('aria-busy', 'true');
+        try {
           await call('/workspaces/open', { path });
+          closePicker();
         } catch (error) {
           toast(error && error.message ? error.message : String(error));
+        } finally {
+          picker.busy = false;
+          el('workspace-picker').setAttribute('aria-busy', 'false');
+          renderChoices();
+        }
+      }
+
+      el('open-workspace').addEventListener('click', () => {
+        if (picker.open) closePicker();
+        else void openPicker();
+      });
+      el('open-workspace').addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        void openPicker(true);
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && picker.open) {
+          event.preventDefault();
+          closePicker(true);
+        }
+      });
+      document.addEventListener('pointerdown', (event) => {
+        if (!el('workspace-control').contains(event.target)) closePicker();
+      });
+      el('workspace-control').addEventListener('focusout', (event) => {
+        if (
+          event.relatedTarget &&
+          !el('workspace-control').contains(event.relatedTarget)
+        )
+          closePicker();
+      });
+      el('pick-directory').addEventListener('click', async () => {
+        if (picker.busy) return;
+        picker.busy = true;
+        renderChoices();
+        try {
+          const path = await call('/native/pick-directory');
+          picker.busy = false;
+          if (!path) return;
+          await switchTo(path);
+        } catch (error) {
+          toast(error && error.message ? error.message : String(error));
+        } finally {
+          picker.busy = false;
+          renderChoices();
         }
       });
 
