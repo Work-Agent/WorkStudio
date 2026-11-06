@@ -15,11 +15,7 @@ export class WorkspacesService {
     (meta: WorkspaceMeta) => void | Promise<void>
   >();
 
-  private readonly store: WorkspacesStore;
-
-  constructor(documentsDir: string) {
-    this.store = new WorkspacesRepo(documentsDir);
-  }
+  private readonly store: WorkspacesStore = new WorkspacesRepo();
 
   /** 恢复上次工作区（首次启动创建默认工作区）。 */
   restore(): WorkspaceMeta {
@@ -32,6 +28,11 @@ export class WorkspacesService {
 
   get current(): WorkspaceMeta | null {
     return this.currentView;
+  }
+
+  /** 默认工作区回落提示（用户目录不可写时非空）。 */
+  get notice(): string | null {
+    return this.store.notice;
   }
 
   onChange(listener: () => void): () => void {

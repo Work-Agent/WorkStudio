@@ -16,6 +16,8 @@ import { getWorkspaceBase } from '../agent/workspace';
 import { readWindowState, writeWindowState } from '../window-state';
 
 export interface WorkspacesStore {
+  /** 默认工作区回落到数据根时的提示（无则 null）。 */
+  readonly notice: string | null;
   restore(): WorkspaceMeta;
   list(): WorkspaceMeta[];
   readCurrent(): string | null;
@@ -26,13 +28,15 @@ export interface WorkspacesStore {
 }
 
 export class WorkspacesRepo implements WorkspacesStore {
-  constructor(private readonly documentsDir: string) {}
+  private fallbackNotice: string | null = null;
+
+  get notice(): string | null {
+    return this.fallbackNotice;
+  }
 
   /** 首次启动创建默认工作区；恢复上次窗口工作区，失败回落到最近工作区。 */
   restore(): WorkspaceMeta {
-    if (listWorkspaces().length === 0) {
-      ensureDefaultWorkspace(this.documentsDir);
-    }
+    if (listWorkspaces().length === 0) this.defaultWorkspace();
     const restoredId = readWindowState().workspaceId;
     const restored = restoredId
       ? listWorkspaces().find(
@@ -42,7 +46,7 @@ export class WorkspacesRepo implements WorkspacesStore {
     const path =
       restored && existsSync(restored.path)
         ? restored.path
-        : getCurrentWorkspace();
+        : this.currentOrFallback();
     const id = registerWorkspace(path);
     writeWindowState({ workspaceId: id });
     const meta = this.metaOf(id);
@@ -86,6 +90,24 @@ export class WorkspacesRepo implements WorkspacesStore {
 
   writeCurrent(id: string | null): void {
     writeWindowState({ workspaceId: id });
+  }
+
+  /** 默认工作区：用户目录不可写时回落到数据根，并留下壳层提示。 */
+  private defaultWorkspace(): string {
+    const { path, fallback } = ensureDefaultWorkspace();
+    if (fallback) {
+      this.fallbackNotice = `无法写入用户目录，默认工作区已创建在 ${path}`;
+    }
+    return path;
+  }
+
+  /** 已注册工作区均不可访问（如目录被删或权限被拒）时重建默认工作区。 */
+  private currentOrFallback(): string {
+    try {
+      return getCurrentWorkspace();
+    } catch {
+      return this.defaultWorkspace();
+    }
   }
 
   private toView(meta: {

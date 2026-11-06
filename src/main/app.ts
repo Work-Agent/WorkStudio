@@ -143,7 +143,7 @@ export class App {
       mkdirSync(dir, { recursive: true });
     }
 
-    const workspaces = new WorkspacesService(env.documentsDir);
+    const workspaces = new WorkspacesService();
     const initial = workspaces.restore();
     let workspacePath = initial.path;
 
@@ -383,6 +383,15 @@ export class App {
 
     for (const capability of this.capabilities) capability.activate?.(ctx);
     this.host.bus.flush();
+
+    const notice = this.workspaces.notice;
+    if (notice) {
+      void this.call({ type: 'service', id: 'agent', base: '' }, '/notify', {
+        message: notice,
+        level: 'warn',
+        source: '工作区',
+      });
+    }
 
     const table = this.host.snapshot();
     this.runtime.log(

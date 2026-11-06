@@ -53,7 +53,6 @@ export interface WindowBounds {
 
 export interface AppEnv {
   dataRoot: string;
-  documentsDir: string;
   appPath: string;
 }
 
@@ -189,7 +188,6 @@ export class ElectronCapability implements Capability {
     this.currentTheme = readUserPreferences().theme;
     this.env = {
       dataRoot: info.root,
-      documentsDir: electron.getPath('documents'),
       appPath: electron.getAppPath(),
     };
 

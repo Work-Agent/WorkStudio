@@ -18,6 +18,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { basename, join } from 'path';
+import { homedir } from 'os';
 import { getDataRoot } from '../data-root';
 
 let agentRoot: string | null = null;
@@ -122,12 +123,32 @@ export function getCurrentWorkspace(): string {
   throw new Error('No registered workspace found');
 }
 
-/** 首装引导：在 Documents 下创建默认工作区并注册。 */
-export function ensureDefaultWorkspace(documentsDir: string): string {
-  const fallback = join(documentsDir, 'WorkStudio');
-  mkdirSync(fallback, { recursive: true });
-  registerWorkspace(fallback);
-  return fallback;
+/**
+ * 首装引导：默认工作区建在用户目录（`~/WorkStudio`），三平台一致，不落入
+ * macOS「文稿」等受 TCC 保护的位置；用户目录不可写时回落到数据根。
+ */
+export function ensureDefaultWorkspace(): {
+  path: string;
+  fallback: boolean;
+} {
+  const candidates = [
+    { path: join(homedir(), 'WorkStudio'), fallback: false },
+    { path: join(getDataRoot(), 'WorkStudio'), fallback: true },
+  ];
+  for (const candidate of candidates) {
+    try {
+      mkdirSync(candidate.path, { recursive: true });
+      registerWorkspace(candidate.path);
+      return candidate;
+    } catch (error) {
+      console.warn(
+        `[workspace] default workspace unavailable at ${candidate.path}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  throw new Error('cannot create default workspace');
 }
 
 /** 工作区显示名（TitleBar 下拉用）。 */

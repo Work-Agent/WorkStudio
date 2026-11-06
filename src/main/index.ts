@@ -2,7 +2,7 @@
  * 主进程入口：单实例锁、能力/中间件组装与进程生命周期。
  */
 
-import { app as electron, type App as ElectronApp } from 'electron';
+import { app as electron, dialog, type App as ElectronApp } from 'electron';
 import { App } from './app';
 import { ElectronCapability } from './framework/electron-middleware';
 import { ViewsCapability } from './framework/views-middleware';
@@ -58,6 +58,11 @@ export class Bootstrap {
       .then(() => core.start())
       .catch((error: unknown) => {
         core.reportFatal(error);
+        // 启动失败不能只留日志：否则用户只看到图标跳一下就没了。
+        dialog.showErrorBox(
+          'WorkStudio 启动失败',
+          `${error instanceof Error ? error.message : String(error)}\n\n详情见数据根 logs/boot.log。`,
+        );
         electron.exit(1);
       });
   }
