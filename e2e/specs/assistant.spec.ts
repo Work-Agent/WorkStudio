@@ -39,8 +39,9 @@ async function visibleByUrl(
 
 /** 还原停靠形态：浮动态是场景持久状态，会污染同一 worker 的后续用例。 */
 async function dockAssistant(assistant: Page): Promise<void> {
+  await assistant.getByRole('button', { name: '更多对话操作' }).click();
   await assistant.getByTitle('停靠到右栏').click();
-  await expect(assistant.getByTitle('浮动为独立面板')).toBeVisible();
+  await expect(assistant.locator('.agent-page')).not.toHaveClass(/is-floating/);
 }
 
 test('助手视图加载并显示未配置状态', async ({ electron }) => {
@@ -69,8 +70,9 @@ test('浮动助手压在内容视图之上（不被内容区遮蔽）', async ({
   await windowByUrl(electron.app, /markdown-viewer\/index\.html/);
 
   const assistant = await windowByUrl(electron.app, /assistant\.html/);
+  await assistant.getByRole('button', { name: '更多对话操作' }).click();
   await assistant.getByTitle('浮动为独立面板').click();
-  await expect(assistant.getByTitle('停靠到右栏')).toBeVisible();
+  await expect(assistant.locator('.agent-page')).toHaveClass(/is-floating/);
 
   const stack = (await nativeViews(electron.app)).map((view) => view.url);
   const assistantIndex = stack.findIndex((url) => /assistant\.html/.test(url));
@@ -86,8 +88,9 @@ test('浮动助手压在内容视图之上（不被内容区遮蔽）', async ({
 
 test('浮动助手收起后隐藏、展开后恢复', async ({ shell, electron }) => {
   const assistant = await windowByUrl(electron.app, /assistant\.html/);
+  await assistant.getByRole('button', { name: '更多对话操作' }).click();
   await assistant.getByTitle('浮动为独立面板').click();
-  await expect(assistant.getByTitle('停靠到右栏')).toBeVisible();
+  await expect(assistant.locator('.agent-page')).toHaveClass(/is-floating/);
 
   await shell.getByTitle('收起 AI 对话').click();
   await expect
@@ -104,8 +107,9 @@ test('浮动助手收起后隐藏、展开后恢复', async ({ shell, electron }
 
 test('浮动助手拖拽期间挂载指针捕获层', async ({ electron }) => {
   const assistant = await windowByUrl(electron.app, /assistant\.html/);
+  await assistant.getByRole('button', { name: '更多对话操作' }).click();
   await assistant.getByTitle('浮动为独立面板').click();
-  await expect(assistant.getByTitle('停靠到右栏')).toBeVisible();
+  await expect(assistant.locator('.agent-page')).toHaveClass(/is-floating/);
 
   const capture = /^data:text\/html/;
   await expect.poll(() => visibleByUrl(electron.app, capture)).toBe(false);

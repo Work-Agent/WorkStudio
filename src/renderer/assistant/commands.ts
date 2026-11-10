@@ -68,6 +68,12 @@ export interface CommandActions {
   openThinking: () => void;
 }
 
+async function checked(command: string, input: Record<string, unknown>) {
+  const result = await bridge?.cmd(command, input);
+  if (!result) throw new Error('页面连接尚未就绪');
+  if (!result.ok) throw new Error(result.error.message);
+}
+
 /** 内置命令消费；返回 false 表示应透传给 pi prompt。 */
 export async function runBuiltinCommand(
   full: string,
@@ -81,7 +87,7 @@ export async function runBuiltinCommand(
       await actions.newSession();
       return true;
     case 'compact':
-      await bridge?.cmd(
+      await checked(
         'session.compact',
         argument ? { instructions: argument } : {},
       );
@@ -94,7 +100,7 @@ export async function runBuiltinCommand(
       return true;
     case 'name':
       if (!argument || !actions.activePath) return false;
-      await bridge?.cmd('session.rename', {
+      await checked('session.rename', {
         path: actions.activePath,
         name: argument,
       });

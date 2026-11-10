@@ -1,10 +1,15 @@
 /** 助手视图的消息行与浮动缩放把手。 */
 import { useEffect, useRef, useState } from 'react';
-import { MoveDiagonal2 } from 'lucide-react';
-import type { ParsedMessage, ResizeDirection } from '../../shared/types';
+import { Copy, MoveDiagonal2 } from 'lucide-react';
+import type {
+  ParsedBlock,
+  ParsedMessage,
+  ResizeDirection,
+} from '../../shared/types';
 import { bridge } from './bridge';
 import { argsPreview, resultBody } from './format';
 import { renderMarkdown } from './markdown';
+import { fileRef } from '../../shared/ura';
 
 /**
  * 停靠态左边缘拉伸把手。
@@ -138,6 +143,33 @@ export function ResizeHandles({
 }
 
 export function MessageRow({ message }: { message: ParsedMessage }) {
+  const [copyStatus, setCopyStatus] = useState('');
+  const [linkError, setLinkError] = useState('');
+  const answer = message.blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
+  const openLocal = async (href: string) => {
+    setLinkError('');
+    try {
+      const workspace = await window.appBridge?.peek<{
+        id: string;
+        path: string;
+      }>('/workspaces/current');
+      if (!workspace) throw new Error('工作区尚未就绪');
+      const ref = href.startsWith('file:')
+        ? href
+        : new URL(href, `${fileRef(workspace.path)}/`).href;
+      const response = await window.appBridge!.call(
+        `/workspaces/${workspace.id}/resources/pages/open`,
+        { ref },
+      );
+      if (!response.ok) throw new Error(response.error.message);
+    } catch (cause) {
+      setLinkError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -151,65 +183,111 @@ export function MessageRow({ message }: { message: ParsedMessage }) {
       </div>
     );
   }
+  const tools = message.blocks.filter((block) => block.type === 'tool');
   return (
-    <div className="max-w-full space-y-1.5">
-      {message.blocks.map((block, i) => {
-        if (block.type === 'text') {
-          return (
-            <div
-              key={i}
-              className="md-chat"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
-            />
-          );
-        }
-        if (block.type === 'thinking') {
-          return (
-            <details
-              key={i}
-              className="border-l-2 border-[var(--biz-border)] pl-2.5 text-[var(--biz-text-muted)]"
-            >
-              <summary className="cursor-pointer text-[11px]">思考过程</summary>
-              <div
-                className="md-chat mt-1 text-[11.5px]"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
-              />
-            </details>
-          );
-        }
-        // 工具调用：默认折叠，摘要行 = 工具名 + 参数单行预览，点击展开看详情。
-        const preview = argsPreview(block.args);
-        return (
-          <details
-            key={i}
-            data-tool={block.toolName}
-            className="rounded border border-[var(--biz-border)] text-[var(--biz-text-muted)] text-[var(--biz-text)] group"
-          >
-            <summary className="cursor-pointer select-none px-2 py-1 flex items-baseline gap-1.5 min-w-0 text-[11.5px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] rounded">
-              <span className="font-medium shrink-0">{block.toolName}</span>
-              {preview && (
-                <span className="truncate text-[var(--biz-text-muted)] min-w-0">
-                  {preview}
-                </span>
-              )}
-            </summary>
-            <div className="px-2 pb-1.5 space-y-1 min-w-0">
-              {preview && (
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-70">
-                  {typeof block.args === 'string'
-                    ? block.args
-                    : JSON.stringify(block.args, null, 2)}
-                </pre>
-              )}
-              {resultBody(block.result) && (
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-80">
-                  {block.result}
-                </pre>
-              )}
-            </div>
-          </details>
-        );
-      })}
+    <div
+      className="max-w-full space-y-1.5"
+      onClick={(event) => {
+        const link = (event.target as HTMLElement).closest('a');
+        const href = link?.getAttribute('href');
+        if (
+          !href ||
+          href.startsWith('#') ||
+          href.startsWith('//') ||
+          (/^[a-z][a-z\d+.-]*:/i.test(href) && !href.startsWith('file:'))
+        )
+          return;
+        event.preventDefault();
+        void openLocal(href);
+      }}
+    >
+      {message.blocks.filter((block) => block.type !== 'tool').map(renderBlock)}
+      {!!tools.length && (
+        <details className="agent-execution">
+          <summary>工具记录 · {tools.length} 个步骤</summary>
+          <div>{tools.map(renderBlock)}</div>
+        </details>
+      )}
+      {answer && (
+        <button
+          className="agent-copy"
+          onClick={() =>
+            void navigator.clipboard
+              .writeText(answer)
+              .then(() => setCopyStatus('已复制'))
+              .catch(() => setCopyStatus('复制失败，请手动选择文本'))
+          }
+        >
+          <Copy size={12} />
+          {copyStatus || '复制回答'}
+        </button>
+      )}
+      {linkError && (
+        <p role="alert" className="wb-task-error">
+          {linkError}
+        </p>
+      )}
+      <span className="sr-only" role="status">
+        {copyStatus}
+      </span>
     </div>
+  );
+}
+
+function renderBlock(block: ParsedBlock, i: number) {
+  if (block.type === 'text') {
+    return (
+      <div
+        key={i}
+        className="md-chat"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+      />
+    );
+  }
+  if (block.type === 'thinking') {
+    return (
+      <details
+        key={i}
+        className="border-l-2 border-[var(--biz-border)] pl-2.5 text-[var(--biz-text-muted)]"
+      >
+        <summary className="cursor-pointer text-[11px]">思考过程</summary>
+        <div
+          className="md-chat mt-1 text-[11.5px]"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+        />
+      </details>
+    );
+  }
+  // 工具调用：默认折叠，摘要行 = 工具名 + 参数单行预览，点击展开看详情。
+  const preview = argsPreview(block.args);
+  return (
+    <details
+      key={i}
+      data-tool={block.toolName}
+      className="rounded border border-[var(--biz-border)] text-[var(--biz-text-muted)] text-[var(--biz-text)] group"
+    >
+      <summary className="cursor-pointer select-none px-2 py-1 flex items-baseline gap-1.5 min-w-0 text-[11.5px] hover:bg-[var(--biz-surface)] dark:hover:bg-[var(--biz-surface)] rounded">
+        <span className="font-medium shrink-0">{block.toolName}</span>
+        {preview && (
+          <span className="truncate text-[var(--biz-text-muted)] min-w-0">
+            {preview}
+          </span>
+        )}
+      </summary>
+      <div className="px-2 pb-1.5 space-y-1 min-w-0">
+        {preview && (
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-70">
+            {typeof block.args === 'string'
+              ? block.args
+              : JSON.stringify(block.args, null, 2)}
+          </pre>
+        )}
+        {resultBody(block.result) && (
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10.5px] opacity-80">
+            {block.result}
+          </pre>
+        )}
+      </div>
+    </details>
   );
 }

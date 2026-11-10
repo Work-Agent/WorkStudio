@@ -244,10 +244,19 @@ export function useAppMessages(activePath: string | null): {
 } | null {
   const available = useAppAvailable();
   const workspace = useWorkspace(available);
-  const [history, setHistory] = useState<ParsedMessage[]>([]);
-  const [stream, setStream] = useState<SessionStreamState | null>(null);
+  const [historyView, setHistory] = useState<{
+    key: string;
+    value: ParsedMessage[];
+  } | null>(null);
+  const [streamView, setStream] = useState<{
+    key: string;
+    value: SessionStreamState;
+  } | null>(null);
   const [pending, setPending] = useState<PendingUser | undefined>(undefined);
   const sessionId = activePath ? encodeURIComponent(activePath) : null;
+  const viewKey = `${workspace?.id}/${sessionId}`;
+  const history = historyView?.key === viewKey ? historyView.value : [];
+  const stream = streamView?.key === viewKey ? streamView.value : null;
 
   useEffect(() => {
     if (!available || !window.appBridge || !workspace || !sessionId) return;
@@ -255,9 +264,9 @@ export function useAppMessages(activePath: string | null): {
     const off = window.appBridge.on((frame) => {
       if (frame.type !== 'state') return;
       if (frame.path === `${base}/messages`) {
-        setHistory(frame.value as ParsedMessage[]);
+        setHistory({ key: viewKey, value: frame.value as ParsedMessage[] });
       } else if (frame.path === `${base}/stream`) {
-        setStream(frame.value as SessionStreamState);
+        setStream({ key: viewKey, value: frame.value as SessionStreamState });
       }
     });
     void window.appBridge.watch([`${base}/messages`, `${base}/stream`]);
