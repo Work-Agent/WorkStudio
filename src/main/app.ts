@@ -123,6 +123,7 @@ import type { Middleware } from './runtime/shared.ts';
 import { Views } from './runtime/views.ts';
 import { AppViews } from './runtime/app-views.ts';
 import { registerAppProviders } from './runtime/app-providers.ts';
+import { BrowserAutomation } from './modules/browser/automation.ts';
 
 export interface AppOptions {
   /** 启动时打开的工作区；之后用 openWorkspace 打开更多窗口。 */
@@ -172,6 +173,7 @@ export class App {
   private listsSnapshot: ListSnapshot | null = null;
   private listsRefresh: Promise<void> | null = null;
   private agentHost: AgentHost | null = null;
+  private automation: BrowserAutomation | null = null;
   private sessionsService: SessionsService | null = null;
   private skills: SkillsManager | null = null;
   private agentInit: Promise<void> | null = null;
@@ -294,7 +296,11 @@ export class App {
       },
       setBrowser: (allowlist) => {
         const workspace = this.currentWorkspace;
-        if (workspace) writeBrowserAllowlist(workspace.id, allowlist);
+        if (workspace) {
+          writeBrowserAllowlist(workspace.id, allowlist);
+          // 白名单决定「网站资料」列表的分组，改完立即重算。
+          void this.refreshLists();
+        }
         this.publishSettings();
         return { allowlist };
       },
@@ -960,6 +966,30 @@ export class App {
     return this.resourcesInit;
   }
 
+  /** 浏览器自动化：tabs 端口由视图宿主装配，模块不持有原生视图。 */
+  private browserAutomation(): BrowserAutomation | null {
+    if (!this.currentWorkspace) return null;
+    this.automation ??= new BrowserAutomation({
+      openWeb: (url) => {
+        const workspace = this.currentWorkspace;
+        if (!workspace) return Promise.reject(new Error('no workspace'));
+        return this.appViews.openWeb(url, url);
+      },
+      webContents: (viewId) =>
+        this.views.nativeView(viewId)?.webContents ?? null,
+      activeViewId: () => {
+        const workspace = this.currentWorkspace;
+        if (!workspace) return null;
+        const window = this.windows.get(workspace.id);
+        return (
+          window?.tabs.list().find((view) => view.active && view.type === 'web')
+            ?.id ?? null
+        );
+      },
+    });
+    return this.automation;
+  }
+
   private ensureAgent(): Promise<void> {
     const workspace = this.currentWorkspace;
     if (!workspace) return Promise.reject(new Error('no workspace'));
@@ -994,7 +1024,7 @@ export class App {
           ura: runtime.ura.ura,
           skills,
           registry: runtime.ura.host,
-          getBrowserAutomation: () => null,
+          getBrowserAutomation: () => this.browserAutomation(),
           sendEvent: (frame) => this.sessionsService?.receiveFrame(frame),
           onTurnFinished: () => {
             void this.sessionsService?.refresh();

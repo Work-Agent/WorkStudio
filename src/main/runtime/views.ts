@@ -493,6 +493,8 @@ export class Tabs extends ViewHost {
   }
 
   closeOthers(id: string): void {
+    // 锚点必须存在：未知 id 不能退化成「关掉全部」。
+    if (!this.records.has(id)) return;
     for (const other of this.ids()) {
       if (other !== id) this.remove(other, false);
     }
@@ -708,6 +710,16 @@ export class Views {
     for (const window of this.windows.list()) {
       const record = window.tabs.get(viewId) ?? window.global.get(viewId);
       if (record) return record;
+    }
+    return null;
+  }
+
+  /** 视图的原生承载（tabs 或系统视图）；自动化按 viewId 取 webContents。 */
+  nativeView(viewId: string): WebContentsView | null {
+    for (const window of this.windows.list()) {
+      const view =
+        window.tabs.nativeView(viewId) ?? window.global.nativeView(viewId);
+      if (view) return view;
     }
     return null;
   }

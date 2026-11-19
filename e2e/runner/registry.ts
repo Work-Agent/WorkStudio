@@ -14,6 +14,7 @@ import welcome from '../cases/welcome.ts';
 import assistantBridge from '../cases/assistant-bridge.ts';
 import settingsModels from '../cases/settings-models.ts';
 import tabsBulk from '../cases/tabs-bulk.ts';
+import tabsCloseOthers from '../cases/tabs-close-others.ts';
 import resourcesDiagnostics from '../cases/resources-diagnostics.ts';
 import settingsBinding from '../cases/settings-binding.ts';
 import assistantThinking from '../cases/assistant-thinking.ts';
@@ -35,6 +36,7 @@ export const cases: readonly E2ECase[] = [
   assistantBridge,
   settingsModels,
   tabsBulk,
+  tabsCloseOthers,
   resourcesDiagnostics,
   settingsBinding,
   assistantThinking,
