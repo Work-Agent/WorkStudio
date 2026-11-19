@@ -71,7 +71,7 @@ function inlinePreloadChannels(): Plugin {
       if (!id.includes('/src/preload/') || !code.includes('/shared/channels'))
         return null;
       return code.replace(
-        /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*shared\/channels['"];?/g,
+        /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*shared\/channels(?:\.[cm]?[jt]s)?['"];?/g,
         (_match, names: string) =>
           names
             .split(',')
