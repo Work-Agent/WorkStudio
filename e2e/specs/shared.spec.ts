@@ -1,4 +1,4 @@
-import { test } from '../support/app';
+import { test } from '../support/app.ts';
 import { runPlaywrightCase } from '../runner/playwright-adapter.ts';
 import { cases } from '../runner/registry.ts';
 

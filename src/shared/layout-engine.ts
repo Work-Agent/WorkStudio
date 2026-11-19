@@ -9,7 +9,7 @@ import type {
   LayoutSnapshot,
   Rect,
   UiState,
-} from './types';
+} from './types.ts';
 import {
   ASSISTANT_DEFAULT_H,
   ASSISTANT_DEFAULT_W,
@@ -26,7 +26,7 @@ import {
   RIGHT_MIN_RATIO,
   TABBAR_HEIGHT,
   TITLEBAR_HEIGHT,
-} from './layout';
+} from './layout.ts';
 
 export interface LayoutInput {
   windowWidth: number;

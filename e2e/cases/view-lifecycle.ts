@@ -10,23 +10,22 @@ export default defineCase({
   title: '打开并关闭设置视图',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const pattern = /settings\/plugins\/index\.html/;
-    await ctx.appBridge.call('/settings/open', { pageId: 'plugins' });
-    await ctx.waitForPage(pattern);
+    await ctx.legacyBridge.call('/settings/open', { pageId: 'appearance' });
+    await ctx.waitForPage(/pages\/settings\/index\.html/);
 
     await ctx.expect.poll(async () => {
-      const views = await ctx.appBridge.peek<ViewInfo[]>('/views');
-      return views?.some((view) => view.title === '文档插件') ?? false;
+      const views = await ctx.legacyBridge.peek<ViewInfo[]>('/views');
+      return views?.some((view) => view.title === '设置') ?? false;
     }, '设置视图未出现在视图列表');
-    const view = (await ctx.appBridge.peek<ViewInfo[]>('/views'))?.find(
-      (item) => item.title === '文档插件',
+    const view = (await ctx.legacyBridge.peek<ViewInfo[]>('/views'))?.find(
+      (item) => item.title === '设置',
     );
     if (!view) throw new Error('设置视图不存在');
 
-    await ctx.appBridge.call(`/views/${view.id}/close`);
+    await ctx.legacyBridge.call(`/views/${view.id}/close`);
     await ctx.expect.poll(async () => {
-      const urls = await ctx.windowUrls();
-      return urls.filter((url) => pattern.test(url)).length === 0;
-    }, '关闭视图后设置页窗口仍存在');
+      const views = await ctx.legacyBridge.peek<ViewInfo[]>('/views');
+      return !(views ?? []).some((item) => item.id === view.id);
+    }, '关闭视图后标签仍存在');
   },
 });

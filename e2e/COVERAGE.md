@@ -1,83 +1,42 @@
 # E2E 覆盖矩阵
 
-> 结论先行：壳层、导航、设置页打开、标签、路径展示、资源页、插件安装已有覆盖；
-> 助手真实对话、模型配置、设置页写操作、插件页面交互仍是缺口。
-> 命令层通过 ≠ 用户路径通过；主路径必须走真实点击。
+当前 e2e 只保留迁移后的共享 case：`e2e/cases` 由 CDP 与 Playwright 共用。
+旧框架 / 旧设置页 / 旧路径兼容 spec 已删除，后续按新 UI 逐步补回。
 
 ## 运行模式
 
-| 模式                    | 命令                        | 说明                                        |
-| ----------------------- | --------------------------- | ------------------------------------------- |
-| dev extension           | `dev_test({ tag: "dev" })`  | 常驻 dev 窗口，CDP，不启动 Playwright       |
-| CDP CLI                 | `pnpm test:e2e:cdp`         | 不经过 pi，排查扩展问题                     |
-| Playwright 隔离         | `pnpm test:e2e`             | 临时 data root + 构建产物，提交前回归       |
-| Playwright dev renderer | `pnpm test:e2e:dev`         | renderer 走 Vite，主进程/preload 用构建产物 |
-| 单用例                  | `pnpm test:e2e -g "关键字"` | 只跑匹配 Playwright 用例                    |
+| 模式            | 命令                               | 说明                                  |
+| --------------- | ---------------------------------- | ------------------------------------- |
+| dev extension   | `dev_test({ tag: "dev" })`         | 常驻 dev 窗口，CDP                    |
+| CDP CLI         | `node e2e/runner/cli.ts --tag dev` | 不经过 pi，排查扩展问题               |
+| Playwright 隔离 | `pnpm test:e2e`                    | 临时 data root + 构建产物，提交前回归 |
 
-## 共享 case（dev + Playwright）
+## 共享 case
 
-| 领域   | 用户路径/行为                                | case                 |
-| ------ | -------------------------------------------- | -------------------- |
-| 导航   | 资源 / 插件 / 设置侧栏切换                   | `navigation.sidebar` |
-| 设置   | `views.open` 打开内置插件设置页              | `settings.open`      |
-| 设置   | 侧栏设置列表点击打开页面                     | `settings.sidebar`   |
-| 视图   | 打开并关闭设置视图                           | `view.lifecycle`     |
-| 浏览器 | 打开临时浏览器视图                           | `browser.open`       |
-| 对话框 | overlay 展示并应答                           | `dialog.overlay`     |
-| 插件   | 侧栏插件行打开配置页（不是渲染页）           | `plugin.entry`       |
-| 标签   | 多标签、激活标签                             | `view.tabs`          |
-| 路径   | `settings://`、`app/` 展示，不泄露完整工作区 | `path.display`       |
+| 领域   | 用户路径/行为                     | case                    |
+| ------ | --------------------------------- | ----------------------- |
+| 导航   | 标题栏设置入口                    | `navigation.sidebar`    |
+| 设置   | 打开单页设置并渲染卡片            | `settings.open`         |
+| 设置   | 标题栏打开设置、展开卡片          | `settings.sidebar`      |
+| 视图   | 打开并关闭设置视图                | `view.lifecycle`        |
+| 标签   | 多标签、激活标签                  | `view.tabs`             |
+| 路径   | `settings://home`，不泄露本机路径 | `path.display`          |
+| 浏览器 | 打开临时浏览器视图                | `browser.open`          |
+| 浏览器 | 页面内跳转 / 新窗口临时标签       | `browser.links`         |
+| 站点   | 同一 URL 复用标签                 | `site.open`             |
+| 对话框 | overlay 展示并应答                | `dialog.overlay`        |
+| 插件   | 插件配置页入口                    | `plugin.entry`          |
+| 欢迎   | 唯一欢迎页、空标签自动恢复        | `welcome.page`          |
+| 助手   | workStudio、技能资源              | `assistant.bridge`      |
+| 设置   | 模型供应商 / 模型目录             | `settings.models`       |
+| 标签   | 批量关闭保留欢迎页                | `tabs.bulk`             |
+| 资源   | 诊断资源状态                      | `resources.diagnostics` |
 
-## Playwright-only / 隔离
+## 待补
 
-| 领域     | 用户路径/行为                                          | 测试                        |
-| -------- | ------------------------------------------------------ | --------------------------- |
-| 启动     | 主窗口、壳层、三栏入口                                 | `smoke.spec.ts`             |
-| 生命周期 | 同 data root 重启                                      | `restart.spec.ts`           |
-| 工作区   | 切换、重启恢复                                         | `workspace.spec.ts`         |
-| 工作区   | 欢迎页选择已有工作区、目录状态、键盘关闭与打开其他目录 | `welcome-workspace.spec.ts` |
-| 工作区   | 切换后 Agent 进入新域                                  | `regressions.spec.ts`       |
-| 主题     | 切换并重启保留                                         | `theme.spec.ts`             |
-| 快捷键   | Cmd/Ctrl+数字、Cmd/Ctrl+W                              | `shortcuts.spec.ts`         |
-| 资源     | 临时工作区创建 + 真实点击 Markdown                     | `resource.spec.ts`          |
-| 资源     | 编辑后保存回磁盘                                       | `resource-save.spec.ts`     |
-| 原生窗口 | 标题栏留白取自平台实测几何（Windows 三键）             | `native-window.spec.ts`     |
-| 原生视图 | 内容视图打开后有首帧（非空白）                         | `native-window.spec.ts`     |
-| 设置     | 全部内置设置页加载、无脚本错误                         | `settings-pages.spec.ts`    |
-| 插件     | 本地插件安装 / 卸载                                    | `plugin-install.spec.ts`    |
-| 助手     | 助手视图加载 / 未配置态                                | `assistant.spec.ts`         |
-| 助手     | 会话标签跟随当前会话                                   | `regressions.spec.ts`       |
-| 单元     | provider / registry / routing / stream                 | 多个 spec                   |
-
-## 部分覆盖
-
-| 领域   | 现有测试               | 缺口                                               |
-| ------ | ---------------------- | -------------------------------------------------- |
-| 助手   | 加载未配置态、tab 投影 | 真实 prompt、stream、abort、消息历史、skills 激活  |
-| 工作区 | 路径恢复、Agent 域切换 | 切换时关闭视图/页面会话、project settings 同步     |
-| 设置页 | 全部可加载、命令可调用 | 实际填写/保存/切换后的 UI 结果                     |
-| 浏览器 | 视图打开               | Agent 浏览器工具、白名单快照、地址栏动作           |
-| 布局   | 主题、标签             | 侧栏拖拽、栏宽提交、浮动视图移动/缩放、tab reorder |
-
-## 未覆盖
-
-| 领域       | 建议测试                                                                                                                                            |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 模型配置   | providers / catalog / api key login / OAuth dialog / save/delete 后 Agent 生效                                                                      |
-| 设置写操作 | storage sessionDir、workspaces 切换、browser allowlist、resources 打开、sessions new/rename/delete、skills reload、preferences save、welcome create |
-| 扩展管理   | packages catalog / install / remove、已加载资源刷新                                                                                                 |
-| 插件页面   | 打开插件页、内容投递、编辑保存、插件设置持久化                                                                                                      |
-| 插件侧栏   | 插件 / 会话列表项真实点击                                                                                                                           |
-| 标题栏     | 工作区菜单、主题/助手开关、地址栏动作                                                                                                               |
-| 对话框     | timeout / 取消 / 会话关闭结算                                                                                                                       |
-| 通知       | notify → ToastHost                                                                                                                                  |
-| 错误态     | 视图崩溃、页面加载失败、provider 失败                                                                                                               |
-
-## 测试编写规则
-
-1. **主路径必须点 UI**：打开资源、设置、插件、会话不能只用 `appBridge.call`。
-2. **断言用户可见结果**：标题、页面、文件内容、路径文本，而不是内部 store。
-3. **隔离写操作**：写文件、切工作区、安装插件必须使用临时 data root；dev case 标记 `mutating`。
-4. **共享 case 不 import Playwright**：只依赖 `e2e/runner/contract.ts`。
-5. **启动/重启归 Playwright**：不要塞进 dev extension。
-6. **一个回归一个用例**：低级 UI 错误必须落成可复现 case，而不是靠手测。
+- 助手真实 prompt / stream / abort / 会话切换
+- 模型配置登录与会话模型切换
+- 设置卡片的写操作（存储、工作区、插件安装、扩展安装、技能、偏好）
+- 插件页内容投递、编辑保存、插件设置持久化
+- 资源树真实点击、保存、冲突
+- 标题栏工作区菜单、主题 / 助手开关

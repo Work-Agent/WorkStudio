@@ -1,5 +1,6 @@
 import { expect, type ElectronApplication, type Page } from '@playwright/test';
 import type { E2ECase, E2EContext, PageHandle } from './contract.ts';
+import { installWorkStudioBridgeShim } from '../support/work-studio-shim.ts';
 
 const HTML_TAGS = new Set([
   'a',
@@ -51,26 +52,27 @@ function pageHandle(page: Page): PageHandle {
   };
 }
 
-export function createPlaywrightContext(options: {
+export async function createPlaywrightContext(options: {
   shell: Page;
   app: ElectronApplication;
   screenshotPath?: string;
-}): E2EContext {
+}): Promise<E2EContext> {
   const { shell, app } = options;
   const screenshotPath =
     options.screenshotPath ?? '/tmp/work-studio-e2e-failure.png';
 
+  await shell.evaluate(installWorkStudioBridgeShim);
   const bridge = {
     call: async <T>(path: string, input?: unknown): Promise<T> => {
       const result = await shell.evaluate(
-        ({ path, input }) => window.appBridge!.call<T>(path, input),
+        ({ path, input }) => window.__e2eBridge!.call<T>(path, input),
         { path, input },
       );
       if (!result.ok) throw new Error(result.error.message);
       return result.data;
     },
     peek: <T>(path: string): Promise<T | null> =>
-      shell.evaluate((path) => window.appBridge!.peek<T>(path), path),
+      shell.evaluate((path) => window.__e2eBridge!.peek<T>(path), path),
   };
 
   const context: E2EContext = {
@@ -87,7 +89,7 @@ export function createPlaywrightContext(options: {
     fillTestId: (testId, value) => shell.getByTestId(testId).fill(value),
     press: (key) => shell.keyboard.press(key),
     evaluate: (fn) => shell.evaluate(fn),
-    appBridge: bridge,
+    legacyBridge: bridge,
     expect: {
       poll: async (check, message) => {
         const deadline = Date.now() + 10_000;
@@ -159,5 +161,5 @@ export async function runPlaywrightCase(
     app: ElectronApplication;
   },
 ): Promise<void> {
-  await testCase.run(createPlaywrightContext(options));
+  await testCase.run(await createPlaywrightContext(options));
 }

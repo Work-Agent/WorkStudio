@@ -6,6 +6,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { installWorkStudioBridgeShim } from './work-studio-shim.ts';
 
 export interface AppFixture {
   app: ElectronApplication;
@@ -25,6 +26,8 @@ export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
     env: {
       ...process.env,
       WA_DATA_DIR: dataDir,
+      // Playwright 自己管理 Electron 的调试端口；不要继承 live-dev 的固定 9222。
+      WA_DEBUG_PORT: '',
       ...(process.env['E2E_RENDERER_URL']
         ? { ELECTRON_RENDERER_URL: process.env['E2E_RENDERER_URL'] }
         : {}),
@@ -51,15 +54,22 @@ export async function shellWindow(app: ElectronApplication): Promise<Page> {
     const page = app
       .windows()
       .find((item) =>
-        /(?:^file:.*\/index\.html$|(?:localhost|127\.0\.0\.1):\d+\/index\.html$)/.test(
+        /(?:^file:.*\/renderer\/pages\/shell\/index\.html$|(?:localhost|127\.0\.0\.1):\d+\/pages\/shell\/index\.html$)/.test(
           item.url(),
         ),
       );
     if (page) {
       const ready = await page
-        .evaluate(() => typeof window.appBridge?.available === 'function')
+        .evaluate(
+          () =>
+            typeof window.workStudio?.subscribe === 'function' ||
+            typeof window.__e2eBridge?.available === 'function',
+        )
         .catch(() => false);
-      if (ready) return page;
+      if (ready) {
+        await page.evaluate(installWorkStudioBridgeShim).catch(() => undefined);
+        return page;
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

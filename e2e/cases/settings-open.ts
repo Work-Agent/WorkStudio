@@ -2,17 +2,13 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'settings.open',
-  title: '通过 views.open 打开内置插件设置页',
+  title: '打开单页设置并渲染卡片',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ctx.appBridge.call('/settings/open', { pageId: 'plugins' });
-    const page = await ctx.waitForPage(/settings\/plugins\/index\.html/);
-    await page.expect.text('h1', '文档插件');
-    await ctx.expect.poll(
-      async () =>
-        (await page.evaluate(() => typeof window.appBridge?.call)) ===
-        'function',
-      '设置页 appBridge 未就绪',
-    );
+    await ctx.legacyBridge.call('/settings/open', { pageId: 'appearance' });
+    const page = await ctx.waitForPage(/pages\/settings\/index\.html/);
+    await page.expect.text('h1', '设置');
+    await page.expect.text('body', '外观与主题');
+    await page.expect.text('body', '模型连接');
   },
 });

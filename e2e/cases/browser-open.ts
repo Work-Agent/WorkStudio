@@ -21,20 +21,24 @@ export default defineCase({
     const url = `http://127.0.0.1:${address.port}/`;
 
     try {
-      const workspace = await ctx.appBridge.peek<{ id: string }>(
+      const workspace = await ctx.legacyBridge.peek<{ id: string }>(
         '/workspaces/current',
       );
       if (!workspace) throw new Error('workspace not ready');
-      await ctx.appBridge.call(`/workspaces/${workspace.id}/sites/web/open`, {
-        url,
-      });
+      await ctx.legacyBridge.call(
+        `/workspaces/${workspace.id}/sites/web/open`,
+        {
+          url,
+        },
+      );
 
       const page = await ctx.waitForPage(new RegExp(String(address.port)));
       await page.expect.text('h1', 'E2E Browser');
       await ctx.expect.poll(
         async () =>
-          (await page.evaluate(() => typeof window.appBridge)) === 'undefined',
-        '浏览器页不应暴露 appBridge',
+          (await page.evaluate(() => typeof window.__e2eBridge)) ===
+          'undefined',
+        '浏览器页不应暴露 workStudio bridge',
       );
     } finally {
       server.close();

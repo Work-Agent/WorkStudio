@@ -1,24 +1,45 @@
 /**
- * 插件扩展页 preload —— appBridge 数据面 + 视图总线。
+ * 插件扩展页 preload —— 资源页面会话 + 内容总线。
  *
- * 页面只通过 window.appBridge.call/peek 访问主进程；window.extension 仅保留
- * 资源页面会话与内容总线契约。
+ * 页面只通过 window.extension 访问主进程；preload 内部直接使用 workStudio 的
+ * 资源页命令，页面只暴露 window.extension。
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import scrollbarCss from '../shared/styles/scrollbar.css?raw';
-import settingsCss from '../shared/styles/settings.css?raw';
-import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels';
-import type { AppBridge } from '../shared/electron';
+import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels.ts';
 import type {
   ViewBusMessageFromView,
   ViewBusMessageToView,
-} from '../shared/view-bus';
+} from '../shared/view-bus.ts';
 
 /**
  * 全域滚动条规范注入（单一事实源 shared/styles/scrollbar.css，与主窗口 index.css 同一份）。
  * preload 随文档创建即执行（早于首帧 → 无「注入前那一帧默认滚动条」闪帧），
  * 每次导航自动重跑 = 天然重注入；插件页主题标记为 html[data-theme]。
  */
+/**
+ * 内容页主题只跟随 prefers-color-scheme：设置页 / 插件页保留 data-theme
+ * 作为样式钩子，但数据源是媒体查询，不再依赖主进程推主题帧。
+ */
+function syncColorScheme(): void {
+  if (!document.documentElement) return;
+  document.documentElement.dataset.theme = matchMedia(
+    '(prefers-color-scheme: dark)',
+  ).matches
+    ? 'dark'
+    : 'light';
+}
+
+if (document.documentElement) syncColorScheme();
+else
+  document.addEventListener('DOMContentLoaded', syncColorScheme, {
+    once: true,
+  });
+matchMedia('(prefers-color-scheme: dark)').addEventListener(
+  'change',
+  syncColorScheme,
+);
+
 function injectScrollbarCss(): void {
   const apply = (): void => {
     if (
@@ -37,22 +58,93 @@ function injectScrollbarCss(): void {
 
 injectScrollbarCss();
 
-async function appPeek<T>(path: string): Promise<T | null> {
-  return appBridgeApi ? appBridgeApi.peek<T>(path) : null;
+const WS_COMMAND = 'workstudio:command';
+const WS_SUBSCRIBE = 'workstudio:subscribe';
+const WS_UPDATE = 'workstudio:update';
+const WS_UNSUBSCRIBE = 'workstudio:unsubscribe';
+const WS_NOTIFY = 'workstudio:notify';
+
+const workStudio = {
+  subscribe: (domain: string, resource: string): Promise<unknown> =>
+    ipcRenderer.invoke(WS_SUBSCRIBE, domain, resource),
+  unsubscribe: (domain: string, resource: string): void => {
+    ipcRenderer.send(WS_UNSUBSCRIBE, domain, resource);
+  },
+  command: (
+    domain: string,
+    resource: string,
+    action: string,
+    input?: unknown,
+  ): Promise<unknown> =>
+    ipcRenderer.invoke(WS_COMMAND, domain, resource, action, input),
+  notify: (
+    domain: string,
+    resource: string,
+    action: string,
+    value?: unknown,
+  ): void => {
+    ipcRenderer.send(WS_NOTIFY, domain, resource, action, value);
+  },
+  onUpdate: (cb: (update: unknown) => void): (() => void) => {
+    const listener = (_event: unknown, update: unknown): void => cb(update);
+    ipcRenderer.on(WS_UPDATE, listener);
+    return () => ipcRenderer.removeListener(WS_UPDATE, listener);
+  },
+};
+
+async function wsCommand<T>(
+  domain: string,
+  resource: string,
+  action: string,
+  input?: unknown,
+): Promise<T> {
+  const result = await ipcRenderer.invoke(
+    WS_COMMAND,
+    domain,
+    resource,
+    action,
+    input,
+  );
+  if (!result?.ok) throw new Error(result?.error?.message ?? 'command failed');
+  return result.data as T;
+}
+
+async function wsSubscribe<T>(domain: string, resource: string): Promise<T> {
+  const result = await ipcRenderer.invoke(WS_SUBSCRIBE, domain, resource);
+  return result as T;
 }
 
 async function pageCall<T = unknown>(
   suffix: string,
   input?: unknown,
 ): Promise<T> {
-  const workspace = await appPeek<{ id: string }>('/workspaces/current');
-  if (!workspace) throw new Error('workspace is not ready');
-  const result = await appBridgeApi.call<T>(
-    `/workspaces/${workspace.id}/resources/pages${suffix}`,
-    input,
-  );
-  if (!result.ok) throw new Error(result.error.message);
-  return result.data;
+  const match = /^\/([^/]+)\/(get|save|save-copy|reload|close)$/.exec(suffix);
+  if (suffix === '/open') {
+    return wsCommand<T>('resources', 'current', 'openPageView', input);
+  }
+  if (match) {
+    const pageId = decodeURIComponent(match[1]!);
+    const action = match[2]!;
+    if (action === 'get')
+      return wsCommand<T>('resources', 'current', 'getPage', { pageId });
+    if (action === 'save')
+      return wsCommand<T>('resources', 'current', 'savePage', {
+        pageId,
+        ...(input as Record<string, unknown>),
+      });
+    if (action === 'save-copy')
+      return wsCommand<T>('resources', 'current', 'saveCopy', {
+        pageId,
+        ...(input as Record<string, unknown>),
+      });
+    if (action === 'reload')
+      return wsCommand<T>('resources', 'current', 'reloadPage', {
+        pageId,
+        external: false,
+      });
+    return wsCommand<T>('resources', 'current', 'closePage', { pageId });
+  }
+  throw new Error(`resource page action not supported: ${suffix}`);
 }
 
 const pathRoots = {
@@ -99,20 +191,47 @@ function formatPath(value: unknown): string {
   return path;
 }
 
+function applyRoots(
+  storage: {
+    dataRoot?: string;
+    appPath?: string;
+    workspacePath?: string;
+    workspaceId?: string;
+  } | null,
+  workspace: { id?: string; path?: string } | null,
+): void {
+  pathRoots.dataRoot = storage?.dataRoot ?? pathRoots.dataRoot;
+  pathRoots.appPath = storage?.appPath ?? pathRoots.appPath;
+  pathRoots.workspacePath =
+    workspace?.path ?? storage?.workspacePath ?? pathRoots.workspacePath;
+  pathRoots.workspaceId =
+    workspace?.id ?? storage?.workspaceId ?? pathRoots.workspaceId;
+}
+
 async function refreshPathRoots(): Promise<void> {
   try {
     const [storage, workspace] = await Promise.all([
-      appPeek<{ dataRoot?: string; appPath?: string }>('/settings/storage'),
-      appPeek<{ id?: string; path?: string }>('/workspaces/current'),
+      wsSubscribe<{ dataRoot?: string; appPath?: string }>(
+        'settings',
+        'storage',
+      ),
+      wsSubscribe<{ id?: string; path?: string }>('workspaces', 'current'),
     ]);
-    pathRoots.dataRoot = storage?.dataRoot ?? '';
-    pathRoots.appPath = storage?.appPath ?? '';
-    pathRoots.workspacePath = workspace?.path ?? '';
-    pathRoots.workspaceId = workspace?.id ?? '';
+    applyRoots(storage, workspace);
   } catch {
     /* keep previous roots */
   }
 }
+
+ipcRenderer.on(WS_UPDATE, (_event, update: unknown) => {
+  const value = update as {
+    domain?: string;
+    resource?: string;
+    data?: unknown;
+  };
+  if (value.domain !== 'settings' || value.resource !== 'storage') return;
+  applyRoots(value.data as { dataRoot?: string; appPath?: string }, null);
+});
 
 const pathDisplay = { format: formatPath };
 
@@ -194,94 +313,14 @@ const api = {
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('pathDisplay', pathDisplay);
   contextBridge.exposeInMainWorld('extension', api);
+  contextBridge.exposeInMainWorld('workStudio', workStudio);
 } else {
   (window as unknown as { extension: unknown }).extension = api;
   (window as unknown as { pathDisplay: unknown }).pathDisplay = pathDisplay;
-}
-
-/** appBridge 传输桥（单文件 preload 约束：不能跨文件共享 chunk）。 */
-const appBridgeImpl = {
-  available: (): Promise<boolean> => ipcRenderer.invoke('appBridge:hello'),
-  call: (path: string, input?: unknown): Promise<unknown> =>
-    ipcRenderer.invoke('appBridge:call', path, input),
-  watch: (paths: string[]): Promise<{ granted: string[]; denied: string[] }> =>
-    ipcRenderer.invoke('appBridge:watch', paths),
-  emit: (path: string, value?: unknown): void => {
-    ipcRenderer.send('appBridge:emit', path, value);
-  },
-  peek: (path: string): Promise<unknown> =>
-    ipcRenderer.invoke('appBridge:peek', path),
-  on: (cb: (frame: unknown) => void): (() => void) => {
-    const listener = (_e: unknown, frame: unknown): void => cb(frame);
-    ipcRenderer.on('appBridge:frame', listener);
-    return () => ipcRenderer.removeListener('appBridge:frame', listener);
-  },
-};
-
-const appBridgeApi = appBridgeImpl as unknown as AppBridge;
-void refreshPathRoots();
-appBridgeApi.on((frame) => {
-  if (frame.type !== 'state' || frame.path !== '/workspaces/current') return;
-  const workspace = frame.value as { id?: string; path?: string } | null;
-  pathRoots.workspacePath = workspace?.path ?? '';
-  pathRoots.workspaceId = workspace?.id ?? '';
-});
-
-if (process.contextIsolated) {
-  contextBridge.exposeInMainWorld('appBridge', appBridgeImpl);
-} else {
-  (window as unknown as { appBridge: unknown }).appBridge = appBridgeImpl;
+  (window as unknown as { workStudio: unknown }).workStudio = workStudio;
 }
 
 /** 统一内置设置页导航；页面继续拥有各自的数据与保存行为。 */
-function installSettingsNavigation(): void {
-  const match = decodeURIComponent(location.pathname).match(
-    /\/settings\/([^/]+)\/index\.html$/,
-  );
-  const page = match?.[1];
-  if (!page || page === 'welcome' || page === 'sessions') return;
-  const capability = ['plugins', 'skills', 'extensions'].includes(page);
-  const items = capability
-    ? [
-        ['plugins', '文档插件'],
-        ['skills', '技能'],
-        ['extensions', '助手扩展'],
-      ]
-    : [
-        ['appearance', '外观与皮肤'],
-        ['preferences', '偏好设置'],
-        ['models', '模型连接'],
-        ['workspaces', '工作区'],
-        ['browser', '网站采集'],
-        ['storage', '存储与数据'],
-        ['resources', '资源诊断'],
-        ['updates', '关于与更新'],
-      ];
-  const nav = document.createElement('nav');
-  nav.className = 'ws-settings-navigation';
-  nav.setAttribute('aria-label', capability ? '能力管理分类' : '设置分类');
-  const title = document.createElement('strong');
-  title.textContent = capability ? '能力管理' : '设置';
-  nav.append(title);
-  for (const [id, label] of items) {
-    const button = document.createElement('button');
-    button.textContent = label!;
-    if (id === page) button.setAttribute('aria-current', 'page');
-    button.addEventListener('click', () => {
-      void appBridgeApi.call('/settings/open', { pageId: id });
-    });
-    nav.append(button);
-  }
-  document.body.classList.add('ws-settings-page');
-  document.body.prepend(nav);
-  const style = document.createElement('style');
-  style.textContent = settingsCss;
-  document.head.append(style);
-}
-document.addEventListener('DOMContentLoaded', installSettingsNavigation, {
-  once: true,
-});
-
 /** 内置文本资料共用保存反馈；作品 iframe 与外部网页保持自己的外观。 */
 let documentSaveError = '';
 let documentState = { dirty: false, conflict: false, missing: false };
@@ -304,7 +343,7 @@ function renderDocumentBar(): void {
       bar!.append(button);
     };
     add('保存', () => {
-      void appBridgeApi.call('/views/self/action', { action: 'save' });
+      ipcRenderer.send(CH_BUS, { type: 'self-action', id: 'save' });
     });
     add('另存副本', () => {
       void (async () => {
@@ -332,12 +371,7 @@ function renderDocumentBar(): void {
       })();
     });
     add('重新读取', () => {
-      void appBridgeApi.call('/views/self/reload').then((r) => {
-        if (!r.ok) {
-          documentSaveError = r.error.message;
-          renderDocumentBar();
-        }
-      });
+      ipcRenderer.send(CH_BUS, { type: 'self-reload' });
     });
     document.body.prepend(bar);
     const style = document.createElement('style');

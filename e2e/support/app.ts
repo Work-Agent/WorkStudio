@@ -1,7 +1,12 @@
 import { test as base, expect, type Page } from '@playwright/test';
-import { closeView, currentPath, switchWorkspace, viewList } from './commands';
-import type { AppFixture } from './fixtures';
-import { closeApp, launchApp, shellWindow } from './fixtures';
+import {
+  closeView,
+  currentPath,
+  switchWorkspace,
+  viewList,
+} from './commands.ts';
+import type { AppFixture } from './fixtures.ts';
+import { closeApp, launchApp, shellWindow } from './fixtures.ts';
 
 type WorkerApp = AppFixture & { initialWorkspace: string | null };
 

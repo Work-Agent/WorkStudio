@@ -8,7 +8,7 @@
 
 > 这份文档讲需求与重点模块：从工作资料为什么会在工具之间散落，到三条主张如何回应，再到领域模型、产品形态与整体架构，最后落到能力扩展、状态与通讯、开发方式。它回答「为什么是 WorkStudio、重点模块如何设计」；实现细节由代码承载。
 >
-> 系统化设计见 [`docs/architecture.md`](./docs/architecture.md)：作用域 · 数据模型 · 契约 · AppHost · 列表 / 视图 / 资源 / 能力 · 扩展 · 验收。本文讲需求与重点模块，那里讲系统化设计；两文边界不重叠。
+> 系统化设计见 [`docs/architecture.md`](./docs/architecture.md)：作用域 · 数据模型 · 契约 · 运行时 · 列表 / 视图 / 资源 · 扩展 · 验收。本文讲需求与重点模块，那里讲系统化设计；两文边界不重叠。
 
 ## 下载安装
 
@@ -148,40 +148,41 @@ Workspace（聚合根）
 
 ## 四、整体架构
 
-```
-┌─ 渲染层 ──────────────────────────────────────────────────────────┐
-│ 壳层 DOM · ListHost · 系统页面（助手 / 浮层 / 捕获层）             │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │ AppSnapshot / AppCommand / AppEvent
-┌─ 装配层 / AppHost ─────────▼──────────────────────────────────────┐
-│ 生命周期 · 窗口 · 协议 · IPC · 命令路由                            │
-│ 当前工作区 · epoch · 快照出口                                      │
-└───────────────────────────┬──────────────────────────────────────┘
-┌─ 域服务层 ─────────────────▼──────────────────────────────────────┐
-│ ViewHost · UiState · Interaction · EventBridge · SessionAdapter    │
-└───────────────────────────┬──────────────────────────────────────┘
-┌─ 能力层 ───────────────────▼──────────────────────────────────────┐
-│ 形态：插件 · 设置 · 浏览器                                        │
-│ Agent harness：AgentHost · prompts / AGENTS · skills · tools       │
-└───────────────────────────┬──────────────────────────────────────┘
-┌─ 资源管道 URA ─────────────▼──────────────────────────────────────┐
-│ transport · codec · store · presenter / sidecar · 会话 · 资源地图  │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │ 官方扩展点
-                         pi SDK
+渲染层是多页面应用：工作台、助手、浮层、设置、欢迎页各自独立入口，共享同一个 `window.workStudio` 通讯桥与共享样式；每个页面只订阅自己消费的资源。
+
+```text
+Renderer pages
+  shell / assistant / overlay / settings / welcome
+        │ window.workStudio
+        │ subscribe / command / notify / onUpdate
+Runtime
+  DomainRegistry · Pipeline · Dispatcher · Views · Providers
+  Native · Layout · Dialogs
+Domains
+  workspaces · resources · settings · updates · lists
+  plugins · sessions · theme · windows · native
+Modules
+  agent · ura · resources · sessions · lists
+  plugins · browser · harness · updates
+Infrastructure
+  net · repo · preferences · paths · logging
+        │ 官方扩展点
+     pi SDK / URA
 ```
 
-- **外部统一，内部分层**：渲染层只面对 AppHost；装配层、域服务层、能力层、URA 各自保留职责。
-- **作用域是横向所有权**：AppScope 管应用级状态；WorkspaceScope 是当前工作区的全部数据；Session 交给 pi。
-- **AppHost 管编排态**：当前工作区、epoch、切换事务与出口；不把下层状态收归自己。
-- **能力层保留两块**：形态（插件 · 设置 · 浏览器）按交付方式并列；Agent harness 按会话纵向组织。两块共用域服务与管道。
-- **列表结构在 App**：分组、行模板、字段、动作由 App 定义；数据在 Workspace 解析；渲染层用 ListHost 按规范渲染。
-- **能力边界**：文档插件由应用安装并加载；助手扩展沿 Pi 包的用户级 / 项目级作用域管理；技能按工作区启用，并可限定本轮使用范围。
-- **资源 / 页面 / 技能按级加载**：App 装全局资源与插件，Workspace 装工作区资源，Session 只做激活；所有资源目录都在 App 私有数据目录。
-- **与 pi CLI 独立**：pi 只作为库运行；不读 `~/.pi`，也不读真实工作区 `.pi`。
-- **配置目录**：数据根即 pi 的 agentDir；pi 原生配置沿用 pi 布局，project 层与场景收进 App 私有工作区目录；视图插件与 pi 扩展分属 `plugins/` 与 `extensions/`，详见[架构设计 §2.6–2.7](docs/architecture.md#26-存储布局)。
-- **单一通道**：渲染层只消费 AppSnapshot，只发 AppCommand；事件带 scope / epoch。
-- **依赖单向**：装配层 → 域服务层 → 能力层 → URA → pi；下层不知道上层。
+- **Domain / Resource 是运行单位**：domain 只声明状态、命令、订阅与推送；每个 domain 一个模块，不再有 Capability、controller 或生命周期接口。
+- **Runtime 管框架**：DomainRegistry、Pipeline、Dispatcher、Views、Providers、Native、Layout、Dialogs 只处理跨领域机制，不承载业务状态。
+- **Modules 管运行时**：Agent、URA、资源、会话、列表、插件、浏览器、harness 是实现层，由 domain 调用。
+- **Infrastructure 管适配**：网络、仓储、偏好、路径、日志不暴露成业务 domain。
+- **App 是组合根**：负责进程生命周期、窗口、视图 provider、IPC 与各运行时的装配。
+- **视图分两层**：窗口级系统视图（助手 / 浮层 / 捕获层）与内容标签（资源页 / 网页）分离；Views 只做承载、几何、显隐与栈序。
+- **Layout / Scene 是窗口级契约**：布局由主进程计算，拖拽只是临时 preview；提交后写 scene，DOM 与原生视图消费同一份几何。
+- **Lists 是 provider 管道**：文档、会话、插件、设置、站点等列表走同一个 provider → snapshot 流程，渲染层只消费快照。
+- **Settings 是单页 domain 消费方**：所有卡片在一个页面内展开，更新状态独立为 `updates` domain。
+- **Middleware 只做 IPC 横切**：日志、策略、追踪等跨请求逻辑进入 Pipeline；业务状态不进 middleware。
+- **资源页与浏览器分开**：资源页走 URA 的 transport / codec / presenter；浏览器页整段旁路，直接由视图宿主导航。
+- **单一通讯面**：渲染层只使用 `workStudio`，资源页 / 插件页通过 `window.extension` 暴露受限能力；不暴露裸 IPC。
+- **依赖单向**：Renderer → workStudio → Runtime / Domains → Modules → Infrastructure → pi SDK / URA。
 
 ## 五、能力扩展
 
@@ -411,16 +412,16 @@ plugin-docx.zip
 - **模型与配置页**：新增自定义模型默认写出 `compat.supportsDeveloperRole: false`（第三方端点普遍只接受 `system` 指令角色）；已有模型配置不回写、不迁移。
 - 页面只读自己的分区与白名单命令，不直连来源。
 
-| 设置入口         | 用户任务                                                                       |
-| ---------------- | ------------------------------------------------------------------------------ |
-| 外观与皮肤       | 曜黑（默认纯黑）、石墨、白瓷、雾蓝；跟随系统并分别选择明暗皮肤；统一编辑器字号 |
-| 偏好设置         | 明确区分应用默认与当前工作区覆盖；恢复继承，保存前保护表单修改                 |
-| 模型连接         | 先连接供应商，再选择可用默认模型；自定义端点收在高级配置中                     |
-| 能力管理         | 文档插件、技能、助手扩展分别展示来源、作用域和真实运行状态                     |
-| 资源诊断         | 使用资料栏同一份来源状态、计数和错误；高级注册信息按需展开                     |
-| 存储、关于与更新 | 常用位置和版本状态优先，高级路径与访问令牌按需展开                             |
+| 设置入口         | 用户任务                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| 外观与主题       | 浅色 / 深色 / 跟随系统；内容视图按百分比缩放                   |
+| 偏好设置         | 明确区分应用默认与当前工作区覆盖；恢复继承，保存前保护表单修改 |
+| 模型连接         | 先连接供应商，再选择可用默认模型；自定义端点收在高级配置中     |
+| 能力管理         | 文档插件、技能、助手扩展分别展示来源、作用域和真实运行状态     |
+| 资源诊断         | 使用资料栏同一份来源状态、计数和错误；高级注册信息按需展开     |
+| 存储、关于与更新 | 常用位置和版本状态优先，高级路径与访问令牌按需展开             |
 
-外观属于应用级偏好，切换工作区与重启后保留；壳层、内置页面、助手和编辑器同步。外部网站和文档自身的预览配色保持原样，第三方页面仍可接收亮 / 暗主题。
+外观属于应用级偏好，切换工作区与重启后保留；主题只有浅色 / 深色 / 跟随系统三种语义。界面缩放通过内容视图的缩放百分比生效，壳层布局不被缩放。外部网站和文档自身的预览配色保持原样。
 
 ## 六、状态与通讯
 
@@ -432,7 +433,7 @@ plugin-docx.zip
 | **Workspace** | 项目设置、URA、列表、标签视图、UI 现场、页面 / 写会话、会话索引、浏览器策略、派生数据 | 打开工作区 | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
 | **Session**   | pi runtime、消息、轮次、队列、上下文（资源地图版本、AGENTS、技能激活）                | 会话       | `sessions/*.jsonl`                                                                |
 
-- **工作区级数据列表由 AppHost 管理**：AppHost 经 WorkspaceManager 创建、替换、销毁；WorkspaceScope 只是当前活动实例。
+- **工作区生命周期由 App 管理**：窗口与工作区一一对应；工作区切换释放旧运行时并重绑新运行时。
 - **Session 真相在 pi**：切换会话委托 pi；WorkStudio 只持投影，技能激活随会话上下文解析。
 - **资源、页面、技能是加载方式**：App 装全局资源，Workspace 装工作区资源，Session 只激活；目录全部在 App 私有数据目录，不读 `~/.pi` 或真实工作区 `.pi`。
 - **能力作用域**：助手扩展保留 Pi 包的用户级 / 项目级配置；技能启用状态归工作区，本轮选择只限定当前请求。
@@ -442,18 +443,20 @@ plugin-docx.zip
 
 ### 6.2 通讯
 
-| 通道        | 方向          | 语义                                                          |
-| ----------- | ------------- | ------------------------------------------------------------- |
-| AppCommand  | 渲染 → 主进程 | `scope + 域.动作` → `ok/data` 或错误                          |
-| AppSnapshot | 主进程 → 渲染 | `app` / `workspaces` / `workspace` / `ui` / `session` + epoch |
-| AppEvent    | 主进程 → 渲染 | scope + epoch + seq；高频增量合帧                             |
-| 页面数据面  | 页面 → 主进程 | 白名单命令，转发同一实现                                      |
-| 视图总线    | 双向          | 投递 / 就绪 / 脏态 / 提交 / 动作 / 主题                       |
+| 通道                     | 方向                     | 语义                                                    |
+| ------------------------ | ------------------------ | ------------------------------------------------------- |
+| `workStudio.subscribe`   | 渲染 → 主进程            | 订阅 `(domain, resource)`，返回 snapshot 并建立后续推送 |
+| `workStudio.unsubscribe` | 渲染 → 主进程            | 取消订阅                                                |
+| `workStudio.command`     | 渲染 → 主进程            | 有回复命令，返回 `ok/data` 或错误                       |
+| `workStudio.notify`      | 渲染 → 主进程            | 无回复命令                                              |
+| `workStudio.onUpdate`    | 主进程 → 渲染            | snapshot / patch / event 帧                             |
+| `window.extension`       | 资源页 / 插件页 → 主进程 | 受限的资源页面命令与内容总线                            |
 
-- **握手**：`app.sync` 返回完整 AppSnapshot；订阅先于快照。
-- **缺口**：重新 `app.sync`，不做增量回放。
-- **纪元**：工作区 / 会话切换 bump epoch；旧事件丢弃。
+- **snapshot / patch / event**：订阅先返回完整快照；后续只推变化。资源是订阅和推送的最小单位。
+- **命令回执**：command 始终返回带 `ok` 的结果；notify 不等待结果。
+- **内容页**：资源页 / 插件页只暴露 `window.extension`；内部通过 workStudio 资源命令与 `ws:bus` 完成内容投递、保存、重载与动作。
 - **单写者**：渲染层不直接改主进程状态；页面无 Node、无裸 IPC。
+- **切换语义**：工作区切换释放旧运行时并重绑新运行时；会话切换重绑 Agent 运行时，旧订阅由资源生命周期收敛。
 
 ## 七、开发
 
@@ -500,16 +503,22 @@ node node_modules/electron/install.js
 
 ```
 ├── src/
-│   ├── main/                 # 主进程（装配层 · 域服务 · 能力层 · URA 管道）
-│   ├── preload/              # 预加载脚本（多入口，契约桥）
-│   ├── renderer/             # 渲染进程（React + Tailwind）
-│   ├── plugins/              # 内置插件（随应用分发）
-│   └── shared/               # 主/渲染共享类型与样式
-├── PLUGINS.md                # 可安装插件清单（构建期解析进主进程与插件设置页）
-├── docs/                     # 系统化设计（architecture）
-├── index.html                # 渲染页面模板
-├── electron.vite.config.ts   # 三端构建配置（main / preload / renderer）
-├── electron-builder.yml      # 打包配置（目标平台、fuses、签名）
+│   ├── main/
+│   │   ├── app.ts / index.ts      # 组合根 / Electron 入口
+│   │   ├── runtime/               # 框架：domains / pipeline / views / native / layout
+│   │   ├── domains/               # 业务 domain
+│   │   ├── modules/               # agent / URA / lists / plugins / resources / sessions / ...
+│   │   └── infrastructure/        # net / repo / preferences / paths / logging
+│   ├── preload/                   # 多页面与内容视图的 preload 契约
+│   ├── renderer/
+│   │   ├── pages/                 # shell / assistant / overlay / settings / welcome
+│   │   └── shared/                # 跨页面 API、domain 与样式
+│   ├── plugins/                   # 内置插件（随应用分发）
+│   └── shared/                    # 主/渲染共享类型与样式
+├── PLUGINS.md                     # 可安装插件清单（构建期解析进主进程）
+├── docs/                          # 系统化设计（architecture）
+├── electron.vite.config.ts        # 三端构建配置（main / preload / renderer）
+├── electron-builder.yml           # 打包配置（目标平台、fuses、签名）
 └── tsconfig.json
 ```
 

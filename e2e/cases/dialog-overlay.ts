@@ -10,7 +10,7 @@ export default defineCase({
   title: '对话框请求经 overlay 状态展示并能应答',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ctx.appBridge.call('/dialogs/open', {
+    await ctx.legacyBridge.call('/dialogs/open', {
       request: {
         type: 'dialog',
         id: 'regression-dialog',
@@ -20,7 +20,7 @@ export default defineCase({
       },
     });
 
-    const overlay = await ctx.waitForPage(/overlay\.html/, {
+    const overlay = await ctx.waitForPage(/pages\/overlay\/index\.html/, {
       text: '回归对话框',
     });
     await overlay.expect.text('body', '回归对话框');
@@ -32,7 +32,7 @@ export default defineCase({
     });
 
     await ctx.expect.poll(async () => {
-      const dialogs = await ctx.appBridge.peek<DialogInfo[]>('/dialogs');
+      const dialogs = await ctx.legacyBridge.peek<DialogInfo[]>('/dialogs');
       return (
         dialogs?.find((item) => item.id === 'regression-dialog')?.status ===
         'resolved'

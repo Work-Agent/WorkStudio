@@ -1,5 +1,6 @@
 import { CdpSession, CDP_ENDPOINT } from './cdp.ts';
 import { createCdpContext } from './cdp-context.ts';
+import { installWorkStudioBridgeShim } from '../support/work-studio-shim.ts';
 import type { E2ECase } from './contract.ts';
 import { selectCases, type CaseFilter } from './registry.ts';
 
@@ -21,10 +22,12 @@ export interface RunOptions {
 
 async function closeOpenViews(session: CdpSession): Promise<void> {
   const views = await session.evaluate<Array<{ id: string }> | null>(
-    `window.appBridge.peek('/views')`,
+    `window.__e2eBridge.peek('/views')`,
   );
   for (const view of views ?? []) {
-    await session.evaluate(`window.appBridge.call('/views/${view.id}/close')`);
+    await session.evaluate(
+      `window.__e2eBridge.call('/views/${view.id}/close')`,
+    );
   }
 }
 
@@ -38,11 +41,12 @@ export async function runCdpCases(
   const results: CaseResult[] = [];
 
   try {
+    await session.evaluateFunction(installWorkStudioBridgeShim);
     for (const testCase of testCases) {
       // 每个用例从壳层开始，避免上一个用例的标签/侧栏状态污染。
       await closeOpenViews(session).catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 100));
-      const ctx = createCdpContext(session, {
+      const ctx = await createCdpContext(session, {
         endpoint: options.endpoint ?? CDP_ENDPOINT,
         screenshotPath: options.screenshotPath,
       });

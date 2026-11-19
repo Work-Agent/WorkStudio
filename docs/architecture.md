@@ -1,812 +1,425 @@
 # 架构设计
 
-> WorkStudio 是一个以文件为中心、原生视图承载界面的桌面工作台。主进程负责状态、资源、页面与视图；渲染层只消费投影并发送意图；AI 会话交给 pi 运行时。
+> WorkStudio 是以文件为中心的桌面工作台。主进程持有状态与运行时，渲染层只消费投影并发送意图；会话交给 pi，资源由 URA 统一解释。
+
+> 目标架构与当前实现的差距见 [目标架构与现状差距](./architecture-target.md)；本文描述已实现架构。
 
 ## 一、总体设计
 
-### 1.1 组合根是外层，实现分层在路径树内
+### 1.1 分层
 
-主进程由一个组合根装配，不再按状态作用域拆成多层全局对象。
+主进程按职责分为四层：
 
-```text
-组合根
-├─ 框架：Host · 路径树 · 视图能力 · Electron 能力
-├─ 业务服务：工作区 / 资源 / 列表 / 会话 / 配置 / 插件 / 设置 / 站点
-├─ 存储：repo
-└─ 引擎：Agent · URA · 插件宿主 · Harness
-```
+| 层             | 职责                                                                                   | 不负责                 |
+| -------------- | -------------------------------------------------------------------------------------- | ---------------------- |
+| Runtime        | DomainRegistry · Pipeline · Dispatcher · Views · Providers · Native · Layout · Dialogs | 业务状态               |
+| Domains        | 业务状态、resource、command、订阅与推送                                                | 原生句柄、文件系统细节 |
+| Modules        | Agent、URA、资源、会话、列表、插件、浏览器、Harness 等运行时实现                       | 页面与窗口装配         |
+| Infrastructure | 网络、仓储、偏好、路径、日志                                                           | 业务语义               |
 
-路径树是唯一的跨层地址：
+App 是组合根，只负责创建运行时、装配 domain / provider / IPC、管理窗口与进程生命周期。
 
-- 入站：`call` / `watch` / `emit`
-- 出站：`state` / `event`
-- 资源、视图、能力共用同一棵根路径树
-
-层回答“职责与依赖方向”；路径回答“谁拥有、如何寻址、如何订阅”。两者不混用。
+没有 Capability 类、controller 或生命周期接口。运行时模块由 domain 或组合根显式调用。
 
 ### 1.2 总体图
 
 ```text
-┌─ 视图 ───────────────────────────────────────────────────────────────┐
-│ 壳层 DOM · 助手 · 浮层 · 页面（设置 / 插件 / 资源） · 网页           │
-│ 只持投影，无 Node                                                    │
-└──────────────────────────────────┬──────────────────────────────────┘
-                                   │ window.appBridge
-                                   │ call · watch · emit · state/event
-┌─ 主进程：组合根 ─────────────────▼──────────────────────────────────┐
-│ App                                                                │
-│  框架：Host / 路径树 / 视图能力 / Electron 能力                    │
-│  业务：按根路径挂载的 service                                      │
-│  存储：repo                                                        │
-│  引擎：Agent / URA / 插件 / Harness                                │
-└──────────────────────────────────┬──────────────────────────────────┘
-                                   │ 能力端口
-                            Electron · pi SDK
+┌─ Renderer ───────────────────────────────────────────────────────┐
+│ shell · assistant · overlay · settings · welcome（多页面入口）    │
+│ 页面只订阅自己消费的 resource，不持有权威状态                     │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │ window.workStudio
+                               │ subscribe / command / notify / onUpdate
+┌─ Runtime ────────────────────▼───────────────────────────────────┐
+│ DomainRegistry · Pipeline · Dispatcher · Views · Providers        │
+│ Native · Layout · Dialogs                                        │
+└──────────────────────────────┬───────────────────────────────────┘
+┌─ Domains ────────────────────▼───────────────────────────────────┐
+│ workspaces · resources · settings · updates · lists · plugins     │
+│ sessions · theme · windows · native                              │
+└──────────────────────────────┬───────────────────────────────────┘
+┌─ Modules ────────────────────▼───────────────────────────────────┐
+│ agent · ura · resources · sessions · lists · plugins             │
+│ browser · harness · updates                                      │
+└──────────────────────────────┬───────────────────────────────────┘
+┌─ Infrastructure ─────────────▼───────────────────────────────────┐
+│ net · repo · preferences · paths · logging                       │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │ 官方扩展点
+                            pi SDK
 ```
 
 ### 1.3 关键决策
 
-| 决策     | 选择                                             | 理由                                                 |
-| -------- | ------------------------------------------------ | ---------------------------------------------------- |
-| 组合方式 | 一个组合根装配所有 service / capability          | 依赖创建与生命周期集中在一处，业务类不互相抓全局     |
-| 寻址     | 一棵根路径树，`call` / `watch` / `emit` 共用     | 资源、状态、事件使用同一套名字；新增功能只新增子树   |
-| 状态     | 每个状态路径保存全量值；订阅立即回放             | 无需版本号与全局快照；重连后直接拿到当前值           |
-| 事件     | 只做增量，带路径与自增序号；默认仅主进程可用     | 事件不承担“恢复现场”的职责，避免和状态重复           |
-| 能力     | Capability 管生命周期，Middleware 只包裹 call    | 窗口 / 视图 / 主题属于运行时；中间件只做请求链       |
-| 视图     | App 层托管视图集合与原生现场；服务注册页面提供者 | 新增内容形态不改视图能力；内容只声明地址、授权与释放 |
-| 业务     | service 持有状态与操作，repo 只负责持久化        | 业务不认路径、不碰窗口；路径绑定集中在路由层         |
-| 渲染层   | 只经 `window.appBridge` 读写                     | 不暴露裸 IPC、不持有 Node、不读取主进程对象          |
+| 决策       | 选择                              | 理由                                             |
+| ---------- | --------------------------------- | ------------------------------------------------ |
+| 组织单位   | Domain / Resource                 | 订阅、命令、推送都以 resource 为最小单位         |
+| 运行时装配 | App 组合根显式装配                | 依赖关系可见，不引入全局 service locator         |
+| 状态归属   | 主进程唯一真相源                  | 渲染层只持投影，避免人机两套状态                 |
+| 列表       | provider → snapshot               | 内置列表与插件列表共用同一条流程                 |
+| 通讯       | `window.workStudio`               | 页面不暴露裸 IPC，不依赖 Electron / Node         |
+| 内容页     | `window.extension` + 受限资源命令 | 资源页 / 插件页没有 Node，也不直接访问 domain    |
+| 视图       | 两层视图 + provider               | 系统视图与内容标签分开，新增内容形态不改视图能力 |
+| 布局       | 主进程计算，scene 持久化          | DOM 与原生视图消费同一份几何，拖拽不反复重排     |
+| 中间件     | 仅 IPC 横切                       | 日志、策略、追踪不承载业务状态                   |
 
-## 二、状态与路径
+## 二、状态与生命周期
 
 ### 2.1 状态归属
 
-| 状态                          | 生命周期 | 真相源                      | 持久化                                                   |
-| ----------------------------- | -------- | --------------------------- | -------------------------------------------------------- |
-| 视图集合 / 主题 / 原生现场    | 进程     | 视图能力                    | `scene.json`（按工作区）                                 |
-| 对话框 / 通知 / 交互预览      | 进程     | 视图能力                    | 不持久化                                                 |
-| 工作区注册表与当前工作区      | 进程     | 工作区服务                  | `workspaces/<wsId>/workspace.json`                       |
-| 模型 / 凭证 / 全局设置 / 绑定 | 进程     | 配置与设置服务              | 数据根下的 `models.json` / `auth.json` / `settings.json` |
-| 资源 / 列表 / 会话 / 站点     | 工作区   | 对应 service                | 工作区目录与 `sessions/`                                 |
-| 当前会话流式投影              | 会话     | 会话服务归约 `PiEventFrame` | 由 pi 写入会话 JSONL                                     |
+| 状态                      | 生命周期 | 真相源                                  | 持久化                         |
+| ------------------------- | -------- | --------------------------------------- | ------------------------------ |
+| 窗口 / 主题 / scene       | 进程     | WindowManager / ThemeManager / Scene    | `scene.json`（按工作区）       |
+| 工作区注册表              | 进程     | WorkspacesRepo                          | 工作区注册文件                 |
+| 模型 / 凭证 / 全局设定    | 进程     | AgentHost / ModelConfigStore / 设置存储 | 数据根下的模型、凭证与设置文件 |
+| 资源 / 列表 / 会话 / 站点 | 工作区   | Resources / Lists / Sessions / URA      | 工作区目录与 `sessions/`       |
+| 当前回复与任务            | 会话     | SessionsService                         | 由 pi 写入会话 JSONL           |
+| 设置页 / 更新 / 插件任务  | 应用     | settings / updates / plugins domain     | 由各自运行时持有               |
 
-状态归属由 service 与路径决定，不引入 WorkspaceScope / SessionScope 实例。
+### 2.2 作用域
 
-- 全局能力不持业务值。
-- 业务 service 不持窗口、原生视图或 Electron 句柄。
-- 渲染层不持权威状态，只持投影。
-- 页面不直接持有文件句柄；资源页面会话由主进程持有。
+- **App**：模型目录、凭证、插件安装、全局设置、工作区列表、当前工作区、系统视图。
+- **Workspace**：资源、列表、标签视图、scene、页面会话、会话索引、浏览器策略、项目设置。
+- **Session**：pi runtime、消息、轮次、队列、上下文与技能激活。
 
-### 2.2 宿主与路径树
+工作区切换 = 释放旧 resources / sessions / plugins 关联 + 重绑新工作区；会话切换 = pi 切换 + 事件重新绑定。
 
-宿主（Host）持有：
-
-- 路径表：command / state / event
-- 来源识别与 `self` 代换
-- 视图授权
-- 状态总线与事件总线
-- 视图注册表与页面提供者
-
-路由只负责把 service 方法绑定到路径：
+### 2.3 存储布局
 
 ```text
-/workspaces
-/piconf
-/plugins
-/settings
-/workspaces/:wsId/resources
-/workspaces/:wsId/lists
-/workspaces/:wsId/sessions
-/workspaces/:wsId/sites
+<data-root>/
+├── settings.json                 # 用户级设置（pi 原生字段 + workspaceStudio 命名空间）
+├── models.json                   # 自定义供应商与模型
+├── auth.json                     # 供应商凭证
+├── workspaces/<wsId>/
+│   ├── workspace.json            # 工作区自描述
+│   ├── scene.json                # 布局与 UI 现场
+│   ├── settings.json             # 工作区设置 / 策略
+│   ├── sessions/                 # 会话 JSONL
+│   └── sites/<domain>/           # 浏览器快照
+├── plugins/                      # 已安装文档插件
+└── skills/                       # 内置技能落盘
 ```
 
-视图能力直接注册根路径：
+- `workspaceStudio` 只替换自己的命名空间，pi 字段与未知字段原样保留。
+- 不读写 `~/.pi` 或真实工作区的 `.pi`。
+- 页面会话、写队列、脏标记归框架；来源内容仍以来源为准。
 
-```text
-/views  /theme  /layout  /scene/:wsId  /interaction
-/dialogs  /notices  /native/*
-```
+## 三、Runtime
 
-路径冲突在注册期失败；不存在运行期“谁先注册谁生效”的隐式覆盖。
-
-### 2.3 状态、事件与订阅
-
-状态：
+### 3.1 Domain 与 Resource
 
 ```ts
-interface StateFrame<T> {
-  type: 'state';
-  path: string;
-  value: T;
+interface Domain {
+  resource(name: string): Resource;
+}
+
+interface Resource {
+  snapshot(provider: () => unknown): void;
+  command<I, O>(
+    action: string,
+    handler: (call: Call<I>) => O | Promise<O>,
+  ): void;
+  notify(action: string, handler: (call: Call<unknown>) => void): void;
+  publish(): void;
+  patch(value: Record<string, unknown>): void;
+  event(value: unknown): void;
 }
 ```
 
-事件：
+- `snapshot` 建立可序列化的当前值。
+- `command` 是有回复操作，统一返回 `{ ok, data }` 或 `{ ok:false, error }`。
+- `notify` 是无回复操作。
+- `publish` 推完整快照；`patch` 推增量；`event` 推一次性事件。
+- Domain 只暴露状态与命令，不暴露内部运行时对象。
+
+### 3.2 Pipeline / Dispatcher / Middleware
+
+- **Dispatcher**：sender → origin → Pipeline；识别 shell / 系统视图 / 内容视图来源。
+- **Pipeline**：middleware 链、domain 路由、update 分发。
+- **Middleware**：只包裹 IPC 入站与出站，不承载业务；用于日志、策略、追踪。
+- 订阅只对 `(domain, resource)` 建立；更新只发给订阅该 resource 的 view。
+- 不存在的 domain / resource / action 返回明确错误，不静默降级。
+
+### 3.3 Views / Providers / Native
+
+- **GlobalViews**：窗口级系统视图（shell / assistant / overlay / capture），不进入标签集合。
+- **Tabs**：内容视图（page / web）；管理顺序、激活、固定、脏态、冲突与释放。
+- **Views**：跨窗口查找、tabs domain、provider 调用与内容视图打开。
+- **Providers**：声明 `resource / settings / plugin / web / welcome` target 如何解析成页面规格。
+- **Native**：BrowserWindow、WebContentsView、窗口几何、主题、菜单、系统动作。
+
+视图形状：
+
+```text
+WorkspaceWindow
+├─ GlobalViews：shell / assistant / overlay / capture
+└─ Tabs：page / web
+```
+
+### 3.4 Layout / Scene / Interaction
+
+- Layout 由主进程根据窗口尺寸与 scene 计算；DOM 只消费矩形和 CSS 变量。
+- Scene 是唯一持久现场：栏宽、侧栏折叠、助手形态、面板状态。
+- 拖拽开始冻结起点；move 只更新 preview；end 收敛为 scene patch；cancel 丢弃 preview。
+- 交互期间 capture 视图接管指针；结束或失焦必须清理。
+- 不单独设 interaction controller；交互是 layout 的临时状态。
+
+## 四、Domains
+
+| Domain / Resource                                                      | State                                | Commands                                                                                                                                                                                              |
+| ---------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces/list`                                                      | 工作区列表                           | `open` / `close` / `rename` / `remove` / `refresh`                                                                                                                                                    |
+| `workspaces/current`                                                   | 当前工作区                           | —                                                                                                                                                                                                     |
+| `resources/current`                                                    | workspaceId / ready / pages          | `read` / `write` / `edit` / `ls` / `find` / `grep` / `query` / `tree` / `watch` / `openPage` / `savePage` / `reloadPage` / `closePage` / `open` / `openWeb` / `openPageView` / `saveCopy` / `refresh` |
+| `settings/pages`                                                       | 设置卡片清单                         | `open`                                                                                                                                                                                                |
+| `settings/appearance`                                                  | theme / zoom / effectiveTheme        | `set`                                                                                                                                                                                                 |
+| `settings/storage`                                                     | 数据根 / 工作区 / 路径 / 版本        | `open` / `changeRoot` / `changeSessionDir`                                                                                                                                                            |
+| `settings/browser`                                                     | allowlist                            | `set`                                                                                                                                                                                                 |
+| `settings/skills`                                                      | 已加载技能                           | `reload` / `setEnabled` / `diagnostics` / `openPlugin`                                                                                                                                                |
+| `settings/preferences`                                                 | theme / locale / proxy / githubToken | `set`                                                                                                                                                                                                 |
+| `settings/models`                                                      | providers / catalog / config         | login / logout / save / delete                                                                                                                                                                        |
+| `settings/advanced`                                                    | piconf / bindings                    | get / set / replace / setBinding / removeBinding                                                                                                                                                      |
+| `settings/extensions`                                                  | 扩展清单                             | catalog / install / remove                                                                                                                                                                            |
+| `settings/resourceInfo`                                                | URA 来源 / 格式 / 表现层诊断         | —                                                                                                                                                                                                     |
+| `updates/status`                                                       | 更新状态                             | `check` / `download` / `cancel` / `open`                                                                                                                                                              |
+| `lists/current`                                                        | 侧栏快照                             | `refresh` / `action`                                                                                                                                                                                  |
+| `plugins/list`                                                         | 运行时插件                           | `open` / `getSetting` / `setSetting` / `install` / `remove` / `reload` / `catalog`                                                                                                                    |
+| `plugins/installed`                                                    | 已安装来源                           | —                                                                                                                                                                                                     |
+| `plugins/task`                                                         | 安装任务                             | `cancel` / `retry`                                                                                                                                                                                    |
+| `sessions/current`                                                     | 当前会话                             | new / open / prompt / steer / followUp / abort / compact / retry / fork / rename / delete / setModel / setThinking / refresh                                                                          |
+| `sessions/list` / `opened` / `active` / `task` / `thinking` / `skills` | 会话投影                             | —                                                                                                                                                                                                     |
+| `theme/current`                                                        | light / dark / system + effective    | `set`                                                                                                                                                                                                 |
+| `windows/list`                                                         | 窗口集合                             | `focus` / `close` / `open` / `beginMove` / `updateMove` / `endMove`                                                                                                                                   |
+| `scene/<wsId>`                                                         | 窗口现场                             | `patch`                                                                                                                                                                                               |
+| `layout/<wsId>`                                                        | 布局快照                             | `begin` / `move` / `end` / `cancel`                                                                                                                                                                   |
+| `dialogs/list`                                                         | 对话框                               | `open` / `ask` / `respond`                                                                                                                                                                            |
+| `notices/list`                                                         | 通知                                 | `notify` / `dismiss`                                                                                                                                                                                  |
+
+## 五、Modules 与 Infrastructure
+
+### 5.1 Modules
+
+| Module      | 职责                                                                |
+| ----------- | ------------------------------------------------------------------- |
+| `agent`     | AgentHost、pi session、模型配置、认证、工作区、资源装载             |
+| `ura`       | transport / codec / store / presenter / sidecar、资源地图、页面会话 |
+| `resources` | 资源读写 / 检索 / 页面会话编排                                      |
+| `sessions`  | 会话列表、消息、流式投影、任务状态、标签集合                        |
+| `lists`     | 列表定义、provider、snapshot 构建                                   |
+| `plugins`   | 插件安装、catalog、PluginHost、插件注册面                           |
+| `browser`   | 浏览器能力注册、站点集合、a11y 动作                                 |
+| `harness`   | 技能、prompt、浏览器 / Office / URA 工具                            |
+| `updates`   | 版本检查、下载、取消、安装包打开                                    |
+
+### 5.2 Infrastructure
+
+| Module                 | 职责                            |
+| ---------------------- | ------------------------------- |
+| `net`                  | 代理与出站 HTTP 调度            |
+| `repo`                 | 工作区注册等持久化仓储          |
+| `preferences`          | 用户偏好与工作区策略            |
+| `paths` / `path-codec` | 应用路径与 URL / 文件路径编解码 |
+| `log`                  | 诊断日志                        |
+
+Modules 可以依赖 Infrastructure；Domains 不直接依赖 Electron / Node 句柄；Infrastructure 不反向依赖 Domains。
+
+## 六、跨进程契约
+
+### 6.1 workStudio bridge
 
 ```ts
-interface EventFrame<T> {
-  type: 'event';
-  path: string;
-  seq: number;
-  value: T;
+interface WorkStudioBridge {
+  subscribe(domain: string, resource: string): Promise<unknown>;
+  unsubscribe(domain: string, resource: string): void;
+  command<T>(
+    domain: string,
+    resource: string,
+    action: string,
+    input?: unknown,
+  ): Promise<CallResult<T>>;
+  notify(
+    domain: string,
+    resource: string,
+    action: string,
+    value?: unknown,
+  ): void;
+  onUpdate(listener: (update: DomainUpdate) => void): () => void;
 }
 ```
 
-规则：
-
-- 状态按路径保存最新全量值；`watch` 立即回放当前值。
-- 事件不保留、不重放；`seq` 只用于识别断档。
-- 事件默认仅主进程内部可见；声明为可视图事件时必须带运行时校验。
-- 事件载荷使用 `type` 作为唯一判别字段，不使用 `kind`。
-- 订阅按视图授权过滤；不订阅的路径不会推送。
-- 状态合并只保留同一路径的最新值，事件按到达顺序投递。
-
-渲染层不比较版本号；到达顺序就是收敛顺序。
-
-### 2.4 工作区切换事务
-
-工作区注册表由工作区服务持有；切换是一个组合根事务：
-
-1. 旧工作区仍打开时，先通知视图能力关闭内容视图；
-2. 资源服务释放页面会话与监听器；
-3. 工作区服务发布新的当前工作区；
-4. Agent 重建 pi runtime 的 cwd 与资源根；
-5. 配置服务更换 project 设置文件；
-6. URA 资源地图重启；
-7. 会话服务重新加载当前会话、列表与消息；
-8. 列表按新工作区刷新。
-
-失败时不保留半切换状态：当前工作区只在切换事务成功后生效。
-
-### 2.5 资源加载分级
-
-| 对象        | App                | Workspace                | Session            |
-| ----------- | ------------------ | ------------------------ | ------------------ |
-| 扩展 / 技能 | 全局安装           | 工作区默认与启用策略     | 激活集             |
-| 页面        | 页面代码与静态资源 | 页面实例、页面会话、偏好 | 只引用资源 ref     |
-| 资源        | App 私有全局根     | 工作区资源根             | 当前轮次的资源快照 |
-
-- 目录全部在 App 私有数据目录；不读写 `~/.pi` 或真实工作区 `.pi`。
-- 装载在 App / Workspace，激活在 Session。
-- 扩展集合在工作区切换或运行时重建时装配；会话内不做热开关。
-
-### 2.6 存储布局
-
-持久化只有一个数据根，根内按 **pi 原生 / 应用扩展** 两类组织。pi 原生配置不是把 `~/.pi` 搬进来，而是让 pi 直接以数据根作为 agentDir；应用只补 pi 没有的概念。
-
-**根**：按 `--data-dir` → `WA_DATA_DIR` → 指针文件 → 便携目录 → 系统默认位置 的优先级解析。Chromium 会话数据固定在并列的 `chromium/`，指针文件放在 profile 根。
-
-```text
-<data-root>/                     pi 的 agent dir
-│
-│  pi 原生 —— 原样使用，应用不改其内部结构
-├── settings.json                用户级设置（含 pi 包声明、会话目录覆盖）
-├── keybindings.json
-├── mcp.json
-├── models.json
-├── auth.json
-├── AGENTS.md · SYSTEM.md · APPEND_SYSTEM.md
-├── extensions/                  pi 扩展（包）
-├── skills/                      用户技能
-├── extensions/                  用户扩展
-├── skills/                      技能（内置随包播种 + 用户技能；插件技能不落盘，装载自插件目录）
-├── prompts/                     提示模板
-├── themes/                      主题
-│
-│  应用扩展 —— 命名沿用 pi 风格
-├── windows.json                 窗口恢复清单（上次工作区）
-├── ura-bindings.json            资源管道路由表
-├── logs/
-│   └── boot.log                 启动诊断
-├── plugins/
-│   ├── installed/<id>/          已安装视图插件
-│   ├── installed.json           安装索引
-│   ├── staging/                 安装解压沙盒
-│   ├── data/<id>/settings.json  插件自持设置
-│   ├── catalog.md               社区目录缓存
-│   └── catalog-url.txt          目录源地址
-└── workspaces/<wsId>/           一个工作区 = 一个数据域
-    ├── workspace.json           路径与打开时间
-    ├── scene.json               原生现场（侧栏 / 助手 / 栏宽 / 浮动几何）
-    ├── settings.json            项目级设置与工作区策略
-    └── sessions/                会话记录
-```
-
-| 规则                         | 说明                                         |
-| ---------------------------- | -------------------------------------------- |
-| 沿用 pi 的位置与命名         | 设置、模型、凭证、扩展、技能、提示模板、主题 |
-| 单例内容平铺为 `<内容>.json` | 与 pi 的模型 / 绑定类配置文件同构            |
-| 集合内容收为 `<复数>/`       | 与 pi 的扩展 / 技能目录同构                  |
-| 应用概念不与 pi 概念同名     | 视图插件与 pi 扩展并列而非合并               |
-| 子系统前缀只用于消歧         | 根上已有按键绑定文件时，不裸用通用名         |
-| 不存根内绝对路径             | 应用数据文件只存工作区标识或相对路径         |
-| 副产物不落数据根             | 站点快照、页面保存写入用户工作区             |
-| 地址展示不暴露完整本机路径   | 统一相对 `app` / `workspace` 展示            |
-
-| 数据                             | 归属      | 格式 owner | 删除后果                |
-| -------------------------------- | --------- | ---------- | ----------------------- |
-| 设置 / 模型 / 凭证 / 扩展 / 技能 | App       | pi         | 需重新配置、登录、安装  |
-| 资源绑定表                       | App       | 应用       | 回落默认解析            |
-| 窗口恢复清单                     | App       | 应用       | 丢失窗口恢复            |
-| 插件安装、安装索引、插件设置     | App       | 应用       | 丢失已安装插件与设置    |
-| 目录缓存、安装沙盒、日志         | 瞬态      | 应用       | 无，可重新生成          |
-| 工作区描述、场景、项目设置       | Workspace | 应用 + pi  | 丢失窗口现场 / 项目设置 |
-| 会话记录                         | Session   | pi         | 丢失会话历史            |
-
-### 2.7 配置面：pi 原生文件与应用扩展
-
-数据根就是 pi 的 **agentDir**，也是唯一配置根。`~/.pi` 与真实工作区的 `.pi` 不参与运行；设置页、模型页、扩展页和技能页写入的配置全部落在数据根内。下表路径均相对数据根。
-
-| 配置面          | 位置                                           | 写入方                   | 说明                                                                          |
-| --------------- | ---------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| 全局设置        | `settings.json`                                | pi 设置层 + 应用设置服务 | pi 全局设置、包声明、会话目录覆盖；应用偏好使用 `workspaceStudio` 命名空间    |
-| 项目设置        | `workspaces/<wsId>/settings.json`              | 应用设置服务             | pi 的 project 层；工作区策略与浏览器白名单；不写项目内的 `.pi/settings.json`  |
-| 模型目录        | `models.json`                                  | 模型配置服务             | 自定义 provider / model；写入后经 pi 模型校验，失败回滚；API Key 不回传渲染层 |
-| 凭证            | `auth.json`                                    | pi 登录链                | API Key / OAuth 凭证；与 `models.json` 分离                                   |
-| pi 扩展         | `extensions/`                                  | pi 包管理器              | 社区包安装位置；会话装配时按工作区策略加载                                    |
-| 技能            | `skills/`                                      | pi 资源加载器 + 技能服务 | 技能安装位置；按会话激活，激活集随会话上下文                                  |
-| 提示模板 / 主题 | `prompts/` · `themes/`                         | pi 资源加载器            | 沿用 pi 的发现规则                                                            |
-| 系统提示        | `AGENTS.md` · `SYSTEM.md` · `APPEND_SYSTEM.md` | pi 资源加载器            | 根级提示文件；工作区上下文另行注入                                            |
-| MCP / 快捷键    | `mcp.json` · `keybindings.json`                | pi                       | 原生配置，应用不解析内部结构                                                  |
-| 会话            | `workspaces/<wsId>/sessions/`                  | pi 会话管理器            | 默认按工作区隔离；`settings.sessionDir` 可覆盖，相对路径按工作区解析          |
-| 原生现场        | `workspaces/<wsId>/scene.json`                 | 应用                     | 侧栏 / 助手 / 栏宽 / 浮动几何，不属于 pi                                      |
-| 视图插件        | `plugins/`                                     | 应用插件宿主             | WorkStudio 视图插件，与 pi 的 `extensions/` 并列而不是合并                    |
-| 应用登记        | `ura-bindings.json` · `windows.json` · `logs/` | 应用                     | 资源绑定、窗口恢复、启动诊断                                                  |
-
-配置规则：
-
-- **pi 决定格式，应用决定位置**：pi 原生文件沿用 pi 的 schema、文件名与发现规则；应用只决定数据根，不把配置复制到 `~/.pi`。
-- **project 层搬进 App 空间**：pi 默认的 project 设置是项目内 `.pi/settings.json`；WorkStudio 通过设置存储适配器把它映射到 `workspaces/<wsId>/settings.json`，工作区切换只换文件，不污染用户项目。
-- **全局与项目两层合并**：读取顺序是 global ← project，嵌套对象深度合并，数组与标量由 project 覆盖；设置页同时展示两层落盘位置。
-- **`workspaceStudio` 是应用命名空间**：用户级 `theme` / `locale` 写在全局设置，工作区级 `browser.allowlist` 写在项目设置；写入只替换该命名空间，pi 的键与未知字段原样保留。
-- **写入边界清晰**：模型配置只写 `models.json`，凭证只走 `auth.json`；插件设置写 `plugins/data/<id>/settings.json`，不混入 pi 设置。
-- **视图插件 ≠ pi 扩展**：`plugins/` 是 WorkStudio 的页面 / URA 插件；`extensions/` 是 pi 的包。两者生命周期、安装入口与信任流程不同，文档和 UI 不合并。
-- **路径展示不暴露根内绝对路径**：数据根展示为 `app/`，当前工作区的 App 数据展示为 `app/workspace/`，用户工作区展示为 `workspace/`；设置页与地址栏共用同一格式化规则。
-
-## 三、实现分层
-
-### 3.1 层序
-
-```text
-组合根
-  → framework（Host / 路径树 / 视图 / Electron）
-  → router（路径绑定）
-  → service（业务）
-  → repo（持久化）
-
-service 也可以依赖引擎：Agent / URA / 插件宿主 / Harness。
-```
-
-依赖方向固定：
-
-- `service` 不认路径；
-- `router` 不写业务；
-- `repo` 不依赖 `service` 的类型；
-- `framework` 不依赖具体 service；
-- 组合根可以依赖所有层，但只做装配。
-
-### 3.2 各层职责
-
-| 层        | 负责                                                    | 不负责               |
-| --------- | ------------------------------------------------------- | -------------------- |
-| core      | 路径表 / 总线 / 句柄 / 失败 / 共享类型                  | 业务、窗口、持久化   |
-| framework | Host、视图能力、Electron 能力、全局注册、页面提供者     | 业务规则             |
-| router    | 把 service 方法绑定到路径；注册状态与事件               | 业务判断             |
-| service   | 领域状态、操作、通知                                    | 路径、窗口、原生视图 |
-| repo      | 读写文件、存储接口                                      | 业务状态机           |
-| 引擎      | Agent、URA、插件、Harness                               | 应用装配、壳层       |
-| 组合根    | 创建依赖、注册 capability / service / route、启动与释放 | 具体业务实现         |
-
-### 3.3 跨层规则
-
-- **路径只出现在 router 与 capability**：业务类只表达业务方法。
-- **service 之间不互相持有全局对象**：通过构造依赖或事件协作。
-- **repo 只被 service 持有**：repo 不创建 service、不读取框架状态。
-- **Capability 与 Middleware 分离**：Capability 建立运行时（窗口 / 视图 / 主题 / 原生现场）；Middleware 只包裹入站 `call`。
-- **Middleware 不改变投递语义**：不拦截 `watch` / `emit`，也不拦截 state / event 出站。
-- **渲染层只依赖契约**：不 import 主进程模块，不读取 Electron / Node 对象。
-
-## 四、跨进程契约
-
-### 4.1 AppBridge
-
-所有视图统一通过 preload 暴露的 `window.appBridge` 通信：
+更新帧：
 
 ```ts
-interface AppBridge {
-  available(): Promise<boolean>;
-  call<T>(path: string, input?: unknown): Promise<RouteResult<T>>;
-  watch(paths: string[]): Promise<{ granted: string[]; denied: string[] }>;
-  emit(path: string, value?: unknown): void;
-  peek<T>(path: string): Promise<T | null>;
-  on(cb: (frame: AppFrame) => void): () => void;
-}
+type DomainUpdate =
+  | { type: 'snapshot'; domain: string; resource: string; data: unknown }
+  | {
+      type: 'patch';
+      domain: string;
+      resource: string;
+      data: Record<string, unknown>;
+    }
+  | { type: 'event'; domain: string; resource: string; data: unknown };
 ```
 
-`AppFrame` 只有两种：
+- 订阅返回当前 snapshot，并建立后续 patch / event 推送。
+- command 返回 `{ ok:true, data }` 或 `{ ok:false, error }`。
+- notify 不等待回执。
+- 渲染层不直接写状态，不持 Node，不访问 Electron 对象。
 
-```ts
-type AppFrame<T> =
-  | { type: 'state'; path: string; value: T }
-  | { type: 'event'; path: string; seq: number; value: T };
-```
+### 6.2 内容页
 
-不再存在全局 AppSnapshot、AppCommand、AppEvent 或 epoch。
+- shell / assistant / overlay / settings / welcome：`window.workStudio`。
+- 资源页 / 插件页：`window.extension`，preload 内部调用 resources domain 与内容总线。
+- 浏览器页：只暴露最小 `window.browser`。
+- 内容投递在页面 ready 后执行；页面只拿页面 id、入口与数据。
+- 保存、重读、脏态、动作状态通过受约束的视图总线回传。
 
-### 4.2 调用、状态与事件
+## 七、视图与内容
 
-- `call` 是唯一写入口；返回 `{ ok, data }` 或 `{ ok:false, error }`。
-- `peek` 读取当前状态值；用于首屏水合与只读查询。
-- `watch` 授权后立即回放状态；后续增量按路径投递。
-- `emit` 只用于视图 → 主进程的受约束事件。
-- 视图授权只接受 `call` / `watch` 白名单；默认拒绝。
-- 服务来源不需要视图 grants；视图来源必须匹配授权路径。
+### 7.1 View providers
 
-### 4.3 握手、订阅与重连
+| target     | 归属      | 解析                                                 |
+| ---------- | --------- | ---------------------------------------------------- |
+| `resource` | resources | URA 打开页面会话，生成 `app://page/...` 内容页       |
+| `settings` | settings  | 单页设置入口，`contentPath=/settings/page/home`      |
+| `plugin`   | plugins   | 插件清单中的 page / settings 出口                    |
+| `web`      | browser   | 直接导航 URL，按 URL 复用标签                        |
+| `welcome`  | app       | 内置欢迎页，`contentPath=/welcome`，每个窗口最多一个 |
+
+### 7.2 标签语义
+
+- 集合顺序即标签顺序；激活项唯一。
+- 关闭当前标签后选择最后剩余标签；没有标签时自动恢复欢迎页。
+- 新 tab 创建后立即补写当前内容区几何，不等待下一次 layout 发布。
+- 固定、拖拽排序、脏点、冲突、缺失由 tabs 投影携带。
+- 设置页 / 欢迎页 / 插件设置页按 contentPath 复用。
+
+## 八、列表
+
+列表统一为 provider 管道：
 
 ```text
-视图启动
-  → appBridge.available()
-  → watch(paths)
-  → 立即收到当前 state
-  → 后续 state / event
+ListRegistry
+  ├─ docs / temp / sessions / plugins / settings provider
+  └─ 插件注册 provider
+        ↓
+buildListSnapshot()
+        ↓
+lists/current
 ```
 
-- 没有“先快照再订阅”的两阶段协议；订阅本身负责回放。
-- 状态按到达顺序覆盖；事件不重放。
-- 视图重载后重新 `watch` 即可恢复，不依赖 epoch。
-- 旧事件不会进入新视图，因为授权与订阅跟随视图生命周期。
+- 定义、provider、snapshot 构建在 modules/lists；domain 只暴露快照与打开动作。
+- 每个 provider 返回分组；组内 item 携带标题、图标、字段、动作与 meta。
+- 列表行状态（open / active / dirty）由当前视图集合回写。
+- 单组失败只标记该组 error + diagnostics，其他组继续。
+- 用户点击只发 `lists/current.action { action: 'open', item }`；打开目标由 App 路由到资源 / 设置 / 插件。
 
-### 4.4 页面数据面与视图总线
+## 九、资源管道 URA
 
-- 设置页、插件页、资源页统一走 `window.appBridge`。
-- 资源页面额外使用受限的资源会话与内容总线；页面只拿页面 id、入口与数据。
-- 内容投递在页面 `ready` 后进行；页面不持视图句柄。
-- 外部浏览器页不暴露 appBridge。
-- 插件页面只通过白名单路径访问 settings / plugins / native 能力。
-
-## 五、列表
-
-### 5.1 模型
-
-- 列表定义、provider 与快照归 `service/lists`。
-- 渲染层只消费 `ListSnapshot`，不查注册表。
-- 分组和行携带渲染所需 spec：字段、动作、空态、图标、色调、计数单位。
-
-```ts
-interface ListDefinition {
-  id: string;
-  label: string;
-  section?: 'resources' | 'plugins' | 'settings' | 'hidden';
-  icon?: string;
-  tone?: string;
-  unit?: string;
-  countLabel?: string;
-  order?: number;
-  sourceScope: 'app' | 'workspace';
-  itemType: string;
-  fields: ListFieldSpec[];
-  actions: ListActionSpec[];
-  empty?: { icon?: string; text: string };
-  grouping?: 'flat' | 'domain' | 'custom';
-}
-```
-
-分组字段：
-
-```ts
-interface ListGroup {
-  id: string;
-  definitionId: string;
-  section: 'resources' | 'plugins' | 'settings' | 'hidden';
-  label: string;
-  icon?: string;
-  tone?: string;
-  unit?: string;
-  countLabel: string;
-  updatedAt: number;
-  count: number;
-  state: 'loading' | 'ready' | 'error';
-  fields: ListFieldSpec[];
-  actions: ListActionSpec[];
-  empty?: { icon?: string; text: string };
-  items: ListItem[];
-  diagnostics?: string[];
-}
-```
-
-- `icon` 支持语义名、SVG/PNG data URL、favicon URL。
-- `tone` / `unit` / `countLabel` 由定义或 provider 给出，渲染层不按列表 id 写死。
-- 单个 provider 失败只产生 error 分组，不拖垮整个快照。
-
-### 5.2 注册与扩展
-
-- 内置列表与插件列表共用注册面。
-- 设置页、插件页、会话、站点等分组由各自 service / capability 提供数据。
-- Provider 只拿列表上下文：workspace、tree、find、settings、icon；拿不到视图句柄和写通道。
-- 列表 provider 的归属由注册时的 owner 决定。
-- 列表服务只做归一化与快照，不把业务判断放回渲染层。
-
-### 5.3 侧栏
-
-- 资料栏常驻；来源在原位展开全部可用资料，展开与收起不替换整栏。
-- 名称 / 路径查找与内容检索语义分开；清空查询回到来源列表，结果仍经统一打开动作。
-- 分组从快照取得计数、加载状态、错误、空态、图标和动作；未知容量不显示为零。
-- 能力管理与设置在中央内容区打开各自的管理标签，内部分类导航复用标签，资料栏保留。
-- 会话历史独立管理，助手标签只展示已打开会话。
-- 收起态保留来源图标与入口；选择资料使用原生菜单，查找可展开资料栏。
-- 当前助手任务与插件安装任务在资料栏提供状态入口，任务状态由对应服务拥有。
-
-### 5.4 动作
-
-- 行激活统一发 `list.action`。
-- 动作至少覆盖 open / close / pin / delete / 插件自定义动作。
-- 打开文档、会话、插件页、设置页均由主进程路由，不由渲染层按 itemType 写死通道。
-
-## 六、视图与布局
-
-### 6.1 内容类型与地址展示
-
-| 类型       | 逻辑地址                   | 承载           |
-| ---------- | -------------------------- | -------------- |
-| 资源文档   | `workspace://<相对路径>`   | 插件页或网页   |
-| 配置文件   | `app/<相对路径>`           | 设置页         |
-| 工作区状态 | `app/workspace/<相对路径>` | 设置页         |
-| 在线网页   | 原始 URL                   | 浏览器原生视图 |
-| 插件页     | `plugin://<pluginId>`      | 插件页面       |
-| 设置页     | `settings://<pageId>`      | 内置页面       |
-
-地址展示规则：
-
-- 不展示完整本机绝对路径。
-- 工作区内文件以 `workspace/` 开头展示；App 数据根以 `app/` 开头展示；当前工作区的 App 数据以 `app/workspace/` 开头展示，不重复展示 wsId。
-- 设置页与插件页使用逻辑 scheme，不展示页面源码路径。
-- 网页地址保留原始 URL。
-- 地址栏、存储设置、模型/扩展/技能/会话等设置页共用同一套路径格式化。
-
-### 6.2 视图集合
-
-- 标签 = 视图实例投影；顺序、激活、固定、脏态由主进程给出。
-- 视图提供者只声明页面入口、完整 URL、标题、授权和释放逻辑。
-- 壳层、助手、浮层、捕获层是系统视图，不进入内容标签集合。
-- 标签关闭时先计算邻居，再删除；集合中必须始终有有效激活项。
-- 页面会话随标签关闭释放；工作区切换时关闭全部内容视图。
-- 关闭、重读、批量关闭、页面替换、工作区切换、关窗与退出共用草稿确认规则。保存成功后才继续；取消或保存失败保留页面与内容。
-- 外部变化只给脏页面标记冲突，保留原始基线；保存时核对基线，避免覆盖其他写入。冲突草稿可另存其他文件，重读需明确放弃原草稿。
-- 模型表单按提交单元保留修改，离开前提示在对应表单保存或放弃；偏好设置按应用 / 工作区分别保存。
-- 同时到达的破坏性页面操作不得重复弹窗或复用另一操作的放弃授权。
-- 视图崩溃只影响该视图，壳层与其他视图继续。
-
-### 6.3 布局不变量
-
-主进程是几何唯一真相源；DOM 壳层和原生视图消费同一份矩形。
-
-- 左侧把手的命中区在侧栏内部，资源内容从侧栏右边缘直接开始。
-- 右侧把手的命中区在助手视图内部；资源与助手视图直接相接。
-- 分隔线只画 1px，不绘制覆盖内容的表面色。
-- 拖动期间布局跟指针走；松手才提交收起 / 展开。
-- 原生视图覆盖 DOM；DOM 把手不能放在原生视图下面。
-- 原生现场只保存影响原生容器的字段：侧栏收起、助手开关/浮动态、栏宽、浮动几何。
-- 外观由应用持久化并解析为有效皮肤；输入草稿、来源展开状态和本轮技能选择由界面维护。
-
-### 6.4 交互
-
-- 分栏、视图移动、视图缩放、标签重排走同一套指针交互会话。
-- 主进程按指针计算预览，渲染层只看预览快照。
-- Esc / 指针抬起 / 窗口失焦结束交互；结束时夹取并提交。
-- 交互预览只更新布局路径，不重建业务状态。
-
-### 6.5 平台约束
-
-- 窗口使用隐藏标题栏；macOS 使用系统交通灯位置，Windows / Linux 使用 WCO 覆盖层。
-  三键由系统绘制：没有覆盖层就没有三键，因此三键不是渲染层的可选装饰。
-- 标题栏左右留白与高度由平台实测几何反推；无几何信息时按平台兜底值排布，
-  渲染层不写死任何平台的留白。
-- 窗口控制、菜单、目录选择走原生能力。
-- 标题栏空白与地址显示区域统一拖动窗口，按钮与其他交互控件不参与拖动，地址提供独立复制动作。macOS 使用主进程读取的全局屏幕 DIP 计算位移，允许副屏负坐标，不夹回当前显示器；拖动期间允许窗口跨桌面空间，结束后恢复原有可见范围。结束、失焦或页面换代后停止移动。
-- 视图 bounds 使用整数 DIP；窗口缩放与 DevTools 停靠后重新计算。
-- 内容视图创建即可见，系统视图（对话框覆盖层、指针捕获层）按需显示。
-- 「显示」原生视图必须同时补写一次几何：Windows 上视图在隐藏期间设过 bounds
-  后再次显示不会重建合成面，只表现为可见但永久空白（其余平台会在显示时重组）。
-  页面加载完成时再补写一次，覆盖加载早于显示的情况。
-- 对话框与通知由视图能力统一管理；overlay 只在有对话框时显示。
-
-## 七、资源管道 URA
-
-### 7.1 职责
-
-URA 是资源内容的唯一入口：人、页面、AI 都只拿 ref，不拿物理路径或句柄。
+### 9.1 分段
 
 ```text
-读：
-ref → transport → { mime, bytes }
-    → codec → document
-    → store（可选）→ structured data
-    → presenter（页面 / 浏览器）或 sidecar（文本 / schema）
-
-写：
-change → locate → encode → transport.commit
-       → cache invalidate → data update → broadcast
+ref ─► transport ─► RawContent
+    ─► (transport, mime) ─► codec ─► document
+    ─► (transport, mime, codec) ─► presenter / store / sidecar
 ```
 
-### 7.2 分段
+- ref 是来源身份；MIME 是格式身份；codec 是解释实现。
+- 绑定表决定 codec / presenter；用户绑定覆盖默认值。
+- 读失败或无解释器时降级 raw，并记录降级点。
+- 写入沿同一张绑定表：定位 → 编码最小补丁 → 来源提交。
+- 页面会话由 URA 持有；页面只拿 id、入口、数据与白名单命令。
 
-| 段                  | 认的标志                   |
-| ------------------- | -------------------------- |
-| transport           | scheme                     |
-| codec               | MIME                       |
-| store               | codec                      |
-| presenter / sidecar | `(transport, mime, codec)` |
+### 9.2 浏览器旁路
 
-- MIME 只取规范值；参数作为元数据保留。
-- 未识别的格式降级 raw，页面与 sidecar 明确降级点。
-- 绑定表用户优先，落 App 数据目录。
-- 同键写串行，后写覆盖先写。
+- 在线网页不经过 transport / codec；视图宿主导航 WebContentsView。
+- 白名单域的快照以 Markdown 落入工作区 sites；快照服务侧车与资源地图。
+- 浏览器自动化通过受控 CDP / 注入能力提供，不向页面或插件暴露。
+- 站点条目打开的是实时网页，不是快照文件。
 
-### 7.3 会话
+## 十、Agent / 会话
 
-- 写会话：草稿 → 提交 → 分片队列；草稿不进模型上下文。
-- 页面会话：与视图实例绑定；关闭视图释放。
-- 资源地图：每工作区一份 AGENTS.md，由列表 / 资源数据生成并去抖重建。
-- 网页旁路 URA：网页快照已是 Markdown，直接登记为文档（只服务侧车与资源地图）；人点站点条目走实时视图，同一 URL 复用已开标签。
+- AgentHost 复用 pi runtime；WorkStudio 只做资源地图、技能筛选、工具与事件投影。
+- 会话文件是 pi 的 JSONL；SessionsService 维护列表、消息、流式投影、任务状态与打开标签。
+- 任务状态包含 running / stopping / stopped / failed / done / unconfirmed；停止要等待运行时确认。
+- 失败重试重发原请求；可能有副作用时先要求确认。
+- 技能启用状态归工作区；本轮选中集随 prompt 传入；未选中表示全部启用。
+- 助手视图只消费 sessions domain，不直接访问 AgentHost。
 
-### 7.4 列表与资源地图
+## 十一、渲染层
 
-- 资源地图消费当前工作区的 ListSnapshot，只收录资源 section 中有 ref 的文档。
-- 资源文件变化触发 watch 与去抖重建。
-- 生成内容与 codec、schema 清单同源，供 pi 的上下文入口读取。
-- 资源地图、页面会话与页面状态都由组合根注入，不在 URA 内部读取业务全局。
-
-## 八、Agent 与 Harness
-
-### 8.1 pi 双轴
+### 11.1 多页面结构
 
 ```text
-资源轴（声明式）                 注册轴（命令式）
-扩展 / 技能 / 设置目录           扩展模块执行时注册
-        │                               │
-        └──────────► pi 运行时 ◄─────────┘
+pages/
+  shell/       壳层：标题栏 · 侧栏 · 资源面板 · 欢迎 / 内容标签
+  assistant/   会话标签 · 消息流 · 输入与工具条
+  overlay/     对话框 / 通知
+  settings/    单页设置卡片
+  welcome/     工作区入口
+shared/
+  api/         workStudio / 路径展示
+  domains/     跨页面 domain hook
+  styles/      共享主题与基础样式
 ```
 
-- 资源轴只装载文件，不执行项目代码。
-- 注册轴由扩展工厂在运行时填充工具、命令、钩子、provider。
-- WorkStudio 不另造 Agent 插件系统。
+- 每个页面独立 HTML 入口，Vite 多页面构建。
+- 页面模块自己订阅 resource、自己管理本地状态；不建立统一全局状态层。
+- shell 专属 domain 留在 shell 页面；settings / welcome 只共享必要 domain。
+- 主题使用 `prefers-color-scheme`，内容视图缩放通过 WebContentsView zoom factor 生效。
 
-### 8.2 会话运行时
+### 11.2 壳层
 
-- 每个工作区拥有一个可换代的运行时；会话切换委托 pi。
-- 事件桥将 pi 事件转成线格式：`message_*`、`tool_execution_*`、`agent_settled`、内部会话事件。
-- 会话服务把 pi 帧归约为完整流式状态 `SessionStreamState`，并发出受约束的 `SessionStreamEvent`。
-- 模型目录、供应商登录、模型切换与运行时 key 由 Agent 宿主及其投影服务负责。
-- 工作区切换重建运行时、设置存储与资源根；会话切换只重绑事件桥与扩展 UI 上下文。
-- 一轮任务拥有原请求、尝试次数、工具状态、错误与成果引用；只从实际运行时事件和返回结果归约，不用计时器推断进度。
+- 左栏资料树 / 列表；中央标签与原生内容；右栏助手；标题栏入口。
+- DOM 只画壳层与空态；内容由原生视图承载。
+- 地址栏展示逻辑地址或相对路径，不泄露本机绝对路径。
 
-| 任务状态    | 判定与操作                                           |
-| ----------- | ---------------------------------------------------- |
-| running     | 已接受请求，等待模型或执行工具；允许请求停止         |
-| stopping    | 已请求停止，等待运行时返回；不得开始另一轮或切换会话 |
-| unconfirmed | 仍在执行或停止结果未知；继续显示状态，禁止重试       |
-| stopped     | 运行时确认停止；既有操作保留，可检查后重试           |
-| failed      | 请求或工具执行失败；保留错误和原请求，可修改或重试   |
-| done        | 请求结束且已知工具未失败；成果等待用户检查           |
+## 十二、设置与更新
 
-- 已确认停止后到达的中止错误不得把任务改成失败；新一轮忽略上一轮已缓冲事件。
-- 重试在原会话重新发送原请求；写入、编辑等潜在副作用要求明确检查后重试，不承诺工具级断点续作或回滚。
-- 成果引用仅来自成功写入 / 编辑的真实工具参数，打开时仍经资源管道。
+- 设置是单页 domain 消费方：卡片默认收起，展开后直接使用 workStudio resource / command，无 iframe。
+- 外观只有 light / dark / system；界面缩放使用百分比。
+- 更新独立为 `updates/status` domain；设置页只是消费者。
+- 插件安装任务、技能诊断、模型供应商、URA 绑定、存储路径与资源诊断都有独立 resource / command。
+- 设置写入不得覆盖未提交表单；路径展示以 `app/` / `workspace/` 等逻辑根呈现。
 
-### 8.3 Harness
+## 十三、约束、失败与验收
 
-Harness 是 WorkStudio 提供给 pi 的会话侧能力，不是独立产品层：
+### 13.1 依赖与边界
 
-| 部分     | 内容                                                                                            |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| 系统提示 | 角色、边界、工作方式                                                                            |
-| 上下文   | AGENTS、资源地图、技能激活集                                                                    |
-| 工具     | URA 读写 / 检索 / 查询工具；浏览器自动化工具；office 生成工具（执行内置技能脚本，不开放 shell） |
-| 钩子     | 轮次结束、资源刷新、上下文更新                                                                  |
-
-- 技能：装载清单 → 工作区启用 → 本轮选择；空选择代表全部已启用技能，停用技能不进入有效清单。
-- 助手扩展：保留 Pi 包的用户级 / 项目级配置与装载链，不复用文档插件运行时。
-- 工具不直连来源，统一走 URA。
-
-### 8.4 扩展 UI
-
-- 对话框由主进程 DialogHost 管理，overlay 视图渲染；取消 / 超时 / 会话关闭都按取消值结算。
-- 扩展 UI 的编辑器回灌、状态、widget、working message 经视图状态/事件投递到助手视图。
-- 通知进入工作台通知层。
-- TUI 专属能力明确降级为 no-op，不伪装成桌面支持。
-
-## 九、能力形态与扩展
-
-### 9.1 插件
-
-- 插件是唯一可安装形态；一个 zip 一个插件。
-- 清单声明 id / label / icon / page / settings / apiVersion；图标支持语义名或文件。
-- 清单可声明 `skills`：技能目录（含 SKILL.md）随 pi 官方链装载进助手会话；
-  技能可进一步声明 `gen`（格式 + 脚本），成为 `office_gen` 工具该格式的执行入口
-  （插件声明优先，内置 office-gen 技能兜底）。技能装载在会话创建期生效。
-- 页面出口两类，入口与归属不同：`page` 是文档查看器出口，只由资源管道按格式装载
-  （必带文档内容与页面会话）；`settings` 是配置面出口，只由插件入口装载（无文档）。
-- 出口由调用方显式声明：请求哪个出口就给哪个，缺哪个出口报哪个错，不退化成另一个
-  —— 否则插件入口会落到无文档的查看器页面上（空白页）。两个出口都没有的插件仍可
-  注册能力，但不可打开，装载期进诊断。
-- 插件入口只开配置页；没有配置页的插件在列表里不可点（置灰），不提供"点开一个空页面"的入口。
-- 注册入口登记 transport / codec / store / presenter / sidecar / list / view action。
-- 远程必须 `.zip` + `#sha256=`；本地路径原地加载。
-- 可安装清单随源码维护，构建期解析为静态数据；运行期不读写 Markdown。
-- 安装到 App 私有插件目录；运行期安装 / 卸载即时生效：卸载按归属撤销注册面并关闭
-  插件页面；ESM 模块本体留在进程内存，属已知限制。
-- 同 id 重复安装覆盖旧版本；不自动更新。
-- 安装任务由应用拥有，阶段为下载 / 校验 / 安装 / 加载；状态为运行 / 正在取消 / 已取消 / 失败 / 完成。字节与已知总量来自实际下载，其他阶段使用不定进度。
-- 文件落位和安装记录提交为不可中断区；旧版本在提交成功后才清除，提交失败恢复旧文件与记录。恢复不成功时保留恢复材料并报告未确认状态。
-- 已安装和已加载分别报告；加载失败保留安装记录，重试只重新加载。校验失败要求更换来源，不允许直接重复不可信安装包。
-- 取消需要用户确认，等待下载、解压或当前原子步骤返回；不把取消请求当作取消完成。切换页面仍可查看进度，关闭 / 退出前等待任务结算；进度不作为重启续传记录。
-
-### 9.2 设置
-
-- 设置页由主进程能力拥有；页面清单与入口在设置注册表。
-- 每次打开页面时使用逻辑地址（`settings://<id>`），不展示页面源码绝对路径。
-- 页面只走 appBridge 白名单；设置页不再依赖旧命令入口。
-- 项目设置文件随工作区切换更换。
-- 存储设置展示路径时使用 `app/`、`app/workspace/`、`workspace/` 三种根标签。
-- 设置分类为外观、偏好、模型连接、工作区、网站采集、存储、资源诊断与关于更新；能力管理分类为文档插件、技能、助手扩展。
-- 先连接模型供应商，再选择已可用的默认模型；自定义端点和高级配置按需展开。
-- 偏好明确标注应用默认与工作区覆盖，恢复默认 / 继承仅在保存后生效。后台状态刷新不得覆盖未提交表单。
-- 资源诊断读取与资料栏相同的来源投影，展示状态、数量与错误，不构造第二份资源库。
-
-### 9.3 浏览器
-
-- 浏览器旁路 URA：实时视图直接嵌入，快照已 Markdown。
-- 白名单域 = 采集域；域下页面按站点快照进入列表，行上是快照头部的页面标题与 URL，点开即导航到该 URL 的实时视图。
-- 白名单外网页为临时标签，不落盘、不进入资源地图。
-- 导航归属：网页视图内的站内 / 跨站跳转留在本视图（只放行 http/https）；`target=_blank` / `window.open` 在同一浏览器面新开临时标签，同一 URL 复用已有标签。壳层、资源页、插件页与设置页不自行导航，其外链交给系统浏览器。
-- 浏览器自动化工具供 Agent 使用；页面元素标记与快照共享同一结构。
-- 浏览器能力只依赖视图能力暴露的 webContents 入口，不直接操作窗口。
-
-### 9.4 Pi 包与技能
-
-- Pi 包、扩展、技能分别安装与管理；不是 WorkStudio 插件。
-- 包来自 App 私有资源目录；不读取真实工作区 `.pi`。
-- 安装即信任；不引入 project trust。
-- 内置技能随安装包分发：源文件内嵌于主进程产物，启动装配时幂等播种到数据根
-  `skills/`（只补缺失文件，不覆盖用户改动）。
-
-## 十、渲染层
-
-### 10.1 壳层
-
-```text
-┌ TitleBar ──────────────────────────────────────────────┐
-│ 工作区 · 侧栏开关 │ 地址栏 / 工具条 │ 助手 · 主题 · W │
-├ Sidebar ─┬ Resource Panel ──────────────┬ Assistant ──┤
-│ 常驻资料 │ TabsBar + 原生视图内容       │ 已打开会话  │
-│ 来源查找 │ 设置 / 能力的内部分类导航     │ 消息与任务  │
-│ 管理入口 │                              │ 输入区      │
-└──────────┴──────────────────────────────┴─────────────┘
-```
-
-- 标签内容全部由原生视图承载；DOM 只画壳层与空态。
-- 视图集合、布局、外观来自 `/views`、`/layout`、`/appearance` 状态；`/theme` 保留兼容的亮 / 暗投影。
-- 列表按 ListSnapshot 渲染；壳层不复制内容 UI。
-- 地址栏展示逻辑地址或相对路径，不展示本机绝对路径。
-
-### 10.2 助手
-
-- 会话标签独立于资源标签。
-- 输入区支持 slash 命令：补全、tag 化、参数输入、移除。
-- 命令目录来自内置命令 + pi 扩展命令；未知 slash 命令透传 pi。
-- 模型 / 思考档位 / 技能 / 会话操作在输入区工具条内完成。
-- 消息流按用户 / 思考 / 文本 / 工具块渲染；工具结果可折叠。
-- 流式中支持 steer / followUp 队列。
-
-### 10.3 主题与视觉
-
-- 应用级外观包含曜黑（默认纯黑）、石墨、白瓷、雾蓝；固定模式与跟随系统模式互斥，系统模式分别保存浅色 / 深色皮肤。
-- 外观选择和编辑器字号持久化，工作区切换与重启后保留；系统外观变化重新解析有效皮肤。
-- 壳层、内置页面、助手、浮层与编辑器共享语义颜色；新增语义色包含背景、表面、边界、文字、强调、成功、警告与错误。
-- 外部网页和文档预览保持自身配色；第三方页面保留亮 / 暗主题广播，无需采用应用皮肤协议。
-- 键盘焦点清楚可见；对话框圈定并恢复焦点；动态反馈尊重减少动效设置。
-- 标题栏 40px，标签栏 36px，侧栏 15%–30% 窗口宽，收起 56px 图标列。
-- 分隔条只保留 1px 线；不留下白色让位带。
-- 字体使用系统栈；地址与代码使用等宽字体。
-
-## 十一、约束、失败与验收
-
-### 11.1 依赖与边界
-
-- 渲染层不 import 主进程；只走 preload 的 appBridge 契约。
-- 会话运行时不依赖 Electron 界面。
+- 渲染层不 import 主进程；只走 preload 暴露的 workStudio / extension。
+- Domain 不持 Electron / Node 句柄；Modules 不直接改 Views；Infrastructure 不反向依赖业务。
 - 视图管理不碰格式、版本、写队列。
-- service 不直接改视图集合；视图操作只经视图能力路径。
-- repo 不依赖 service 类型；service 不依赖 router。
-- pi SDK 不知道 WorkStudio。
+- 页面无 Node、无裸 IPC；浏览器页不暴露应用 bridge。
 
-### 11.2 失败与降级
+### 13.2 失败与降级
 
-| 失败                     | 处理                                             |
-| ------------------------ | ------------------------------------------------ |
-| 列表 provider 失败       | 该组 `state=error` + diagnostics；其他组继续     |
-| URA 无 codec / presenter | 返回 raw + 明确降级信息                          |
-| 写冲突                   | 工具写入同键串行；页面保存核对基线，冲突保留草稿 |
-| 视图崩溃                 | 只影响该视图；壳层与其他视图继续                 |
-| 扩展异常                 | 记录诊断；不阻断会话                             |
-| 页面未 ready             | 主进程排队投递；超时错误可见                     |
+| 失败                     | 处理                                       |
+| ------------------------ | ------------------------------------------ |
+| 列表 provider 失败       | 该组 error + diagnostics；其他组继续       |
+| URA 无 codec / presenter | 返回 raw + 明确降级信息                    |
+| 写冲突                   | 保留草稿；保存前核对基线；冲突不覆盖原文件 |
+| 视图崩溃                 | 只影响该视图；壳层与其他视图继续           |
+| 插件装载失败             | 保留安装记录；可单独重载；不影响其他插件   |
+| 页面未 ready             | 主进程排队投递；超时错误可见               |
 
-### 11.3 性能与容量
+### 13.3 不变量
 
-- 列表 provider 有返回上限；列表服务截断 / 分页。
-- 会话历史按会话懒加载；状态路径不携带全量消息。
-- URA 扫描有文件数与字节上限；大文件按窗口读。
-- 状态总线合并同一路径的重复发布，只投递最新值。
-
-### 11.4 不变量
-
-- 单写者：业务状态只由对应 service 修改。
-- 单地址：资源、状态、事件共用一棵路径树。
-- 状态全量：每个状态路径保存当前完整值，订阅可回放。
-- 事件增量：事件不负责恢复现场；只做变化提示。
-- 路径隔离：service 不认路径；router 不含业务判断。
-- 释放完备：工作区切换关闭内容视图、页面会话与监听器。
+- 单写者：业务状态只由对应 domain / runtime 修改。
+- 单资源：订阅、命令、推送都以 `(domain, resource)` 为单位。
+- 状态全量：snapshot 是当前完整值；patch 只作用于已订阅资源。
+- 释放完备：工作区切换关闭内容视图、页面会话、监听器与任务。
 - 列表自包含：ListSnapshot 带渲染所需 spec。
-- 地址不泄露：运行期展示不出现完整本机路径。
-- 私有资源根：不读写 `~/.pi` 或真实工作区 `.pi`。
-- 安装即信任：不执行项目目录代码。
+- 地址不泄露：运行期不展示完整本机路径。
+- 安装即信任：不执行项目目录未安装代码。
 
-### 11.5 验收
+### 13.4 验收
 
-**路径与状态**
-
-1. call / watch / emit 使用同一棵路径树，冲突在注册期报错。
-2. watch 立即收到当前状态；重复状态只保留最新值。
-3. 可视图事件经过校验；内部事件不能被视图订阅。
-4. 请求中间件只影响 call，不影响 state / event 出站。
-
-**组合根与工作区**
-
-1. 组合根只负责创建依赖与注册，不写业务。
-2. 工作区切换后旧视图、页面会话、列表与资源监听全部释放。
-3. 工作区切换后 Agent 的 cwd、project 设置与资源根同步更换。
-4. 工作区切换失败不会留下半切换状态。
-
-**列表**
-
-1. 来源在资料栏就地展开；进入能力或设置页后仍能打开资料，名称 / 路径查询正确。
-2. 分组图标 / 色调 / 计数 / 更新时间由快照给出。
-3. 插件注册新列表无需改渲染层。
-4. 单组失败不影响其他组。
-
-**视图**
-
-1. 关闭当前视图后必有有效激活项。
-2. 工作区切换关闭全部内容视图，系统视图保留。
-3. 展开 / 收起 / 拖拽后无白色让位带，分隔线保持 1px。
-4. 对话框只在 overlay 打开时显示，关闭后隐藏。
-5. 地址栏不出现完整本机路径。
-6. 脏页面关闭、重读、批量关闭、工作区切换和退出均可取消；保存失败不得继续销毁页面。
-7. 外部变更不覆盖草稿；冲突保存被拒绝，副本写入其他文件后原草稿保留。
-
-**助手**
-
-1. slash 补全、tag、参数、执行、移除正常。
-2. 流式中 steer / followUp 正常。
-3. 扩展 UI 回灌、状态、widget 正常。
-4. 会话切换后消息与队列正确切换；执行期间切换被阻止。
-5. 模型失败、重试、停止请求和停止确认沿真实事件收敛；停止后输入草稿保留。
-6. 工具成果只在写入确认后出现，打开后可核对，界面不自动声明用户已验收。
-
-**资源**
-
-1. 人 / 页面 / AI 都经 URA；页面无 Node。
-2. 写会话同键串行；外部变更可见。
-3. 资源地图随列表与文件变更更新。
-
-**扩展与设置**
-
-1. 插件 zip 安装、卸载即时生效：列表立现 / 立消，插件页面随卸载关闭。
-2. 设置页全部走 appBridge；不依赖旧命令入口。
-3. 设置页与插件页只走白名单路径。
-4. 设置中的文件路径以 `app/` / `workspace/` 开头展示。
-5. 四套皮肤在全部内置视图同步，重启与工作区切换后保留；网页和文档预览保持自身配色。
-6. 插件下载字节、取消、校验失败、加载失败和重新加载可分别观察；页面切换不丢任务。
-7. 工作区技能开关独立保存，本轮选择不能启用工作区已停用的技能。
-8. 设置范围切换、模型表单保存与离开确认均不丢失其他未提交修改。
+- **通讯**：订阅返回 snapshot；command 有回执；notify 无回执；页面无裸 IPC。
+- **工作区**：切换后旧视图、页面会话、列表、Agent cwd 与 project 设置全部同步；失败不留下半切换状态。
+- **视图**：关闭当前标签后有有效激活项；无标签时欢迎页恢复；新标签有有效几何；地址栏不出现绝对路径。
+- **列表**：provider 注册即出现；单组失败不影响其他组；打开 / 激活 / 脏态与视图集合一致。
+- **资源**：人 / 页面 / Agent 都经 URA；写冲突保留草稿；浏览器页不暴露应用 bridge。
+- **设置**：所有卡片有真实行为；主题只有 light / dark / system；缩放只作用内容视图；未提交表单不被后台刷新覆盖。
+- **Agent**：流式、停止、重试、fork、技能选择沿真实事件收敛；停止后草稿保留；成果不自动声明已验收。
+- **E2E**：共享 case 同时通过 CDP dev 与 Playwright 隔离运行；破坏性 / 重启类用例只在 Playwright 跑。

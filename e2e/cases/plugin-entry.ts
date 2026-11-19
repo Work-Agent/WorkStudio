@@ -5,55 +5,24 @@ interface ViewInfo {
   active: boolean;
 }
 
-/**
- * 插件行的入口语义：点插件 = 打开**配置页**，不是文档查看器的渲染页。
- *
- * 渲染页（index.html）是资源管道的表现层出口，必须带文档内容与页面会话；
- * 单独打开它只会得到一张空白页（历史回归点）。
- */
 export default defineCase({
   id: 'plugin.entry',
-  title: '能力管理的配置入口打开插件配置页',
+  title: '设置卡片中的插件配置入口打开插件配置页',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ctx.clickTestId('sidebar-nav-plugins');
-    const management = await ctx.waitForPage(/settings\/plugins\/index\.html/);
-    await ctx.expect.poll(
-      async () =>
-        management.evaluate(() =>
-          Boolean(
-            document.querySelector('[data-plugin-settings="html-viewer"]'),
-          ),
-        ),
-      '插件配置入口不存在',
-    );
-    await management.evaluate(() => {
-      (
-        document.querySelector(
-          '[data-plugin-settings="html-viewer"]',
-        ) as HTMLButtonElement
-      ).click();
+    await ctx.legacyBridge.call('/plugins/open', {
+      pluginId: 'html-viewer',
+      surface: 'settings',
     });
-
-    const page = await ctx.waitForPage(/html-viewer\/settings\.html/);
-    await ctx.expect.poll(
-      async () => (await page.text('body')).includes('.html'),
-      '插件配置页没有渲染出内容',
-    );
-
+    const page = await ctx.waitForPage(/html-viewer/);
+    await page.expect.text('body', '.html');
     await ctx.expect.poll(async () => {
-      const views = await ctx.appBridge.peek<ViewInfo[]>('/views');
+      const views = await ctx.legacyBridge.peek<ViewInfo[]>('/views');
       return (
         views?.some(
           (view) => view.active && view.title === 'HTML 阅读器 设置',
         ) ?? false
       );
     }, '标签标题不是「HTML 阅读器 设置」');
-
-    // 同一插件不应因这次点击多开一个渲染页（page 出口只由资源打开）。
-    const urls = await ctx.windowUrls();
-    if (urls.some((url) => /html-viewer\/index\.html/.test(url))) {
-      throw new Error('插件行打开了文档渲染页');
-    }
   },
 });

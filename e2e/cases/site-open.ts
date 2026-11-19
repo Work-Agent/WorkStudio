@@ -26,17 +26,17 @@ export default defineCase({
     const title = 'E2E 站点页面';
 
     try {
-      const workspace = await ctx.appBridge.peek<{ id: string }>(
+      const workspace = await ctx.legacyBridge.peek<{ id: string }>(
         '/workspaces/current',
       );
       if (!workspace) throw new Error('workspace not ready');
       const open = `/workspaces/${workspace.id}/sites/web/open`;
 
-      const first = await ctx.appBridge.call<{ viewId: string }>(open, {
+      const first = await ctx.legacyBridge.call<{ viewId: string }>(open, {
         url,
         title,
       });
-      const second = await ctx.appBridge.call<{ viewId: string }>(open, {
+      const second = await ctx.legacyBridge.call<{ viewId: string }>(open, {
         url,
         title,
       });
@@ -47,7 +47,7 @@ export default defineCase({
       }
 
       const views =
-        await ctx.appBridge.peek<
+        await ctx.legacyBridge.peek<
           Array<{ id: string; url: string; title: string }>
         >('/views');
       const view = (views ?? []).find((item) => item.id === first.viewId);
@@ -59,7 +59,7 @@ export default defineCase({
 
       const page = await ctx.waitForPage(new RegExp(String(address.port)));
       await page.expect.text('h1', 'E2E Site');
-      await ctx.appBridge.call(`/views/${first.viewId}/close`);
+      await ctx.legacyBridge.call(`/views/${first.viewId}/close`);
     } finally {
       server.close();
     }

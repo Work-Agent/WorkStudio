@@ -32,13 +32,16 @@ export default defineCase({
     const origin = `http://127.0.0.1:${address.port}`;
 
     try {
-      const workspace = await ctx.appBridge.peek<{ id: string }>(
+      const workspace = await ctx.legacyBridge.peek<{ id: string }>(
         '/workspaces/current',
       );
       if (!workspace) throw new Error('workspace not ready');
-      await ctx.appBridge.call(`/workspaces/${workspace.id}/sites/web/open`, {
-        url: `${origin}/`,
-      });
+      await ctx.legacyBridge.call(
+        `/workspaces/${workspace.id}/sites/web/open`,
+        {
+          url: `${origin}/`,
+        },
+      );
 
       const home = await ctx.waitForPage(new RegExp(String(address.port)));
       await home.expect.text('#page', 'HOME');

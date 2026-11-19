@@ -8,21 +8,23 @@ interface ViewInfo {
 
 export async function hasNext(page: Page): Promise<boolean> {
   return page
-    .evaluate(() => window.appBridge?.available?.().catch(() => false) ?? false)
+    .evaluate(
+      () => window.__e2eBridge?.available?.().catch(() => false) ?? false,
+    )
     .catch(() => false);
 }
 
 export async function currentPath(page: Page): Promise<string | null> {
   return page
     .evaluate(() =>
-      window.appBridge?.peek<{ path: string }>('/workspaces/current'),
+      window.__e2eBridge?.peek<{ path: string }>('/workspaces/current'),
     )
     .then((workspace) => workspace?.path ?? null);
 }
 
 export async function switchWorkspace(page: Page, path: string): Promise<void> {
   await page.evaluate(
-    (target) => window.appBridge?.call('/workspaces/open', { path: target }),
+    (target) => window.__e2eBridge?.call('/workspaces/open', { path: target }),
     path,
   );
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -34,7 +36,7 @@ export async function switchWorkspace(page: Page, path: string): Promise<void> {
 
 export async function openSettings(page: Page, pageId: string): Promise<void> {
   await page.evaluate(
-    (id) => window.appBridge?.call('/settings/open', { pageId: id }),
+    (id) => window.__e2eBridge?.call('/settings/open', { pageId: id }),
     pageId,
   );
 }
@@ -42,10 +44,10 @@ export async function openSettings(page: Page, pageId: string): Promise<void> {
 export async function openResource(page: Page, ref: string): Promise<void> {
   await page.evaluate(async (target) => {
     const id = (
-      await window.appBridge?.peek<{ id: string }>('/workspaces/current')
+      await window.__e2eBridge?.peek<{ id: string }>('/workspaces/current')
     )?.id;
     if (!id) throw new Error('workspace not ready');
-    return window.appBridge?.call(`/workspaces/${id}/resources/pages/open`, {
+    return window.__e2eBridge?.call(`/workspaces/${id}/resources/pages/open`, {
       ref: target,
     });
   }, ref);
@@ -54,10 +56,10 @@ export async function openResource(page: Page, ref: string): Promise<void> {
 export async function openBrowser(page: Page, url: string): Promise<void> {
   await page.evaluate(async (target) => {
     const id = (
-      await window.appBridge?.peek<{ id: string }>('/workspaces/current')
+      await window.__e2eBridge?.peek<{ id: string }>('/workspaces/current')
     )?.id;
     if (!id) throw new Error('workspace not ready');
-    return window.appBridge?.call(`/workspaces/${id}/sites/web/open`, {
+    return window.__e2eBridge?.call(`/workspaces/${id}/sites/web/open`, {
       url: target,
     });
   }, url);
@@ -65,14 +67,15 @@ export async function openBrowser(page: Page, url: string): Promise<void> {
 
 export async function viewList(page: Page): Promise<ViewInfo[]> {
   return (
-    (await page.evaluate(() => window.appBridge?.peek<ViewInfo[]>('/views'))) ??
-    []
+    (await page.evaluate(() =>
+      window.__e2eBridge?.peek<ViewInfo[]>('/views'),
+    )) ?? []
   );
 }
 
 export async function closeView(page: Page, id: string): Promise<void> {
   await page.evaluate(
-    (viewId) => window.appBridge?.call(`/views/${viewId}/close`),
+    (viewId) => window.__e2eBridge?.call(`/views/${viewId}/close`),
     id,
   );
 }

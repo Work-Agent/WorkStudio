@@ -1,4 +1,4 @@
-import type { ViewActionView } from './ura';
+import type { ViewActionView } from './ura.ts';
 // ─── 共享类型（主进程 + 渲染层 + preload 三方共用） ─────────────────
 //
 // 本文件是三端之间的唯一契约面：渲染层只依赖这些类型（不 import 任何进程内模块）。
@@ -190,6 +190,8 @@ export type ParsedBlock =
 /** 从主进程返回的已解析历史消息。 */
 export type ParsedMessage = {
   role: 'user' | 'assistant';
+  /** pi JSONL 消息条目 id；用于从该消息 fork。 */
+  entryId?: string;
   blocks: ParsedBlock[];
 };
 

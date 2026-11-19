@@ -7,8 +7,8 @@ import {
   registerCodec,
   registerPresenter,
   registerSidecar,
-} from '../../main/ura/sdk';
-import { MIME } from '../../shared/ura';
+} from '../../main/modules/ura/sdk.ts';
+import { MIME } from '../../shared/ura.ts';
 import type {
   Change,
   Codec,
@@ -16,7 +16,7 @@ import type {
   Patch,
   Presenter,
   SidecarProvider,
-} from '../../shared/ura';
+} from '../../shared/ura.ts';
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();

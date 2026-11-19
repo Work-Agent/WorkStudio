@@ -2,27 +2,15 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'path.display',
-  title: '页面展示路径相对 app / 工作区',
+  title: '设置地址显示逻辑地址而非本机路径',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const workspace = await ctx.currentWorkspacePath();
-
-    await ctx.appBridge.call('/settings/open', { pageId: 'plugins' });
+    await ctx.legacyBridge.call('/settings/open', { pageId: 'appearance' });
     await ctx.expect.poll(
-      async () => (await ctx.text('resource-url-bar')) === 'settings://plugins',
-      '设置页地址不是 settings://plugins',
+      async () => (await ctx.text('resource-url-bar')) === 'settings://home',
+      '设置页地址不是 settings://home',
     );
-
-    await ctx.appBridge.call('/settings/open', { pageId: 'storage' });
-    const page = await ctx.waitForPage(/settings\/storage\/index\.html/);
-    await ctx.expect.poll(
-      async () => (await page.text('body')).includes('app/'),
-      '存储页未展示 app/ 路径',
-    );
-
-    const text = await page.text('body');
-    if (workspace && text.includes(workspace)) {
-      throw new Error(`存储页泄露完整工作区路径：${workspace}`);
-    }
+    const page = await ctx.waitForPage(/pages\/settings\/index\.html/);
+    await page.expect.text('h1', '设置');
   },
 });

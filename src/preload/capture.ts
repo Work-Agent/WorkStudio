@@ -5,12 +5,20 @@
  * InteractionController；主进程以 screen 光标为权威坐标（本层不换算几何）。
  */
 import { ipcRenderer } from 'electron';
-import { CH_CAPTURE } from '../shared/channels';
+import { CH_CAPTURE } from '../shared/channels.ts';
 
 type CaptureCommand = { type: 'cursor'; cursor: string };
 
-const report = (type: 'move' | 'up' | 'cancel', buttons = 0): void => {
-  ipcRenderer.send(CH_CAPTURE, { type, buttons });
+const report = (
+  type: 'move' | 'up' | 'cancel',
+  buttons = 0,
+  point?: { clientX: number; clientY: number },
+): void => {
+  ipcRenderer.send(CH_CAPTURE, {
+    type,
+    buttons,
+    ...(point ? { clientX: point.clientX, clientY: point.clientY } : {}),
+  });
 };
 
 ipcRenderer.on(CH_CAPTURE, (_e, command: CaptureCommand) => {
@@ -23,7 +31,7 @@ window.addEventListener(
   'pointermove',
   (e) => {
     // 只有主键保持按下才是拖拽；无键移动说明 up 丢了（跨视图序列），按松手收敛。
-    report('move', e.buttons);
+    report('move', e.buttons, e);
   },
   { passive: true },
 );

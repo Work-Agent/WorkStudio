@@ -7,7 +7,7 @@
  *   1. 建窗参数（高度 / 覆盖层配色）
  *   2. 无 WCO 几何信息时的平台兜底留白
  */
-import { TITLEBAR_HEIGHT } from './layout';
+import { TITLEBAR_HEIGHT } from './layout.ts';
 
 /** 标题栏高度（px）——与渲染层 .titlebar 一致（WCO 覆盖层高度 / 兜底高度）。 */
 export { TITLEBAR_HEIGHT };

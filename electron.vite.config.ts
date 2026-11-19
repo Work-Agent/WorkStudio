@@ -1,11 +1,4 @@
-import {
-  cpSync,
-  existsSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { join, resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -16,8 +9,6 @@ import { parsePluginRegistry } from './src/shared/plugin-registry';
 
 const PLUGIN_REGISTRY_ID = 'virtual:plugin-registry';
 const PLUGIN_REGISTRY_FILE = resolve(__dirname, 'PLUGINS.md');
-const PLUGIN_REGISTRY_SLOT =
-  /(<script id="plugin-registry" type="application\/json">)[\s\S]*?(<\/script>)/;
 
 function readPluginRegistry() {
   return parsePluginRegistry(
@@ -47,16 +38,6 @@ function pluginRegistry(): Plugin {
     },
   };
 }
-
-/** 把清单数据内联进插件设置页（源码里保留空槽位，开发时由 IPC 回退）。 */
-function inlinePluginRegistry(html: string): string {
-  const data = JSON.stringify(readPluginRegistry()).replace(/</g, '\\u003c');
-  return html.replace(
-    PLUGIN_REGISTRY_SLOT,
-    (_match, open: string, close: string) => `${open}${data}${close}`,
-  );
-}
-
 /**
  * 内置插件（src/plugins：manifest + 静态页面）不参与打包，直接拷贝到 out/plugins。
  * PluginRegistry 生产环境扫 out/plugins（dev 扫 src/plugins），两处必须同形。
@@ -70,26 +51,6 @@ function copyBuiltinPlugins(): Plugin {
       if (existsSync(from)) {
         rmSync(to, { recursive: true, force: true });
         cpSync(from, to, { recursive: true });
-      }
-      const settingsFrom = resolve(__dirname, 'src/main/capabilities/settings');
-      const settingsTo = resolve(__dirname, 'out/settings');
-      if (existsSync(settingsFrom)) {
-        rmSync(settingsTo, { recursive: true, force: true });
-        for (const entry of readdirSync(settingsFrom, {
-          withFileTypes: true,
-        })) {
-          if (!entry.isDirectory()) continue;
-          cpSync(join(settingsFrom, entry.name), join(settingsTo, entry.name), {
-            recursive: true,
-          });
-        }
-        const page = join(settingsTo, 'plugins', 'index.html');
-        if (existsSync(page)) {
-          const html = readFileSync(page, 'utf-8');
-          const next = inlinePluginRegistry(html);
-          if (next === html) this.warn('plugin registry slot missing in page');
-          else writeFileSync(page, next, 'utf-8');
-        }
       }
       this.info(`copied builtin plugins → ${to}`);
     },
@@ -179,11 +140,9 @@ export default defineConfig({
       outDir: 'out/preload',
       rolldownOptions: {
         input: {
-          workbench: resolve(__dirname, 'src/preload/workbench.ts'),
-          assistant: resolve(__dirname, 'src/preload/assistant.ts'),
+          'work-studio': resolve(__dirname, 'src/preload/work-studio.ts'),
           extension: resolve(__dirname, 'src/preload/extension.ts'),
           browser: resolve(__dirname, 'src/preload/browser.ts'),
-          overlay: resolve(__dirname, 'src/preload/overlay.ts'),
           capture: resolve(__dirname, 'src/preload/capture.ts'),
         },
         output: {
@@ -194,15 +153,23 @@ export default defineConfig({
     },
   },
   renderer: {
-    root: '.',
+    root: resolve(__dirname, 'src/renderer'),
     plugins: [react(), tailwindcss()],
     build: {
-      outDir: 'out/renderer',
+      outDir: resolve(__dirname, 'out/renderer'),
       rolldownOptions: {
         input: {
-          index: resolve(__dirname, 'index.html'),
-          assistant: resolve(__dirname, 'assistant.html'),
-          overlay: resolve(__dirname, 'overlay.html'),
+          shell: resolve(__dirname, 'src/renderer/pages/shell/index.html'),
+          assistant: resolve(
+            __dirname,
+            'src/renderer/pages/assistant/index.html',
+          ),
+          overlay: resolve(__dirname, 'src/renderer/pages/overlay/index.html'),
+          settings: resolve(
+            __dirname,
+            'src/renderer/pages/settings/index.html',
+          ),
+          welcome: resolve(__dirname, 'src/renderer/pages/welcome/index.html'),
         },
       },
     },

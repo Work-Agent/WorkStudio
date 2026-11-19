@@ -1,4 +1,4 @@
-import { startDevRendererServer } from './dev-server';
+import { startDevRendererServer } from './dev-server.ts';
 
 let close: (() => Promise<void>) | null = null;
 

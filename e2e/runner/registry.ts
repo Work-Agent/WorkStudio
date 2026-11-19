@@ -10,6 +10,14 @@ import settingsSidebar from '../cases/settings-sidebar.ts';
 import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
 import viewLifecycle from '../cases/view-lifecycle.ts';
+import welcome from '../cases/welcome.ts';
+import assistantBridge from '../cases/assistant-bridge.ts';
+import settingsModels from '../cases/settings-models.ts';
+import tabsBulk from '../cases/tabs-bulk.ts';
+import resourcesDiagnostics from '../cases/resources-diagnostics.ts';
+import settingsBinding from '../cases/settings-binding.ts';
+import assistantThinking from '../cases/assistant-thinking.ts';
+import settingsAppearance from '../cases/settings-appearance.ts';
 
 export const cases: readonly E2ECase[] = [
   navigation,
@@ -23,6 +31,14 @@ export const cases: readonly E2ECase[] = [
   viewLifecycle,
   pathDisplay,
   pluginEntry,
+  welcome,
+  assistantBridge,
+  settingsModels,
+  tabsBulk,
+  resourcesDiagnostics,
+  settingsBinding,
+  assistantThinking,
+  settingsAppearance,
 ];
 
 export interface CaseFilter {

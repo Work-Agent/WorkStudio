@@ -13,6 +13,7 @@ import {
   type CdpTarget,
 } from './cdp.ts';
 import type { E2EContext, PageHandle } from './contract.ts';
+import { installWorkStudioBridgeShim } from '../support/work-studio-shim.ts';
 
 interface Point {
   x: number;
@@ -218,16 +219,17 @@ function pageHandle(session: CdpSession): PageHandle {
   };
 }
 
-export function createCdpContext(
+export async function createCdpContext(
   shell: CdpSession,
   options: {
     endpoint?: string;
     screenshotPath?: string;
   } = {},
-): E2EContext {
+): Promise<E2EContext> {
   const endpoint = options.endpoint ?? CDP_ENDPOINT;
   const screenshotPath =
     options.screenshotPath ?? '/tmp/work-studio-dev-test-failure.png';
+  await shell.evaluateFunction(installWorkStudioBridgeShim);
 
   const clickSelector = async (selector: string): Promise<void> => {
     const point = await shell.evaluate<Point | null>(pointExpression(selector));
@@ -301,12 +303,12 @@ export function createCdpContext(
       });
     },
     evaluate: (fn) => shell.evaluateFunction(fn),
-    appBridge: {
+    legacyBridge: {
       call: async <T>(path: string, input?: unknown): Promise<T> => {
         const result = await shell.evaluate<
           { ok: true; data: T } | { ok: false; error: { message: string } }
         >(
-          `window.appBridge.call(${JSON.stringify(path)}, ${JSON.stringify(
+          `window.__e2eBridge.call(${JSON.stringify(path)}, ${JSON.stringify(
             input ?? null,
           )})`,
         );
@@ -315,7 +317,7 @@ export function createCdpContext(
       },
       peek: <T>(path: string): Promise<T | null> =>
         shell.evaluate<T | null>(
-          `window.appBridge.peek(${JSON.stringify(path)})`,
+          `window.__e2eBridge.peek(${JSON.stringify(path)})`,
         ),
     },
     expect: {
@@ -407,7 +409,7 @@ export function createCdpContext(
     },
     currentWorkspacePath: async () => {
       const workspace = await shell.evaluate<{ path: string } | null>(
-        `window.appBridge.peek('/workspaces/current')`,
+        `window.__e2eBridge.peek('/workspaces/current')`,
       );
       return workspace?.path ?? null;
     },

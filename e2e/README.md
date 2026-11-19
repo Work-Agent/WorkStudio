@@ -77,7 +77,7 @@ pnpm test:e2e:dev:run e2e/specs/regressions.spec.ts
 
 1. 在 `e2e/cases` 写共享 case，打 `dev` + `ci`；
 2. 若需要冷启动 / 重启 / 数据根隔离，留在 `e2e/specs` 并打 `playwright-only`；
-3. 主路径必须点击真实 UI，不能只调用 `appBridge.call`；
+3. 主路径必须点击真实 UI，不能只调用 legacy 路径垫片；
 4. 断言用户可见结果：标题、页面、文件内容、路径文本；
 5. 写操作使用 `mutating`，dev runner 默认不执行。
 

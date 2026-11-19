@@ -8,7 +8,7 @@
 
 > This document covers the requirements and key modules: why working material scatters across tools, how three claims respond, how the domain model, product shape and overall architecture follow, and finally the extension surfaces, state and communication, and development workflow. It answers why WorkStudio is what it is and how its key modules are designed; implementation details live in the code.
 >
-> The systematic design is in [`docs/architecture.md`](./docs/architecture.md): scopes · data models · contracts · AppHost · lists / views / resources / capabilities · extensions · acceptance. This document covers requirements and key modules; that one is the systematic design; the two do not overlap.
+> The systematic design is in [`docs/architecture.md`](./docs/architecture.md): scopes · data models · contracts · App runtime · lists / views / resources / capabilities · extensions · acceptance. This document covers requirements and key modules; that one is the systematic design; the two do not overlap.
 
 ## Download
 
@@ -148,40 +148,41 @@ Closing, rereading, bulk closing, switching workspaces and quitting protect draf
 
 ## 4. Overall architecture
 
-```
-┌─ Renderer ──────────────────────────────────────────────────────┐
-│ Shell DOM · ListHost · system pages (assistant / overlay / capture) │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ AppSnapshot / AppCommand / AppEvent
-┌─ Assembly / AppHost ──────▼─────────────────────────────────────┐
-│ lifecycle · window · protocol · IPC · command routing            │
-│ active workspace · epoch · snapshot outlet                       │
-└───────────────────────────┬─────────────────────────────────────┘
-┌─ Domain services ─────────▼─────────────────────────────────────┐
-│ ViewHost · UiState · Interaction · EventBridge · SessionAdapter  │
-└───────────────────────────┬─────────────────────────────────────┘
-┌─ Capability layer ────────▼─────────────────────────────────────┐
-│ surfaces: plugins · settings · browser                           │
-│ Agent harness: AgentHost · prompts / AGENTS · skills · tools     │
-└───────────────────────────┬─────────────────────────────────────┘
-┌─ Resource pipeline URA ───▼─────────────────────────────────────┐
-│ transport · codec · store · presenter / sidecar · sessions · map │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ official extension points
-                         pi SDK
+The renderer is a multi-page application: the shell, assistant, overlay, settings and welcome page have independent entries and share the same `window.workStudio` bridge and shared styles. Each page subscribes only to the resources it consumes.
+
+```text
+Renderer pages
+  shell / assistant / overlay / settings / welcome
+        │ window.workStudio
+        │ subscribe / command / notify / onUpdate
+Runtime
+  DomainRegistry · Pipeline · Dispatcher · Views · Providers
+  Native · Layout · Dialogs
+Domains
+  workspaces · resources · settings · updates · lists
+  plugins · sessions · theme · windows · native
+Modules
+  agent · ura · resources · sessions · lists
+  plugins · browser · harness · updates
+Infrastructure
+  net · repo · preferences · paths · logging
+        │ official extension points
+     pi SDK / URA
 ```
 
-- **One system outside, layered inside**: the renderer only faces AppHost; assembly, domain services, capabilities and URA keep their own responsibilities.
-- **Scopes are horizontal ownership**: AppScope owns app-level state; WorkspaceScope owns all data of the active workspace; Session is delegated to pi.
-- **AppHost owns orchestration state**: active workspace, epochs, switching transactions and outlets; it does not absorb lower-layer state.
-- **The capability layer keeps two blocks**: surfaces (plugins · settings · browser) sit side by side by delivery; Agent harness is organised vertically by session. Both share domain services and the pipeline.
-- **List structure lives in App**: groups, row templates, fields and actions are defined by App; data is resolved in the workspace; the renderer uses ListHost against the spec.
-- **Capability boundaries**: document plugins are installed and loaded by the app; assistant extensions retain Pi package user/project scope; skills are enabled per workspace and can be limited for each request.
-- **Resources / pages / skills load by level**: App loads global resources and plugins, the workspace loads workspace resources, the session only activates; all resource directories live under the app-private data directory.
-- **Independent from the pi CLI**: pi runs only as a library; neither `~/.pi` nor the real workspace `.pi` is read.
-- **Config layout**: the data root is pi's agentDir; pi-native config follows pi's layout, project settings and scene live under the app-private workspace directory; view plugins and pi extensions stay separate under `plugins/` and `extensions/`; see [architecture §2.6–2.7](docs/architecture.md#26-存储布局).
-- **One channel**: the renderer only consumes AppSnapshot and only sends AppCommand; events carry scope / epoch.
-- **One-way dependencies**: assembly → domain services → capabilities → URA → pi; lower layers do not know upper layers.
+- **Domain / Resource is the runtime unit**: a domain declares state, commands, subscriptions and pushes; one module per domain. There is no Capability, controller or lifecycle interface.
+- **Runtime owns the framework**: DomainRegistry, Pipeline, Dispatcher, Views, Providers, Native, Layout and Dialogs provide cross-domain mechanics and hold no business state.
+- **Modules own runtime implementations**: agent, URA, resources, sessions, lists, plugins, browser and harness are called by domains.
+- **Infrastructure owns adapters**: network, repositories, preferences, paths and logging are not business domains.
+- **App is the composition root**: it owns process lifecycle, windows, view providers, IPC and runtime assembly.
+- **Views have two layers**: window-level system views (assistant / overlay / capture) and content tabs (resource pages / web) are separate; Views only handles hosting, geometry, visibility and stacking.
+- **Layout / Scene is a window-level contract**: the main process computes layout; dragging only produces a preview. Committing writes the scene, and DOM and native views consume the same geometry.
+- **Lists are a provider pipeline**: documents, sessions, plugins, settings and sites share one provider → snapshot flow; the renderer only consumes snapshots.
+- **Settings is a consumer of domains on one page**: every card expands in place, and update state is its own `updates` domain.
+- **Middleware only handles IPC concerns**: logging, policy and tracing enter the Pipeline; business state never lives in middleware.
+- **Resource pages and the browser are separate**: resource pages use URA transport / codec / presenter; the browser bypasses the pipeline and is navigated directly by the view host.
+- **One communication surface**: the renderer uses `workStudio`; resource and plugin pages expose restricted capabilities through `window.extension`; no raw IPC.
+- **One-way dependencies**: Renderer → workStudio → Runtime / Domains → Modules → Infrastructure → pi SDK / URA.
 
 ## 5. Extension surfaces
 
@@ -433,7 +434,7 @@ Appearance is an app preference that survives workspace changes and restarts. Th
 | **Workspace** | project settings, URA, lists, tab views, UI scene, page/write sessions, session index, browser policy, derived data       | open workspace | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
 | **Session**   | pi runtime, messages, turns, queue, context (resource-map version, AGENTS, skill activation)                              | session        | `sessions/*.jsonl`                                                                |
 
-- **Workspace-level data lists are managed by AppHost**: AppHost creates, replaces and disposes them through WorkspaceManager; WorkspaceScope is only the active instance.
+- **Workspace-level data lists are managed by App runtime**: App runtime creates, replaces and disposes them through WorkspaceManager; WorkspaceScope is only the active instance.
 - **Session truth lives in pi**: switching delegates to pi; WorkStudio keeps only the projection, and skill activation is resolved per session context.
 - **Resources, pages and skills are loading modes**: App loads global resources, the workspace loads workspace resources, the session activates; all directories live under the app-private data directory, never `~/.pi` or the real workspace `.pi`.
 - **Capability scopes**: assistant extensions retain Pi package user/project configuration; skill enablement belongs to a workspace, while the turn selection limits the current request.
@@ -443,18 +444,20 @@ Appearance is an app preference that survives workspace changes and restarts. Th
 
 ### 6.2 Communication
 
-| Channel         | Direction       | Semantics                                                      |
-| --------------- | --------------- | -------------------------------------------------------------- |
-| AppCommand      | renderer → main | `scope + domain.action` → `ok/data` or error                   |
-| AppSnapshot     | main → renderer | `app` / `workspaces` / `workspace` / `ui` / `session` + epochs |
-| AppEvent        | main → renderer | scope + epoch + seq; high-frequency deltas coalesced           |
-| Page data plane | page → main     | whitelisted commands forwarded to the same implementation      |
-| View bus        | bidirectional   | deliver / ready / dirty / commit / actions / theme             |
+| Channel                  | Direction                     | Semantics                                                                  |
+| ------------------------ | ----------------------------- | -------------------------------------------------------------------------- |
+| `workStudio.subscribe`   | renderer → main               | Subscribe `(domain, resource)`, return a snapshot and keep pushing updates |
+| `workStudio.unsubscribe` | renderer → main               | Cancel a subscription                                                      |
+| `workStudio.command`     | renderer → main               | Command with a reply: `ok/data` or an error                                |
+| `workStudio.notify`      | renderer → main               | Command without a reply                                                    |
+| `workStudio.onUpdate`    | main → renderer               | snapshot / patch / event frames                                            |
+| `window.extension`       | resource / plugin page → main | Restricted resource-page commands and content bus                          |
 
-- **Handshake**: `app.sync` returns the full AppSnapshot; subscription precedes the snapshot.
-- **Gaps**: run `app.sync` again; no incremental replay.
-- **Epochs**: workspace / session switches bump epochs; stale events are dropped.
+- **snapshot / patch / event**: subscription returns a full snapshot first; later frames carry only changes. A resource is the smallest unit of subscription and push.
+- **Command acknowledgement**: `command` always returns an `ok` envelope; `notify` does not wait.
+- **Content pages**: resource and plugin pages only expose `window.extension`; internally they use workStudio resource commands and `ws:bus` for content delivery, saving, reloading and actions.
 - **Single writer**: the renderer never mutates main-process state directly; pages have no Node and no raw IPC.
+- **Switch semantics**: a workspace switch releases the old runtime and rebinds the new one; a session switch rebinds the agent runtime, and old subscriptions converge through resource lifecycle.
 
 ## 7. Development
 
@@ -501,16 +504,22 @@ node node_modules/electron/install.js
 
 ```
 ├── src/
-│   ├── main/                 # main process (assembly · domain services · capability layer · URA pipeline)
-│   ├── preload/              # preload scripts (multi-entry contract bridges)
-│   ├── renderer/             # renderer (React + Tailwind)
-│   ├── plugins/              # built-in plugins (shipped with the app)
-│   └── shared/               # types and styles shared by main / renderer
-├── PLUGINS.md                # installable plugin catalog (parsed at build time into main process and settings page)
-├── docs/                     # systematic design (architecture)
-├── index.html                # renderer page template
-├── electron.vite.config.ts   # build config for the three targets (main / preload / renderer)
-├── electron-builder.yml      # packaging config (targets, fuses, signing)
+│   ├── main/
+│   │   ├── app.ts / index.ts      # composition root / Electron entry
+│   │   ├── runtime/               # domains / pipeline / views / native / layout
+│   │   ├── domains/               # business domains
+│   │   ├── modules/               # agent / URA / lists / plugins / resources / sessions / ...
+│   │   └── infrastructure/        # net / repo / preferences / paths / logging
+│   ├── preload/                   # preload contracts for pages and content views
+│   ├── renderer/
+│   │   ├── pages/                 # shell / assistant / overlay / settings / welcome
+│   │   └── shared/                # cross-page API, domains and styles
+│   ├── plugins/                   # built-in plugins (shipped with the app)
+│   └── shared/                    # types and styles shared by main / renderer
+├── PLUGINS.md                     # installable plugin catalog (parsed at build time)
+├── docs/                          # systematic design (architecture)
+├── electron.vite.config.ts        # build config for main / preload / renderer
+├── electron-builder.yml           # packaging config (targets, fuses, signing)
 └── tsconfig.json
 ```
 

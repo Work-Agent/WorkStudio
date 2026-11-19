@@ -1,84 +1,46 @@
 /**
- * 主进程入口：单实例锁、能力/中间件组装与进程生命周期。
+ * Electron 入口：进程生命周期在 App.run()，这里只组装窗口参数。
  */
 
-import { app as electron, dialog, type App as ElectronApp } from 'electron';
-import { App } from './app';
-import { ElectronCapability } from './framework/electron-middleware';
-import { ViewsCapability } from './framework/views-middleware';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { App } from './app.ts';
 
-/**
- * Bootstrap —— 进程生命周期与应用入口。
- *
- *   ① 单实例锁：抢不到直接退出，不碰数据根 / 日志 / 特权 scheme
- *   ② 组装：ElectronCapability + ViewsCapability + App
- *   ③ 进程事件 → App hook；退出拦截 → release → exit
- *   ④ ready → App.start()
- */
-export class Bootstrap {
-  constructor(private readonly electron: ElectronApp) {}
+const here = dirname(fileURLToPath(import.meta.url));
 
-  run(): void {
-    const { electron } = this;
-    if (!electron.requestSingleInstanceLock()) {
-      electron.quit();
-      return;
-    }
-
-    const runtime = new ElectronCapability(electron);
-    const core = App.claim(runtime);
-    core.useCapability(runtime);
-    core.useCapability(new ViewsCapability(runtime));
-    this.wire(core);
-  }
-
-  private wire(core: App): void {
-    const { electron } = this;
-
-    electron.on('second-instance', () => core.activate());
-    electron.on('activate', () => core.activate());
-    electron.on('web-contents-created', (_event, wc) =>
-      core.attachShortcuts(wc),
-    );
-    electron.on('window-all-closed', () => {
-      // macOS 惯例：关窗常驻，由 activate 重开；其它平台直接退出。
-      if (process.platform !== 'darwin') electron.quit();
-    });
-
-    let closing = false;
-    electron.on('before-quit', (event) => {
-      if (closing) return;
-      closing = true;
-      event.preventDefault();
-      void core
-        .prepareClose(true)
-        .then(async (allowed) => {
-          if (!allowed) {
-            closing = false;
-            return;
-          }
-          await core.release();
-          electron.exit(0);
-        })
-        .catch((error) => {
-          closing = false;
-          core.reportFatal(error);
-        });
-    });
-
-    void electron
-      .whenReady()
-      .then(() => core.start())
-      .catch((error: unknown) => {
-        core.reportFatal(error);
-        // 启动失败不能只留日志：否则用户只看到图标跳一下就没了。
-        dialog.showErrorBox(
-          'WorkStudio 启动失败',
-          `${error instanceof Error ? error.message : String(error)}\n\n详情见数据根 logs/boot.log。`,
-        );
-        electron.exit(1);
-      });
-  }
+function rendererPage(
+  page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
+): string {
+  const dir = page === 'index' ? 'shell' : page;
+  const dev = process.env['ELECTRON_RENDERER_URL'];
+  if (dev) return `${dev.replace(/\/+$/, '')}/pages/${dir}/index.html`;
+  return pathToFileURL(
+    join(here, '../renderer/pages', dir, 'index.html'),
+  ).toString();
 }
 
-new Bootstrap(electron).run();
+function shellUrl(): string {
+  return rendererPage('index');
+}
+
+function shellPreload(): string {
+  return join(here, '../preload/work-studio.cjs');
+}
+
+void App.run({
+  url: shellUrl(),
+  window: {
+    webPreferences: { preload: shellPreload() },
+  },
+  capturePreload: join(here, '../preload/capture.cjs'),
+  preloads: {
+    extension: join(here, '../preload/extension.cjs'),
+    browser: join(here, '../preload/browser.cjs'),
+    assistant: join(here, '../preload/work-studio.cjs'),
+    overlay: join(here, '../preload/work-studio.cjs'),
+    settings: join(here, '../preload/work-studio.cjs'),
+  },
+  rendererPage,
+}).catch((error: unknown) => {
+  console.error('[app] failed to start', error);
+});

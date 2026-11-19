@@ -47,7 +47,7 @@ export interface E2EContext {
   press(key: string): Promise<void>;
 
   evaluate<T>(fn: () => T | Promise<T>): Promise<T>;
-  appBridge: {
+  legacyBridge: {
     call<T = unknown>(path: string, input?: unknown): Promise<T>;
     peek<T = unknown>(path: string): Promise<T | null>;
   };

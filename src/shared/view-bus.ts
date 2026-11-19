@@ -1,11 +1,11 @@
-import type { AppearanceSnapshot } from './appearance';
+import type { AppearanceSnapshot } from './appearance.ts';
 /**
  * 视图总线类型化消息（architecture.md §3.3）。
  *
  * 经主进程 ws:bus 双向传递；主进程按 event.sender → viewId 路由。
  */
 
-import type { DocumentContent, DocumentMeta } from './types';
+import type { DocumentContent, DocumentMeta } from './types.ts';
 
 // ─── 主进程 → 视图页 ──────────────────────────────────────
 
