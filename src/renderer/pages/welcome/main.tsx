@@ -9,8 +9,8 @@ function Welcome() {
   const { list, current, open } = useWorkspaces();
   const pickWorkspace = async (): Promise<void> => {
     const path = await command<string | null>(
+      'shell',
       'native',
-      'app',
       'pickDirectory',
       {},
     );

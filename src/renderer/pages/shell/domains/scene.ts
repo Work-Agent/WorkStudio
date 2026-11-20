@@ -13,10 +13,16 @@ export function useScene(): {
   patch(patch: SceneState): void;
 } {
   const wsId = useActiveWorkspaceId();
-  const scene = useResource<SceneState>('scene', wsId ?? 'none', {});
+  const scene = useResource<SceneState>(
+    'shell',
+    wsId ? `scene:${wsId}` : 'none',
+    {},
+  );
   const patch = (next: SceneState): void => {
     if (!wsId) return;
-    void command('scene', wsId, 'patch', next).catch(() => undefined);
+    void command('shell', `scene:${wsId}`, 'patch', next).catch(
+      () => undefined,
+    );
   };
   return { scene: scene ?? {}, patch };
 }

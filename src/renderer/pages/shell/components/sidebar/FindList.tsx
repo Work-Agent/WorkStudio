@@ -42,8 +42,9 @@ export function FindList() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const pattern = query.includes('*') ? query.trim() : `*${query.trim()}*`;
+      const scope = current?.id ? `ws:${current.id}` : 'current';
       setLoading(true);
-      void command<ListEntry[]>('resources', 'current', 'find', {
+      void command<ListEntry[]>('resources', scope, 'find', {
         pattern,
         options: { limit: 200 },
       })
@@ -62,7 +63,7 @@ export function FindList() {
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query]);
+  }, [query, current?.id]);
 
   const rows = useMemo(
     () =>

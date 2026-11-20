@@ -7,7 +7,7 @@ import {
   registerCodec,
   registerPresenter,
   registerSidecar,
-} from '../../main/modules/ura/sdk.ts';
+} from '../../main/domains/workspace/ura/sdk.ts';
 import { MIME } from '../../shared/ura.ts';
 import type {
   Change,

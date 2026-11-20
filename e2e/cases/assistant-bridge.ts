@@ -16,7 +16,7 @@ export default defineCase({
       '助手没有使用 workStudio',
     );
     const skills = await assistant.evaluate(async () => {
-      const value = await window.workStudio.subscribe('settings', 'skills');
+      const value = await window.workStudio.subscribe('skills', 'catalog');
       return Array.isArray(value) ? value.length : -1;
     });
     if (skills < 0) throw new Error('技能资源不可用');

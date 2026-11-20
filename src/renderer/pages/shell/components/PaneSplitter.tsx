@@ -55,13 +55,15 @@ function beginPaneDrag(
     pointerX: e.clientX,
     pointerY: e.clientY,
   };
-  void command('layout', wsId, 'begin', begin).catch(() => undefined);
+  void command('shell', `layout:${wsId}`, 'begin', begin).catch(
+    () => undefined,
+  );
   let frame = 0;
   const onMove = (event: MouseEvent): void => {
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      void command('layout', wsId, 'move', {
+      void command('shell', `layout:${wsId}`, 'move', {
         ...begin,
         pointerX: event.clientX,
         pointerY: event.clientY,
@@ -69,7 +71,9 @@ function beginPaneDrag(
     });
   };
   const onUp = (): void => {
-    void command('layout', wsId, 'end', begin).catch(() => undefined);
+    void command('shell', `layout:${wsId}`, 'end', begin).catch(
+      () => undefined,
+    );
     cleanup();
   };
   const cleanup = (): void => {

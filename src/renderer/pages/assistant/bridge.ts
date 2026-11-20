@@ -17,7 +17,7 @@ const fail = (message: string): CommandResponse<never> => ({
 
 async function workspaceId(): Promise<string> {
   if (!next) throw new Error('workStudio unavailable');
-  const state = (await next.subscribe('windows', 'list')) as {
+  const state = (await next.subscribe('shell', 'windows')) as {
     activeWsId: string | null;
   };
   if (!state?.activeWsId) throw new Error('workspace is not ready');
@@ -85,22 +85,26 @@ async function assistantCommand(
     case 'agent.setModel':
       return command('sessions', 'current', 'setModel', input);
     case 'agent.setThinking':
-      return command('sessions', 'current', 'setThinking', input);
-    case 'agent.thinkingLevels':
-      return ok((await next.subscribe('sessions', 'thinking')) ?? []);
+      return command('thinking', 'current', 'set', input);
+    case 'agent.thinkingLevels': {
+      const state = (await next.subscribe('thinking', 'current')) as {
+        levels?: string[];
+      } | null;
+      return ok(state?.levels ?? []);
+    }
     case 'agent.status':
       return ok((await next.subscribe('sessions', 'current')) ?? null);
     case 'skills.list':
-      return ok((await next.subscribe('settings', 'skills')) ?? []);
+      return ok((await next.subscribe('skills', 'catalog')) ?? []);
     case 'skills.setActive':
-      return command('sessions', 'skills', 'setActive', {
+      return command('skills', 'active', 'setActive', {
         names: Array.isArray(input['names']) ? input['names'] : [],
       });
     case 'ui.set': {
       const patch = (input['patch'] ?? {}) as Record<string, unknown>;
       const wsId = await workspaceId();
       if (typeof patch['theme'] === 'string') {
-        await command('theme', 'current', 'set', patch['theme']);
+        await command('shell', 'theme', 'set', patch['theme']);
       }
       const scene: Record<string, unknown> = {};
       for (const key of [
@@ -113,7 +117,7 @@ async function assistantCommand(
         if (key in patch) scene[key] = patch[key];
       }
       if (Object.keys(scene).length > 0) {
-        await command('scene', wsId, 'patch', scene);
+        await command('shell', `scene:${wsId}`, 'patch', scene);
       }
       return ok(null);
     }
@@ -141,22 +145,32 @@ export const bridge = next
             pointerY: input.anchor?.y ?? 0,
           };
           const wsId = await workspaceId();
-          const result = await command('layout', wsId, 'begin', lastInput);
+          const result = await command(
+            'shell',
+            `layout:${wsId}`,
+            'begin',
+            lastInput,
+          );
           return { ok: result.ok };
         },
         async move(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('layout', wsId, 'move', lastInput);
+          const result = await command(
+            'shell',
+            `layout:${wsId}`,
+            'move',
+            lastInput,
+          );
           return { ok: result.ok };
         },
         async end(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('layout', wsId, 'end');
+          const result = await command('shell', `layout:${wsId}`, 'end');
           return { ok: result.ok };
         },
         async cancel(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('layout', wsId, 'cancel');
+          const result = await command('shell', `layout:${wsId}`, 'cancel');
           return { ok: result.ok };
         },
       },
@@ -164,8 +178,8 @@ export const bridge = next
         items: Array<{ id: string; label: string; disabled?: boolean }>;
       }): Promise<string | null> {
         const result = await command<string | null>(
+          'shell',
           'native',
-          'app',
           'popupMenu',
           {
             items: input.items,

@@ -10,7 +10,7 @@ const EMPTY: WindowState = { activeWsId: null, count: 0, list: [] };
 
 export function useActiveWorkspaceId(): string | null {
   return (
-    useResource<WindowState | null>('windows', 'list', EMPTY)?.activeWsId ??
+    useResource<WindowState | null>('shell', 'windows', EMPTY)?.activeWsId ??
     null
   );
 }

@@ -156,33 +156,34 @@ Renderer pages
         │ window.workStudio
         │ subscribe / command / notify / onUpdate
 Runtime
-  DomainRegistry · Pipeline · Dispatcher · Views · Providers
-  Native · Layout · Dialogs
+  DomainRegistry · Dispatcher · 日志 / 存储 / 网络适配
 Domains
-  workspaces · resources · settings · updates · lists
-  plugins · sessions · theme · windows · native
-Modules
-  agent · ura · resources · sessions · lists
-  plugins · browser · harness · updates
-Infrastructure
-  net · repo · preferences · paths · logging
+  workspaces · resources · lists · plugins
+  shell · settings
+  sessions · models · skills · thinking · extensions · tools · prompts · themes
+Domain modules
+  workspace：工作区生命周期组合（workspaces + resources + lists + plugins）
+  shell / settings / agent
+Agent Layer
+  pi runtime · harness · tools · 会话持久化
         │ 官方扩展点
      pi SDK / URA
 ```
 
-- **Domain / Resource 是运行单位**：domain 只声明状态、命令、订阅与推送；每个 domain 一个模块，不再有 Capability、controller 或生命周期接口。
-- **Runtime 管框架**：DomainRegistry、Pipeline、Dispatcher、Views、Providers、Native、Layout、Dialogs 只处理跨领域机制，不承载业务状态。
-- **Modules 管运行时**：Agent、URA、资源、会话、列表、插件、浏览器、harness 是实现层，由 domain 调用。
-- **Infrastructure 管适配**：网络、仓储、偏好、路径、日志不暴露成业务 domain。
-- **App 是组合根**：负责进程生命周期、窗口、视图 provider、IPC 与各运行时的装配。
+- **Domain / Resource 是运行单位**：domain 按能力拆分（workspaces / resources / lists / plugins / shell / settings，以及 agent 下的 sessions / models / skills / thinking / extensions / tools / prompts / themes），只声明状态、命令、订阅与推送；生命周期按依赖合并为 workspace / shell / settings / agent 四个 DomainModule，不再有 Capability、controller 或单独的生命周期接口。
+- **工作区是 scope，不是 domain**：workspace-scoped resource 用 `ws:<wsId>` 作为资源路径条件（如 `resources/ws:<wsId>`、`lists/ws:<wsId>`）；内容页保留 `resources/current` 作为当前工作区别名。
+- **Runtime 管框架**：DomainRegistry、Dispatcher 与存储 / 日志 / 网络适配只处理跨领域机制，不承载业务状态。
+- **DomainModule 拥有实现**：workspace module 管理资源 / URA / 列表 / 插件；shell 管理窗口 / 视图 / 布局 / 主题；settings 管理设置 / 更新；Agent 引擎在独立 Agent Layer，由 AgentDomain 持有，并拆成 sessions / models / skills / thinking / extensions / tools / prompts / themes 域。
+- **依赖显式排序**：DomainModule 声明 `dependencies`，DomainRegistry 按拓扑序 start、反向 stop；不引入 DI 容器。
+- **App 是组合根**：只负责进程生命周期、窗口、视图 provider、IPC 与四个 DomainModule 的装配。
 - **视图分两层**：窗口级系统视图（助手 / 浮层 / 捕获层）与内容标签（资源页 / 网页）分离；Views 只做承载、几何、显隐与栈序。
 - **Layout / Scene 是窗口级契约**：布局由主进程计算，拖拽只是临时 preview；提交后写 scene，DOM 与原生视图消费同一份几何。
 - **Lists 是 provider 管道**：文档、会话、插件、设置、站点等列表走同一个 provider → snapshot 流程，渲染层只消费快照。
-- **Settings 是单页 domain 消费方**：所有卡片在一个页面内展开，更新状态独立为 `updates` domain。
-- **Middleware 只做 IPC 横切**：日志、策略、追踪等跨请求逻辑进入 Pipeline；业务状态不进 middleware。
+- **Settings 是单页 domain 消费方**：所有卡片在一个页面内展开，更新状态是 `settings` domain 的 `updates` resource。
+- **IPC 日志内建**：Dispatcher 直接记录请求地址、来源、耗时与结果；不引入 middleware，也不记录 input。
 - **资源页与浏览器分开**：资源页走 URA 的 transport / codec / presenter；浏览器页整段旁路，直接由视图宿主导航。
 - **单一通讯面**：渲染层只使用 `workStudio`，资源页 / 插件页通过 `window.extension` 暴露受限能力；不暴露裸 IPC。
-- **依赖单向**：Renderer → workStudio → Runtime / Domains → Modules → Infrastructure → pi SDK / URA。
+- **依赖单向**：Renderer → workStudio → Runtime / Domains → Agent Layer / URA → pi SDK。
 
 ## 五、能力扩展
 
@@ -505,10 +506,9 @@ node node_modules/electron/install.js
 ├── src/
 │   ├── main/
 │   │   ├── app.ts / index.ts      # 组合根 / Electron 入口
-│   │   ├── runtime/               # 框架：domains / pipeline / views / native / layout
-│   │   ├── domains/               # 业务 domain
-│   │   ├── modules/               # agent / URA / lists / plugins / resources / sessions / ...
-│   │   └── infrastructure/        # net / repo / preferences / paths / logging
+│   │   ├── runtime/               # DomainRegistry / Dispatcher / storage / log / net
+│   │   ├── domains/               # workspaces / resources / lists / plugins / shell / settings / agent
+│   │   └── agent/                 # Agent Layer：pi runtime / harness / tools / sessions
 │   ├── preload/                   # 多页面与内容视图的 preload 契约
 │   ├── renderer/
 │   │   ├── pages/                 # shell / assistant / overlay / settings / welcome

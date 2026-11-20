@@ -18,6 +18,7 @@ import tabsCloseOthers from '../cases/tabs-close-others.ts';
 import resourcesDiagnostics from '../cases/resources-diagnostics.ts';
 import settingsBinding from '../cases/settings-binding.ts';
 import assistantThinking from '../cases/assistant-thinking.ts';
+import agentResources from '../cases/agent-resources.ts';
 import settingsAppearance from '../cases/settings-appearance.ts';
 
 export const cases: readonly E2ECase[] = [
@@ -40,6 +41,7 @@ export const cases: readonly E2ECase[] = [
   resourcesDiagnostics,
   settingsBinding,
   assistantThinking,
+  agentResources,
   settingsAppearance,
 ];
 

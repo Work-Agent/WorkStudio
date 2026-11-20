@@ -222,8 +222,6 @@ const ICONS: Record<string, LucideIcon> = {
   'folder-tree': FolderOpen,
 };
 
-const SIZES = [14, 15, 16, 18];
-
 function useResource<T>(domain: string, resource: string, initial: T): T {
   const [value, setValue] = useState<T>(initial);
   useEffect(() => {
@@ -475,7 +473,12 @@ function WorkspacesCard() {
     null,
   );
   const openDirectory = async (): Promise<void> => {
-    const path = await run<string | null>('native', 'app', 'pickDirectory', {});
+    const path = await run<string | null>(
+      'shell',
+      'native',
+      'pickDirectory',
+      {},
+    );
     if (path) await run('workspaces', 'list', 'open', { path });
   };
   return (
@@ -515,7 +518,9 @@ function WorkspacesCard() {
             </Button>
             <Button
               onClick={() =>
-                void run('native', 'app', 'openPath', { path: workspace.path })
+                void run('shell', 'native', 'openPath', {
+                  path: workspace.path,
+                })
               }
             >
               打开目录
@@ -704,7 +709,9 @@ function PluginsCard() {
                 disabled={busy}
                 onClick={() =>
                   void act(() =>
-                    run('plugins', 'list', 'reload', { source: item.source }),
+                    run('plugins', 'list', 'reload', {
+                      source: item.source,
+                    }),
                   )
                 }
               >
@@ -714,7 +721,9 @@ function PluginsCard() {
                 disabled={busy}
                 onClick={() =>
                   void act(() =>
-                    run('plugins', 'list', 'remove', { source: item.source }),
+                    run('plugins', 'list', 'remove', {
+                      source: item.source,
+                    }),
                   )
                 }
               >
@@ -837,7 +846,7 @@ function SessionsCard() {
 }
 
 function ModelsCard() {
-  const models = useResource<ModelsView>('settings', 'models', {
+  const models = useResource<ModelsView>('models', 'config', {
     providers: [],
     catalog: [],
     config: { providers: {} },
@@ -856,13 +865,13 @@ function ModelsCard() {
     if (provider.canApiKeyLogin) {
       const apiKey = window.prompt(`输入 ${provider.name} 的 API Key`);
       if (!apiKey) return;
-      await run('settings', 'models', 'login', {
+      await run('models', 'config', 'login', {
         providerId: provider.id,
         type: 'api_key',
         apiKey,
       });
     } else if (provider.canOAuthLogin) {
-      await run('settings', 'models', 'login', {
+      await run('models', 'config', 'login', {
         providerId: provider.id,
         type: 'oauth',
       });
@@ -887,7 +896,7 @@ function ModelsCard() {
           <Button
             disabled={!providerId.trim() || !baseUrl.trim()}
             onClick={() =>
-              void run('settings', 'models', 'saveProvider', {
+              void run('models', 'config', 'saveProvider', {
                 providerId: providerId.trim(),
                 config: { baseUrl: baseUrl.trim() },
               }).then(() => {
@@ -923,7 +932,7 @@ function ModelsCard() {
           <Button
             disabled={!modelProvider.trim() || !modelId.trim()}
             onClick={() =>
-              void run('settings', 'models', 'saveModel', {
+              void run('models', 'config', 'saveModel', {
                 providerId: modelProvider.trim(),
                 model: {
                   id: modelId.trim(),
@@ -951,7 +960,7 @@ function ModelsCard() {
                   </span>
                   <Button
                     onClick={() =>
-                      void run('settings', 'models', 'deleteModel', {
+                      void run('models', 'config', 'deleteModel', {
                         providerId: provider,
                         modelId: model.id,
                       })
@@ -984,7 +993,7 @@ function ModelsCard() {
               {!provider.builtin && (
                 <Button
                   onClick={() =>
-                    void run('settings', 'models', 'deleteProvider', {
+                    void run('models', 'config', 'deleteProvider', {
                       providerId: provider.id,
                     })
                   }
@@ -995,7 +1004,7 @@ function ModelsCard() {
               {provider.configured ? (
                 <Button
                   onClick={() =>
-                    void run('settings', 'models', 'logout', {
+                    void run('models', 'config', 'logout', {
                       providerId: provider.id,
                     })
                   }
@@ -1061,7 +1070,7 @@ function ModelsCard() {
 }
 
 function SkillsCard() {
-  const skills = useResource<SkillView[]>('settings', 'skills', []);
+  const skills = useResource<SkillView[]>('skills', 'catalog', []);
   const [diagnostics, setDiagnostics] = useState<
     Array<{ type: string; message: string; path?: string }>
   >([]);
@@ -1071,15 +1080,15 @@ function SkillsCard() {
         <Button
           onClick={() =>
             void run<Array<{ type: string; message: string; path?: string }>>(
-              'settings',
               'skills',
+              'catalog',
               'diagnostics',
             ).then(setDiagnostics)
           }
         >
           诊断
         </Button>
-        <Button onClick={() => void run('settings', 'skills', 'reload')}>
+        <Button onClick={() => void run('skills', 'catalog', 'reload')}>
           重新装载
         </Button>
       </div>
@@ -1115,7 +1124,7 @@ function SkillsCard() {
                 {skill.pluginId && skill.pluginId !== 'builtin' && (
                   <Button
                     onClick={() =>
-                      void run('settings', 'skills', 'openPlugin', {
+                      void run('skills', 'catalog', 'openPlugin', {
                         pluginId: skill.pluginId,
                       })
                     }
@@ -1125,7 +1134,7 @@ function SkillsCard() {
                 )}
                 <Button
                   onClick={() =>
-                    void run('settings', 'skills', 'setEnabled', {
+                    void run('skills', 'catalog', 'setEnabled', {
                       name: skill.name,
                       enabled: skill.enabled === false,
                     })
@@ -1244,7 +1253,13 @@ function BrowserCard() {
 }
 
 function ResourcesCard() {
-  const state = useResource<ResourceState>('resources', 'current', {
+  const workspace = useResource<WorkspaceMeta | null>(
+    'workspaces',
+    'current',
+    null,
+  );
+  const scope = workspace?.id ? `ws:${workspace.id}` : 'current';
+  const state = useResource<ResourceState>('resources', scope, {
     workspaceId: null,
     ready: false,
     pages: [],
@@ -1253,7 +1268,7 @@ function ResourcesCard() {
   return (
     <Panel>
       <div className="mb-2 flex justify-end">
-        <Button onClick={() => void run('resources', 'current', 'refresh')}>
+        <Button onClick={() => void run('resources', scope, 'refresh')}>
           刷新
         </Button>
       </div>
@@ -1277,7 +1292,7 @@ function ResourcesCard() {
               <span className="shrink-0 text-zinc-400">{page.surface}</span>
               <Button
                 onClick={() =>
-                  void run('resources', 'current', 'closePage', {
+                  void run('resources', scope, 'closePage', {
                     pageId: page.id,
                   })
                 }
@@ -1598,7 +1613,7 @@ function ExtensionsCard() {
 }
 
 function UpdatesCard() {
-  const status = useResource<UpdateView>('updates', 'status', {
+  const status = useResource<UpdateView>('settings', 'updates', {
     phase: 'idle',
     current: '',
     latest: null,
@@ -1654,36 +1669,28 @@ function UpdatesCard() {
       <div className="flex justify-end gap-2">
         <Button
           disabled={status.phase === 'checking'}
-          onClick={() => void run('updates', 'status', 'check')}
+          onClick={() => void run('settings', 'updates', 'check')}
         >
           检查更新
         </Button>
         <Button
           disabled={status.phase === 'downloading' || !status.latest}
-          onClick={() => void run('updates', 'status', 'download')}
+          onClick={() => void run('settings', 'updates', 'download')}
         >
           下载安装包
         </Button>
         <Button
           disabled={!status.file}
-          onClick={() => void run('updates', 'status', 'open')}
+          onClick={() => void run('settings', 'updates', 'open')}
         >
           打开安装包
         </Button>
         {status.phase === 'downloading' && (
-          <Button onClick={() => void run('updates', 'status', 'cancel')}>
+          <Button onClick={() => void run('settings', 'updates', 'cancel')}>
             取消下载
           </Button>
         )}
       </div>
-    </Panel>
-  );
-}
-
-function Placeholder({ text }: { text: string }) {
-  return (
-    <Panel>
-      <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{text}</p>
     </Panel>
   );
 }

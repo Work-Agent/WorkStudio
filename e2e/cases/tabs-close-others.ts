@@ -51,20 +51,29 @@ export default defineCase({
       const ws = (await bridge.subscribe('workspaces', 'current')) as {
         id: string;
       };
-      const before = (await bridge.subscribe('tabs', ws.id)) as TabList;
+      const before = (await bridge.subscribe(
+        'shell',
+        `tabs:${ws.id}`,
+      )) as TabList;
       const anchor = before.list.find((view) => view.type === 'web');
       if (!anchor) throw new Error('网页标签不存在');
 
       // 未知锚点：不允许退化成关闭全部
-      await bridge.command('tabs', ws.id, 'closeOthers', ws.id);
-      const afterUnknown = (await bridge.subscribe('tabs', ws.id)) as TabList;
+      await bridge.command('shell', `tabs:${ws.id}`, 'closeOthers', ws.id);
+      const afterUnknown = (await bridge.subscribe(
+        'shell',
+        `tabs:${ws.id}`,
+      )) as TabList;
       if (afterUnknown.list.length !== before.list.length) {
         throw new Error('未知锚点误删了标签');
       }
 
       // 正确锚点：只保留它并激活
-      await bridge.command('tabs', ws.id, 'closeOthers', anchor.id);
-      const after = (await bridge.subscribe('tabs', ws.id)) as TabList;
+      await bridge.command('shell', `tabs:${ws.id}`, 'closeOthers', anchor.id);
+      const after = (await bridge.subscribe(
+        'shell',
+        `tabs:${ws.id}`,
+      )) as TabList;
       if (after.list.length !== 1 || after.list[0]?.id !== anchor.id) {
         throw new Error(
           `关闭其他未保留锚点：${after.list.map((view) => view.id).join(',')}`,

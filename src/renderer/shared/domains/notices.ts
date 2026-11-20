@@ -43,7 +43,7 @@ export function useNotices(): void {
       message: string;
       source?: string;
     }>
-  >('notices', 'list', []);
+  >('shell', 'notices', []);
   const seen = useRef(new Set<string>());
   useEffect(() => {
     for (const notice of notices) {

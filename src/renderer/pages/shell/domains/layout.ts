@@ -4,5 +4,9 @@ import { useActiveWorkspaceId } from './windows.ts';
 
 export function useLayout(): LayoutSnapshot | null {
   const wsId = useActiveWorkspaceId();
-  return useResource<LayoutSnapshot | null>('layout', wsId ?? 'none', null);
+  return useResource<LayoutSnapshot | null>(
+    'shell',
+    wsId ? `layout:${wsId}` : 'none',
+    null,
+  );
 }

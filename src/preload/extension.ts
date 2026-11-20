@@ -109,11 +109,6 @@ async function wsCommand<T>(
   return result.data as T;
 }
 
-async function wsSubscribe<T>(domain: string, resource: string): Promise<T> {
-  const result = await ipcRenderer.invoke(WS_SUBSCRIBE, domain, resource);
-  return result as T;
-}
-
 async function pageCall<T = unknown>(
   suffix: string,
   input?: unknown,
@@ -206,21 +201,6 @@ function applyRoots(
     workspace?.path ?? storage?.workspacePath ?? pathRoots.workspacePath;
   pathRoots.workspaceId =
     workspace?.id ?? storage?.workspaceId ?? pathRoots.workspaceId;
-}
-
-async function refreshPathRoots(): Promise<void> {
-  try {
-    const [storage, workspace] = await Promise.all([
-      wsSubscribe<{ dataRoot?: string; appPath?: string }>(
-        'settings',
-        'storage',
-      ),
-      wsSubscribe<{ id?: string; path?: string }>('workspaces', 'current'),
-    ]);
-    applyRoots(storage, workspace);
-  } catch {
-    /* keep previous roots */
-  }
 }
 
 ipcRenderer.on(WS_UPDATE, (_event, update: unknown) => {

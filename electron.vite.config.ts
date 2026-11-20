@@ -1,5 +1,5 @@
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'fs';
-import { join, resolve } from 'path';
+import { cpSync, existsSync, readFileSync, rmSync } from 'fs';
+import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
