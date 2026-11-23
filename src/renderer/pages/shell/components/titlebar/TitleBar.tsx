@@ -12,6 +12,7 @@ import {
   Settings,
   Sparkles,
   Sun,
+  UserRoundKey,
 } from 'lucide-react';
 import { command } from '../../../../shared/api/bridge.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
@@ -40,6 +41,17 @@ export function TitleBar() {
       notifyError(
         error instanceof Error ? error.message : String(error),
         'settings',
+      );
+    }
+  };
+
+  const openWelcome = async (): Promise<void> => {
+    try {
+      await command('settings', 'pages', 'open', { pageId: 'welcome' });
+    } catch (error) {
+      notifyError(
+        error instanceof Error ? error.message : String(error),
+        'welcome',
       );
     }
   };
@@ -96,12 +108,14 @@ export function TitleBar() {
             <Moon className="w-4 h-4" />
           )}
         </button>
-        <div
-          title="Work Studio"
-          className="ml-1 h-7 w-7 rounded-full flex items-center justify-center bg-[#4F6BED] text-white text-[12px] font-semibold"
+        <button
+          onClick={() => void openWelcome()}
+          data-testid="titlebar-welcome"
+          title="Work Studio · 工作台首页"
+          className="ml-1 h-7 w-7 rounded-full flex items-center justify-center bg-[#4F6BED] text-white text-[12px] font-semibold hover:bg-[#3D56E0] transition-colors"
         >
-          W
-        </div>
+          <UserRoundKey className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

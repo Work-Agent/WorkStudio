@@ -6,16 +6,16 @@ WorkStudio 是以文件为中心的桌面工作台（Electron）：主进程持�
 
 ## 常用命令
 
-| 任务 | 命令 |
-| --- | --- |
-| 安装 | `pnpm install`（Electron 二进制由 postinstall 下载） |
-| 开发 | `pnpm dev`（Vite HMR） |
-| 编译 | `pnpm build`（产物到 `out/`，不打包） |
-| 类型检查 | `pnpm typecheck` |
-| Lint | `pnpm lint`（oxlint + oxfmt --check）；修复用 `pnpm lint:fix` |
-| CI 同款检查 | `pnpm verify` = typecheck → lint → build |
+| 任务        | 命令                                                          |
+| ----------- | ------------------------------------------------------------- |
+| 安装        | `pnpm install`（Electron 二进制由 postinstall 下载）          |
+| 开发        | `pnpm dev`（Vite HMR）                                        |
+| 编译        | `pnpm build`（产物到 `out/`，不打包）                         |
+| 类型检查    | `pnpm typecheck`                                              |
+| Lint        | `pnpm lint`（oxlint + oxfmt --check）；修复用 `pnpm lint:fix` |
+| CI 同款检查 | `pnpm verify` = typecheck → lint → build                      |
 
-**改完代码（非纯 `docs/**` / `*.md`）必须跑 `pnpm verify`，不通过不提交、不宣称完成**；格式问题先 `pnpm lint:fix`。失败若确认与本次改动无关，回复里指出是哪一步、什么错误。
+**改完代码（非纯 `docs/**`/`\*.md`）必须跑 `pnpm verify`，不通过不提交、不宣称完成**；格式问题先 `pnpm lint:fix`。失败若确认与本次改动无关，回复里指出是哪一步、什么错误。
 
 环境：Node ≥ 22.12，pnpm ≥ 12。中国大陆网络下载 Electron 慢可设镜像（`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）或代理，`pnpm install` 前生效；二进制缺失（`node_modules/electron/path.txt` 为空）补跑 `node node_modules/electron/install.js`。
 
@@ -55,12 +55,12 @@ pnpm test:e2e:dev e2e/specs/shared.spec.ts  # renderer 走 Vite dev server
 
 ### 主进程四层（`src/main/`，依赖单向向下）
 
-| 层 | 位置 | 职责 |
-| --- | --- | --- |
-| Runtime | `src/main/runtime/` | DomainRegistry · Pipeline · Dispatcher · Views · Providers · Native · Layout · Dialogs——跨领域机制，不承载业务状态 |
-| Domains | `src/main/domains/` | 业务状态、命令、订阅与推送；一个 domain 一个文件 |
-| Modules | `src/main/modules/` | 实现层（agent · ura · resources · sessions · lists · plugins · browser · harness · updates 等），由 domain 调用 |
-| Infrastructure | `src/main/infrastructure/` | net · repo · preferences · paths · logging 适配层 |
+| 层             | 位置                       | 职责                                                                                                               |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Runtime        | `src/main/runtime/`        | DomainRegistry · Pipeline · Dispatcher · Views · Providers · Native · Layout · Dialogs——跨领域机制，不承载业务状态 |
+| Domains        | `src/main/domains/`        | 业务状态、命令、订阅与推送；一个 domain 一个文件                                                                   |
+| Modules        | `src/main/modules/`        | 实现层（agent · ura · resources · sessions · lists · plugins · browser · harness · updates 等），由 domain 调用    |
+| Infrastructure | `src/main/infrastructure/` | net · repo · preferences · paths · logging 适配层                                                                  |
 
 `src/main/app.ts` 是组合根：装配 domain / provider / IPC / 窗口与进程生命周期。没有 Capability 类、controller 或生命周期接口。Domain 不持 Electron / Node 句柄；Infrastructure 不反向依赖业务；渲染层不 import 主进程。
 
