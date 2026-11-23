@@ -11,7 +11,9 @@ export default defineCase({
   tags: ['dev', 'ci'],
   async run(ctx) {
     await ctx.legacyBridge.call('/settings/open', { pageId: 'appearance' });
-    await ctx.waitForPage(/pages\/settings\/index\.html/);
+    await ctx.waitForPage(
+      /^(work:\/\/studio\/settings|.*pages\/settings\/index\.html)/,
+    );
 
     await ctx.expect.poll(async () => {
       const views = await ctx.legacyBridge.peek<ViewInfo[]>('/views');

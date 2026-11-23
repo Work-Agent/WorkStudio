@@ -6,7 +6,9 @@ export default defineCase({
   tags: ['dev', 'ci'],
   async run(ctx) {
     await ctx.legacyBridge.call('/settings/open', { pageId: 'resources' });
-    const page = await ctx.waitForPage(/pages\/settings\/index\.html/);
+    const page = await ctx.waitForPage(
+      /^(work:\/\/studio\/settings|.*pages\/settings\/index\.html)/,
+    );
     await ctx.expect.poll(async () => {
       const state = (await page.evaluate(async () => {
         const workspace = (await window.workStudio.subscribe(

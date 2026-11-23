@@ -6,7 +6,9 @@ export default defineCase({
   tags: ['dev', 'ci', 'mutating'],
   async run(ctx) {
     await ctx.legacyBridge.call('/settings/open', { pageId: 'preferences' });
-    const page = await ctx.waitForPage(/pages\/settings\/index\.html/);
+    const page = await ctx.waitForPage(
+      /^(work:\/\/studio\/settings|.*pages\/settings\/index\.html)/,
+    );
     const mime = 'text/x-e2e-binding';
     await page.evaluate(async () => {
       await window.workStudio.command('settings', 'advanced', 'setBinding', {

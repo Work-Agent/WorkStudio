@@ -4,7 +4,7 @@
  * electron-vite 产出 ESM 主进程（package.json type: module），因此没有
  * `__dirname`；统一经 import.meta.url 解析，避免各模块各自 hack。
  *
- * 路径模型（磁盘路径与 `app://page` 的 URL 路径互转）在 path-codec.ts：
+ * 路径模型（磁盘路径与 URL 路径互转）在 path-codec.ts：
  * 那是纯模块，URL 构造与路由在 Node 环境加载时不会把 electron 拖进来。
  */
 import path from 'node:path';

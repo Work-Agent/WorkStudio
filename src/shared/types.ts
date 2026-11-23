@@ -239,7 +239,7 @@ export interface DocumentMeta {
   title: string;
   /** 命名空间内相对地址（资源定位，如 src/main/index.ts）。 */
   path?: string;
-  /** 路径行地址：本地文档 = 工作区相对路径；应用内资源 = app:// scheme。 */
+  /** 路径行地址：本地文档 = 工作区相对路径；应用内资源 = plugin:// 地址。 */
   url?: string;
   /** 文件类型（扩展名，不含点，小写）→ 决定用哪个扩展视图渲染。 */
   ext: string;
@@ -366,7 +366,7 @@ export interface PluginInfo {
   description?: string;
   author?: string;
   builtin: boolean;
-  /** 自定义图标（favicon 格式，app://asset/...）。 */
+  /** 自定义图标（favicon 格式，data: URL）。 */
   iconUrl?: string;
   extensionCount: number;
   skillCount: number;
@@ -586,7 +586,7 @@ export interface RendererInfo {
   label?: string;
   /** 图标语义名（壳层映射）。 */
   icon?: string;
-  /** 自定义图标（favicon 格式，app://asset/...）。 */
+  /** 自定义图标（favicon 格式，data: URL）。 */
   iconUrl?: string;
   /** 渲染器归属插件。 */
   owner?: string;

@@ -54,7 +54,7 @@ export async function shellWindow(app: ElectronApplication): Promise<Page> {
     const page = app
       .windows()
       .find((item) =>
-        /(?:^file:.*\/renderer\/pages\/shell\/index\.html$|(?:localhost|127\.0\.0\.1):\d+\/pages\/shell\/index\.html$)/.test(
+        /(?:^work:\/\/studio\/shell$|^file:.*\/renderer\/pages\/shell\/index\.html$|(?:localhost|127\.0\.0\.1):\d+\/pages\/shell\/index\.html$)/.test(
           item.url(),
         ),
       );

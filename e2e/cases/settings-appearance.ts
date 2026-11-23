@@ -6,7 +6,9 @@ export default defineCase({
   tags: ['dev', 'ci', 'mutating'],
   async run(ctx) {
     await ctx.legacyBridge.call('/settings/open', { pageId: 'appearance' });
-    const page = await ctx.waitForPage(/pages\/settings\/index\.html/);
+    const page = await ctx.waitForPage(
+      /^(work:\/\/studio\/settings|.*pages\/settings\/index\.html)/,
+    );
     await page.evaluate(() => {
       const card = document.querySelector('[data-page="appearance"]');
       (card?.querySelector('button') as HTMLButtonElement | undefined)?.click();

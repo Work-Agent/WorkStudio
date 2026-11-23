@@ -15,7 +15,9 @@ export default defineCase({
       async () => (await ctx.text('doc-tabs')).includes('欢迎'),
       '空标签时没有欢迎页',
     );
-    const welcomePage = await ctx.waitForPage(/pages\/welcome\/index\.html/);
+    const welcomePage = await ctx.waitForPage(
+      /^(work:\/\/studio\/welcome|.*pages\/welcome\/index\.html)/,
+    );
     await ctx.expect.poll(
       async () => welcomePage.evaluate(() => innerWidth > 0 && innerHeight > 0),
       '欢迎页没有有效视口',

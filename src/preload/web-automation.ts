@@ -1,40 +1,28 @@
 /**
- * 页面侧脚本：在 web tab 内执行，只读页面。
+ * 网页提取（在网页 preload 内执行）—— 读取与快照的唯一实现。
  *
- * 读取与快照都走注入求值，不经页面 DOM API 之外的通道；
- * 提取结果是 Markdown + 可访问性结构，供侧车与站点快照使用。
+ * 与主进程无关：这里只依赖页面 DOM，提取结果是 Markdown + 可访问性结构，
+ * 由自动化操作 `text` / `outline` 触发。
  */
-
-export interface PageReading {
-  url: string;
-  title: string;
-  text: string;
-}
-
-export interface PageExtraction {
-  url: string;
-  title: string;
-  excerpt: string;
-  markdown: string;
-  a11y: string[];
-}
+import type {
+  ElementReading,
+  PageExtraction,
+  PageReading,
+  WebOp,
+  WebOpResult,
+} from '../shared/web-page.ts';
 
 /** read：当前可见文本。 */
-export function readScript(): string {
-  return `({
+export function readPage(): PageReading {
+  return {
     url: location.href,
     title: document.title,
     text: document.body ? document.body.innerText : '',
-  })`;
+  };
 }
 
 /** snapshot：正文 Markdown + 可访问性结构。 */
-export function snapshotScript(): string {
-  return `(${extractArticle.toString()})()`;
-}
-
-/** 页面内的提取函数（序列化后注入）。 */
-function extractArticle(): PageExtraction {
+export function extractArticle(): PageExtraction {
   const pick =
     document.querySelector('article, main, [role="main"]') || document.body;
   const clone = pick.cloneNode(true) as HTMLElement;
@@ -227,5 +215,56 @@ function extractArticle(): PageExtraction {
     excerpt,
     markdown: ((title ? `# ${title}\n\n` : '') + body).slice(0, 200000),
     a11y,
+  };
+}
+
+/** 主进程下发的自动化操作在页面上下文执行。 */
+export function runWebOp(op: WebOp): WebOpResult {
+  switch (op.kind) {
+    case 'text':
+      return { text: readPage() };
+    case 'outline':
+      return { outline: extractArticle() };
+    case 'query':
+      return { element: readElement(elementOf(op.selector)) };
+    case 'click': {
+      const el = elementOf(op.selector);
+      el.scrollIntoView({ block: 'center' });
+      el.click();
+      return { ok: true };
+    }
+    case 'type': {
+      const el = elementOf(op.selector) as
+        | HTMLInputElement
+        | HTMLTextAreaElement;
+      el.scrollIntoView({ block: 'center' });
+      el.focus();
+      el.value = op.text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: true };
+    }
+    case 'scroll':
+      window.scrollBy(0, op.y);
+      return { ok: true };
+  }
+}
+
+function elementOf(selector: string): HTMLElement {
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) throw new Error(`element not found: ${selector}`);
+  return el;
+}
+
+function readElement(el: HTMLElement): ElementReading {
+  const attrs: Record<string, string> = {};
+  for (const name of ['id', 'class', 'name', 'type', 'href', 'value', 'role']) {
+    const value = el.getAttribute(name);
+    if (value) attrs[name] = value.slice(0, 200);
+  }
+  return {
+    found: true,
+    text: (el.innerText || el.textContent || '').trim().slice(0, 2000),
+    attrs,
   };
 }

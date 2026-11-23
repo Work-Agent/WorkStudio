@@ -5,7 +5,9 @@ export default defineCase({
   title: '助手视图使用 workStudio 并读取技能资源',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const assistant = await ctx.waitForPage(/pages\/assistant\/index\.html/);
+    const assistant = await ctx.waitForPage(
+      /^(work:\/\/studio\/assistant|.*pages\/assistant\/index\.html)/,
+    );
     await ctx.expect.poll(
       async () =>
         assistant.evaluate(

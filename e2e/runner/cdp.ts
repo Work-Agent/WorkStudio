@@ -17,7 +17,7 @@ export interface CdpTarget {
 }
 
 const SHELL_TARGET =
-  /(?:localhost|127\.0\.0\.1):\d+\/pages\/shell\/index\.html$|^file:.*\/renderer\/pages\/shell\/index\.html$/;
+  /^work:\/\/studio\/shell$|(?:localhost|127\.0\.0\.1):\d+\/pages\/shell\/index\.html$|^file:.*\/renderer\/pages\/shell\/index\.html$/;
 
 function isShellTarget(target: CdpTarget): boolean {
   return (

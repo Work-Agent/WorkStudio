@@ -2,6 +2,7 @@ import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type { PluginSurface } from '../workspace/plugins.ts';
 import type { ResourcesRuntime } from '../workspace/resources.ts';
 import type { ResourcesService } from '../workspace/resources/service.ts';
+import { workUrl } from '../../../shared/pages.ts';
 import type { WorkspaceWindow } from './native.ts';
 import type { Views } from './views.ts';
 
@@ -10,11 +11,7 @@ export interface AppViewOptions {
     page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
   ) => string;
   preloads?: {
-    extension?: string;
-    browser?: string;
-    assistant?: string;
-    overlay?: string;
-    settings?: string;
+    workStudio?: string;
   };
 }
 
@@ -61,9 +58,16 @@ export class AppViews {
     void this.deps.ensureAgent().catch((error: unknown) => {
       console.error('[app] settings agent init failed', error);
     });
+    const url = workUrl(
+      'settings',
+      pageId && pageId !== 'home' ? pageId : undefined,
+    );
     return this.deps.views
       .open(workspace.id, 'settings', { type: 'settings', pageId })
-      .then((view) => ({ id: view.id }));
+      .then((view) => {
+        if (view.url !== url) this.deps.views.navigate(view.id, url);
+        return { id: view.id };
+      });
   }
 
   openPlugin(
@@ -130,25 +134,25 @@ export class AppViews {
 
   ensureAssistant(window: WorkspaceWindow): void {
     const options = this.deps.options;
-    if (!options.rendererPage || !options.preloads?.assistant) return;
+    if (!options.rendererPage || !options.preloads?.workStudio) return;
     if (window.global.list().some((view) => view.type === 'assistant')) return;
     window.global.create({
       type: 'assistant',
       title: 'AI 助手',
       url: options.rendererPage('assistant'),
-      preload: options.preloads.assistant,
+      preload: options.preloads.workStudio,
     });
   }
 
   ensureOverlay(window: WorkspaceWindow): void {
     const options = this.deps.options;
-    if (!options.rendererPage || !options.preloads?.overlay) return;
+    if (!options.rendererPage || !options.preloads?.workStudio) return;
     if (window.global.list().some((view) => view.type === 'overlay')) return;
     window.global.create({
       type: 'overlay',
       title: '对话框',
       url: options.rendererPage('overlay'),
-      preload: options.preloads.overlay,
+      preload: options.preloads.workStudio,
     });
   }
 }

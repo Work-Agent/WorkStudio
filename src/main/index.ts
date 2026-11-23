@@ -3,24 +3,20 @@
  */
 
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { App } from './app.ts';
+import { workUrl } from '../shared/pages.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 function rendererPage(
   page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
 ): string {
-  const dir = page === 'index' ? 'shell' : page;
-  const dev = process.env['ELECTRON_RENDERER_URL'];
-  if (dev) return `${dev.replace(/\/+$/, '')}/pages/${dir}/index.html`;
-  return pathToFileURL(
-    join(here, '../renderer/pages', dir, 'index.html'),
-  ).toString();
+  return workUrl(page === 'index' ? 'shell' : page);
 }
 
 function shellUrl(): string {
-  return rendererPage('index');
+  return workUrl('shell');
 }
 
 function shellPreload(): string {
@@ -33,12 +29,12 @@ void App.run({
     webPreferences: { preload: shellPreload() },
   },
   capturePreload: join(here, '../preload/capture.cjs'),
+  rendererRoot: join(here, '../renderer'),
+  ...(process.env['ELECTRON_RENDERER_URL']
+    ? { devBase: process.env['ELECTRON_RENDERER_URL'].replace(/\/+$/, '') }
+    : {}),
   preloads: {
-    extension: join(here, '../preload/extension.cjs'),
-    browser: join(here, '../preload/browser.cjs'),
-    assistant: join(here, '../preload/work-studio.cjs'),
-    overlay: join(here, '../preload/work-studio.cjs'),
-    settings: join(here, '../preload/work-studio.cjs'),
+    workStudio: join(here, '../preload/work-studio.cjs'),
   },
   rendererPage,
 }).catch((error: unknown) => {

@@ -150,6 +150,11 @@ export class PluginHost {
     this.packages.delete(id);
   }
 
+  /** 插件根目录（页面协议用它做静态资源边界）。 */
+  rootOf(id: string): string | null {
+    return this.packages.get(id)?.root ?? null;
+  }
+
   get(id: string): PluginPackage | undefined {
     return this.packages.get(id);
   }
@@ -183,7 +188,7 @@ export class PluginHost {
     return null;
   }
 
-  /** 页面路径必须位于某个页面入口目录内（app://page 的准入）。 */
+  /** 页面路径必须位于某个页面入口目录内（plugin:// 的准入）。 */
   containsPage(file: string): boolean {
     for (const pkg of this.packages.values()) {
       for (const page of [pkg.page, pkg.settings]) {

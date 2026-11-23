@@ -1,7 +1,7 @@
 import type { PluginSurface } from './plugins.ts';
 import type { ResourcesRuntime } from './resources.ts';
 import type { ResourcesService } from './resources/service.ts';
-import { appPageUrl } from '../shell/app-paths.ts';
+import { pluginUrl, workUrl } from '../../../shared/pages.ts';
 import type { Views } from '../shell/views.ts';
 
 interface ViewOptions {
@@ -9,11 +9,7 @@ interface ViewOptions {
     page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
   ) => string;
   preloads?: {
-    extension?: string;
-    browser?: string;
-    assistant?: string;
-    overlay?: string;
-    settings?: string;
+    workStudio?: string;
   };
 }
 
@@ -40,7 +36,7 @@ export function registerAppProviders(
           type: 'web',
           url: result.url,
           title: result.url,
-          preload: deps.options.preloads?.browser,
+          preload: deps.options.preloads?.workStudio,
         };
       }
       const info = result.info;
@@ -51,11 +47,14 @@ export function registerAppProviders(
       const name = decodeURIComponent(info.ref.split('/').pop() ?? info.ref);
       return {
         type: 'page',
-        url: `${appPageUrl(info.page)}?session=${info.id}`,
+        url: pluginUrl(info.owner ?? 'text-editor', 'content', {
+          ref: info.ref,
+          session: info.id,
+        }),
         title: name,
         contentPath: `resource:${info.ref}`,
         sessionId: info.id,
-        preload: deps.options.preloads?.extension,
+        preload: deps.options.preloads?.workStudio,
       };
     },
     release: (contentPath) => {
@@ -86,7 +85,7 @@ export function registerAppProviders(
         type: 'web',
         url: target.url,
         title: target.title ?? target.url,
-        preload: deps.options.preloads?.browser,
+        preload: deps.options.preloads?.workStudio,
         reuseKey: `web:${target.url}`,
       };
     },
@@ -103,7 +102,7 @@ export function registerAppProviders(
         url: base,
         title: '欢迎',
         contentPath: '/welcome',
-        preload: deps.options.preloads?.settings,
+        preload: deps.options.preloads?.workStudio,
       };
     },
   });
@@ -117,10 +116,13 @@ export function registerAppProviders(
       if (!base) throw new Error('settings renderer is unavailable');
       return {
         type: 'page',
-        url: base,
+        url: workUrl(
+          'settings',
+          target.pageId && target.pageId !== 'home' ? target.pageId : undefined,
+        ),
         title: '设置',
-        contentPath: '/settings/page/home',
-        preload: deps.options.preloads?.settings,
+        contentPath: '/settings',
+        preload: deps.options.preloads?.workStudio,
       };
     },
   });
@@ -142,10 +144,13 @@ export function registerAppProviders(
         );
       return {
         type: 'page',
-        url: appPageUrl(file),
+        url: pluginUrl(
+          entry.id,
+          surface === 'settings' ? 'settings' : 'content',
+        ),
         title: surface === 'settings' ? `${entry.label} 设置` : entry.label,
         contentPath: `/plugins/${surface === 'settings' ? 'settings' : 'page'}/${entry.id}`,
-        preload: deps.options.preloads?.extension,
+        preload: deps.options.preloads?.workStudio,
       };
     },
   });

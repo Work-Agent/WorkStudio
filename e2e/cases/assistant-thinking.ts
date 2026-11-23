@@ -5,7 +5,9 @@ export default defineCase({
   title: '助手 thinking levels 来自 thinking domain',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const assistant = await ctx.waitForPage(/pages\/assistant\/index\.html/);
+    const assistant = await ctx.waitForPage(
+      /^(work:\/\/studio\/assistant|.*pages\/assistant\/index\.html)/,
+    );
     await ctx.expect.poll(async () => {
       const levels = (await assistant.evaluate(async () => {
         const state = (await window.workStudio.subscribe(

@@ -8,11 +8,12 @@
  * whenReady、quit 等由 main 的 Bootstrap 负责。
  */
 
+import { join } from 'node:path';
 import { app as electronApp, ipcMain, protocol, session } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import { initDataRoot, profileDir } from './runtime/storage/data-root.ts';
 import { initWorkspaceStorage } from './agent/workspace.ts';
-import { serveAppPages } from './domains/shell/app-pages.ts';
+import { PageHost, servePages } from './runtime/pages.ts';
 import { readUserPreferences } from './runtime/storage/preferences.ts';
 import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels.ts';
 import { normalizeAppearance } from '../shared/appearance.ts';
@@ -38,15 +39,15 @@ export interface AppOptions {
   /** 启动时打开的工作区；之后用 openWorkspace 打开更多窗口。 */
   workspaceId?: string;
   url?: string;
-  /** 内容视图 preload（app:// 资源页 / 浏览器页）。 */
+  /** 应用 preload（系统页 / 内容页 / 网页共用）。 */
   preloads?: {
-    extension?: string;
-    browser?: string;
-    assistant?: string;
-    overlay?: string;
-    settings?: string;
+    workStudio?: string;
   };
-  /** renderer 页面地址（index / assistant / overlay）。 */
+  /** 渲染层产物目录（work://studio 的根）。 */
+  rendererRoot?: string;
+  /** 开发模式的 vite 地址；有值时页面请求代理过去。 */
+  devBase?: string;
+  /** 系统页地址（work://studio/...）。 */
   rendererPage?: (
     page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
   ) => string;
@@ -201,16 +202,16 @@ export class App {
     }
 
     App.applyRemoteDebugging(options.debugPort);
+    // 两个 scheme 承担信任边界：系统页与插件页各自一个来源。
+    const privileges = {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    } as const;
     protocol.registerSchemesAsPrivileged([
-      {
-        scheme: 'app',
-        privileges: {
-          standard: true,
-          secure: true,
-          supportFetchAPI: true,
-          stream: true,
-        },
-      },
+      { scheme: 'work', privileges },
+      { scheme: 'plugin', privileges },
     ]);
     const dataRoot = initDataRoot();
     const storage = createStoragePaths({
@@ -219,8 +220,16 @@ export class App {
     });
     initWorkspaceStorage(storage);
     await electronApp.whenReady();
-    serveAppPages(session.defaultSession, new WeakSet());
     const app = new App({ ...options, storage });
+    servePages(
+      session.defaultSession,
+      new PageHost({
+        rendererRoot:
+          options.rendererRoot ?? join(process.cwd(), 'out', 'renderer'),
+        ...(options.devBase ? { devBase: options.devBase } : {}),
+        plugin: (id) => app.pluginPage(id),
+      }),
+    );
 
     electronApp.on('second-instance', () => app.activate());
     electronApp.on('activate', () => app.activate());
@@ -249,6 +258,21 @@ export class App {
   }
 
   /** 在 Electron ready 之后同步启动；不负责单实例锁或进程事件。 */
+  /** 插件页查询（plugin:// 的插件来源）。 */
+  pluginPage(
+    id: string,
+  ): { root: string; page?: string; settings?: string } | null {
+    const host = this.workspaceModule?.runtime()?.ura.host;
+    const entry = host?.getPage(id);
+    const root = host?.rootOf(id);
+    if (!entry || !root) return null;
+    return {
+      root,
+      ...(entry.page ? { page: entry.page } : {}),
+      ...(entry.settings ? { settings: entry.settings } : {}),
+    };
+  }
+
   async start(): Promise<this> {
     if (this.started) return this;
     if (!electronApp.isReady()) {

@@ -17,6 +17,7 @@ import type {
   DomainRegistry,
   Resource,
 } from '../../runtime/domains.ts';
+import { workUrl } from '../../../shared/pages.ts';
 import { ViewProviders } from './view-providers.ts';
 import type { OpenTarget, ViewProvider, ViewSpec } from './view-providers.ts';
 import type { WindowManager, WorkspaceWindow } from './native.ts';
@@ -689,9 +690,37 @@ export class Views {
     this.windows = windows;
     this.domain = domains.define('shell');
 
+    this.bindSession();
     this.offOpen = windows.onOpen((window) => this.bind(window));
     this.offClose = windows.onClose((window) => this.unbind(window));
     for (const window of windows.list()) this.bind(window);
+  }
+
+  /** 只更新记录里的地址，不重载页面（卡片切换、地址栏同步用）。 */
+  locate(viewId: string, url: string, contentPath?: string): void {
+    for (const window of this.windows.list()) {
+      const record = window.tabs.get(viewId);
+      if (!record) continue;
+      record.url = url;
+      if (contentPath) record.contentPath = contentPath;
+      this.publish(window);
+      return;
+    }
+  }
+
+  /** 页面自述位置：按调用来源定位视图，页面不需要知道自己的 view id。 */
+  private bindSession(): void {
+    const resource = this.domain.resource('session');
+    resource.command<{ card?: string }, null>('locate', (call) => {
+      if (call.origin.type !== 'view') return null;
+      const card = String(call.input?.card ?? '');
+      this.locate(
+        call.origin.viewId,
+        workUrl('settings', card || undefined),
+        '/settings',
+      );
+      return null;
+    });
   }
 
   onEmpty(listener: (window: WorkspaceWindow) => void): () => void {

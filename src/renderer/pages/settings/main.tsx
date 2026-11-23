@@ -1745,9 +1745,15 @@ function useSettingsPages(): SettingsPage[] {
   return pages;
 }
 
-function Card({ page }: { page: SettingsPage }) {
-  const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+function Card({
+  page,
+  open,
+  onToggle,
+}: {
+  page: SettingsPage;
+  open: boolean;
+  onToggle: (next: boolean) => void;
+}) {
   const Icon = ICONS[page.icon] ?? Settings;
   const content = CONTENT[page.id];
   return (
@@ -1759,10 +1765,7 @@ function Card({ page }: { page: SettingsPage }) {
     >
       <button
         type="button"
-        onClick={() => {
-          setOpen((value) => !value);
-          setMounted(true);
-        }}
+        onClick={() => onToggle(!open)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 dark:bg-[#222629] dark:text-zinc-300">
@@ -1784,19 +1787,51 @@ function Card({ page }: { page: SettingsPage }) {
       </button>
       {open && content && (
         <div className="border-t border-zinc-200 dark:border-[#2c3039]">
-          {mounted ? content() : null}
+          {content()}
         </div>
       )}
     </section>
   );
 }
 
+/** 地址里的卡片：work://studio/settings/<card>。 */
+function cardFromAddress(): string {
+  const parts = location.pathname.split('/').filter(Boolean);
+  return parts[0] === 'settings' && parts[1] ? parts[1] : '';
+}
+
+/** 卡片与地址一一对应：开一张卡 = 换一次地址；全收起 = /settings。 */
+function applyCard(card: string): void {
+  const path = card ? `/settings/${card}` : '/settings';
+  try {
+    history.replaceState(null, '', path);
+  } catch {
+    /* 非标准 scheme 时忽略，地址仍由主进程记录 */
+  }
+  void window.workStudio?.command('shell', 'session', 'locate', { card });
+}
+
 function SettingsHome() {
   const pages = useSettingsPages();
+  const [openCard, setOpenCard] = useState(cardFromAddress);
   const visible = useMemo(
     () => pages.filter((page) => !page.internal),
     [pages],
   );
+
+  // 从地址进入时展开对应卡片并滚到可见处。
+  useEffect(() => {
+    if (!openCard) return;
+    const node = document.querySelector(`[data-page="${openCard}"]`);
+    node?.scrollIntoView({ block: 'center' });
+  }, [openCard, visible.length]);
+
+  const toggle = (card: string, next: boolean): void => {
+    const value = next ? card : '';
+    setOpenCard(value);
+    applyCard(value);
+  };
+
   return (
     <div className="h-screen overflow-y-auto bg-zinc-100 text-zinc-900 dark:bg-[#1a1c1d] dark:text-zinc-100">
       <div className="mx-auto max-w-[980px] px-6 py-8">
@@ -1806,7 +1841,12 @@ function SettingsHome() {
         </p>
         <div className="mt-6 space-y-3">
           {visible.map((page) => (
-            <Card key={page.id} page={page} />
+            <Card
+              key={page.id}
+              page={page}
+              open={openCard === page.id}
+              onToggle={(next) => toggle(page.id, next)}
+            />
           ))}
         </div>
       </div>

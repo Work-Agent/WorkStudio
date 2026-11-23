@@ -19,14 +19,11 @@ import type {
   NativeScene,
 } from '../../runtime/shared.ts';
 import { CH_CAPTURE } from '../../../shared/channels.ts';
+import { workUrl } from '../../../shared/pages.ts';
 
 /** 每窗口 shell/scene:<wsId> 与 shell/layout:<wsId>；窗口打开时绑定，关闭时移除。 */
 /** 交互期透明捕获层的页面：无任何应用状态，只转发 pointer。 */
-const CAPTURE_PAGE_URL =
-  'data:text/html;charset=utf-8,' +
-  encodeURIComponent(
-    '<html><body style="margin:0;padding:0;width:100%;height:100%;background:transparent"></body></html>',
-  );
+const CAPTURE_PAGE_URL = workUrl('capture');
 
 function resizeCursor(direction: ResizeDirection): string {
   switch (direction) {

@@ -141,8 +141,6 @@ export default defineConfig({
       rolldownOptions: {
         input: {
           'work-studio': resolve(__dirname, 'src/preload/work-studio.ts'),
-          extension: resolve(__dirname, 'src/preload/extension.ts'),
-          browser: resolve(__dirname, 'src/preload/browser.ts'),
           capture: resolve(__dirname, 'src/preload/capture.ts'),
         },
         output: {
@@ -170,6 +168,7 @@ export default defineConfig({
             'src/renderer/pages/settings/index.html',
           ),
           welcome: resolve(__dirname, 'src/renderer/pages/welcome/index.html'),
+          capture: resolve(__dirname, 'src/renderer/pages/capture/index.html'),
         },
       },
     },

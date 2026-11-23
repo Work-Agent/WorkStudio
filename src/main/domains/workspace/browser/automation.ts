@@ -1,35 +1,52 @@
 /**
- * BrowserAutomation —— 浏览器自动化（architecture.md §9.2）。
+ * BrowserAutomation —— 浏览器自动化（architecture.md §7.3）。
  *
- * 对象是资源面板里的 web tab：打开/复用走 BrowserTabs 端口，
- * 读取与快照走注入求值，点击/输入/截图走 tab 自己的
- * `webContents.debugger`。工具层只依赖 BrowserAutomationContract。
+ * 对象是资源面板里的 web tab：打开/复用走 BrowserTabs 端口。
+ * 页面操作用网页 preload 执行结构化操作，主进程不注入脚本、不挂调试器；
+ * 截图走 capturePage。工具层只依赖 BrowserAutomationContract。
  */
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { WebContents } from 'electron';
+import { ipcMain, type WebContents } from 'electron';
+import { CH_WEB } from '../../../../shared/channels.ts';
+import type {
+  WebOp,
+  WebOpReply,
+  WebOpResult,
+} from '../../../../shared/web-page.ts';
 import type {
   BrowserAutomationContract,
   BrowserPageState,
   BrowserSnapshot,
 } from '../../../agent/harness/browser-contract.ts';
-import { readScript, snapshotScript } from './page.ts';
-import type { PageExtraction, PageReading } from './page.ts';
 import type { BrowserTabs } from './tabs.ts';
 
-interface BoxModel {
-  model: { content: number[] };
-}
+const OP_TIMEOUT_MS = 15_000;
+const LOAD_TIMEOUT_MS = 15_000;
 
-interface NodeId {
-  nodeId: number;
+interface Pending {
+  resolve: (result: WebOpResult) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
 }
-
-const ATTACH_TIMEOUT_MS = 15_000;
 
 export class BrowserAutomation implements BrowserAutomationContract {
-  constructor(private readonly tabs: BrowserTabs) {}
+  private readonly pending = new Map<string, Pending>();
+  private seq = 0;
+
+  constructor(private readonly tabs: BrowserTabs) {
+    // 回执按 webContents + 请求号匹配：同一页面可并发多个操作。
+    ipcMain.on(CH_WEB, (event, reply: WebOpReply) => {
+      const key = `${event.sender.id}:${reply.id}`;
+      const entry = this.pending.get(key);
+      if (!entry) return;
+      this.pending.delete(key);
+      clearTimeout(entry.timer);
+      if (reply.error) entry.reject(new Error(reply.error));
+      else entry.resolve(reply.result ?? {});
+    });
+  }
 
   async open(url: string): Promise<{ viewId: string; url: string }> {
     if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
@@ -45,7 +62,9 @@ export class BrowserAutomation implements BrowserAutomationContract {
     const id = this.resolveId(viewId);
     const wc = this.webContents(id);
     await this.waitForLoad(wc);
-    const page = await this.evaluate<PageReading>(wc, readScript());
+    const result = await this.webOp(wc, { kind: 'text' });
+    const page = result.text;
+    if (!page) throw new Error('page read returned no content');
     return { viewId: id, url: page.url, title: page.title, text: page.text };
   }
 
@@ -53,7 +72,9 @@ export class BrowserAutomation implements BrowserAutomationContract {
     const id = this.resolveId(viewId);
     const wc = this.webContents(id);
     await this.waitForLoad(wc);
-    const page = await this.evaluate<PageExtraction>(wc, snapshotScript());
+    const result = await this.webOp(wc, { kind: 'outline' });
+    const page = result.outline;
+    if (!page) throw new Error('page snapshot returned no content');
     return { viewId: id, ...page };
   }
 
@@ -62,26 +83,12 @@ export class BrowserAutomation implements BrowserAutomationContract {
     viewId?: string,
   ): Promise<{ ok: boolean; note?: string }> {
     const wc = this.webContents(this.resolveId(viewId));
-    const nodeId = await this.nodeId(wc, selector);
-    if (nodeId === null) return { ok: false, note: 'element not found' };
-
-    // 目标可能在滚动区外：先滚进视口，再取几何。
-    await this.send(wc, 'DOM.scrollIntoViewIfNeeded', { nodeId }).catch(
-      () => undefined,
-    );
-    const box = await this.send<BoxModel>(wc, 'DOM.getBoxModel', {
-      nodeId,
-    }).catch(() => null);
-    const quad = box?.model.content;
-    if (!quad || quad.length < 8) {
-      return { ok: false, note: 'element has no layout box' };
+    try {
+      await this.webOp(wc, { kind: 'click', selector });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, note: messageOf(error) };
     }
-    const x = (quad[0]! + quad[2]! + quad[4]! + quad[6]!) / 4;
-    const y = (quad[1]! + quad[3]! + quad[5]! + quad[7]!) / 4;
-    await this.pointer(wc, 'mouseMoved', x, y);
-    await this.pointer(wc, 'mousePressed', x, y);
-    await this.pointer(wc, 'mouseReleased', x, y);
-    return { ok: true };
   }
 
   async type(
@@ -90,24 +97,12 @@ export class BrowserAutomation implements BrowserAutomationContract {
     viewId?: string,
   ): Promise<{ ok: boolean; note?: string }> {
     const wc = this.webContents(this.resolveId(viewId));
-    const nodeId = await this.nodeId(wc, selector);
-    if (nodeId === null) return { ok: false, note: 'element not found' };
-    await this.send(wc, 'DOM.focus', { nodeId }).catch(() => null);
-    // 全选后覆盖输入；纯键盘路径，不经页面 DOM API。
-    const meta = process.platform === 'darwin' ? 4 : 2;
-    for (const type of ['keyDown', 'keyUp'] as const) {
-      await this.send(wc, 'Input.dispatchKeyEvent', {
-        type,
-        modifiers: meta,
-        key: 'a',
-        code: 'KeyA',
-        windowsVirtualKeyCode: 65,
-        nativeVirtualKeyCode: 65,
-        ...(type === 'keyDown' ? { commands: ['selectAll'] } : {}),
-      });
+    try {
+      await this.webOp(wc, { kind: 'type', selector, text });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, note: messageOf(error) };
     }
-    await this.send(wc, 'Input.insertText', { text });
-    return { ok: true };
   }
 
   async back(viewId?: string): Promise<void> {
@@ -117,13 +112,9 @@ export class BrowserAutomation implements BrowserAutomationContract {
 
   async screenshot(viewId?: string): Promise<string> {
     const wc = this.webContents(this.resolveId(viewId));
-    const shot = await this.send<{ data: string }>(
-      wc,
-      'Page.captureScreenshot',
-      { format: 'png', captureBeyondViewport: false },
-    );
+    const image = await wc.capturePage();
     const file = join(tmpdir(), `workstudio-shot-${Date.now()}.png`);
-    writeFileSync(file, Buffer.from(shot.data, 'base64'));
+    writeFileSync(file, image.toPNG());
     return file;
   }
 
@@ -132,20 +123,6 @@ export class BrowserAutomation implements BrowserAutomationContract {
   }
 
   // ─── 内部 ────────────────────────────────────────────────────
-
-  private async pointer(
-    wc: WebContents,
-    type: 'mouseMoved' | 'mousePressed' | 'mouseReleased',
-    x: number,
-    y: number,
-  ): Promise<void> {
-    await this.send(wc, 'Input.dispatchMouseEvent', {
-      type,
-      x,
-      y,
-      ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }),
-    });
-  }
 
   private resolveId(viewId?: string): string {
     const id = viewId ?? this.activeViewId();
@@ -157,6 +134,23 @@ export class BrowserAutomation implements BrowserAutomationContract {
     const wc = this.tabs.webContents(id);
     if (!wc || wc.isDestroyed()) throw new Error('No browser page available');
     return wc;
+  }
+
+  /** 向网页 preload 下发一次操作，等待回执。 */
+  private webOp(wc: WebContents, op: WebOp): Promise<WebOpResult> {
+    if (wc.isDestroyed())
+      return Promise.reject(new Error('browser tab is gone'));
+    this.seq += 1;
+    const id = this.seq;
+    const key = `${wc.id}:${id}`;
+    return new Promise<WebOpResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(key);
+        reject(new Error('browser operation timed out'));
+      }, OP_TIMEOUT_MS);
+      this.pending.set(key, { resolve, reject, timer });
+      wc.send(CH_WEB, { id, op });
+    });
   }
 
   /**
@@ -183,61 +177,14 @@ export class BrowserAutomation implements BrowserAutomationContract {
       ): void => {
         if (isMainFrame) done();
       };
-      const timer = setTimeout(done, ATTACH_TIMEOUT_MS);
+      const timer = setTimeout(done, LOAD_TIMEOUT_MS);
       wc.once('did-finish-load', done);
       wc.on('did-fail-load', failed);
       wc.once('destroyed', done);
     });
   }
+}
 
-  /** debugger 命令：按需 attach，随 webContents 销毁回收。 */
-  private async send<T>(
-    wc: WebContents,
-    method: string,
-    params?: Record<string, unknown>,
-  ): Promise<T> {
-    if (wc.isDestroyed()) throw new Error('browser tab is gone');
-    if (!wc.debugger.isAttached()) {
-      try {
-        wc.debugger.attach('1.3');
-      } catch (error) {
-        throw new Error(
-          `browser debugger unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-    return (await wc.debugger.sendCommand(method, params)) as T;
-  }
-
-  /** 注入求值：读取与快照用，只读且按需执行。 */
-  private async evaluate<T>(wc: WebContents, expression: string): Promise<T> {
-    const result = await this.send<{
-      result: { value?: T; description?: string };
-      exceptionDetails?: { text: string };
-    }>(wc, 'Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    });
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text || 'evaluate failed');
-    }
-    return result.result.value as T;
-  }
-
-  private async nodeId(
-    wc: WebContents,
-    selector: string,
-  ): Promise<number | null> {
-    const { root } = await this.send<{ root: NodeId }>(wc, 'DOM.getDocument', {
-      depth: 1,
-    });
-    const { nodeId } = await this.send<NodeId>(wc, 'DOM.querySelector', {
-      nodeId: root.nodeId,
-      selector,
-    });
-    return nodeId || null;
-  }
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

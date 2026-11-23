@@ -1,7 +1,7 @@
 /**
  * TitleBar 中区资源地址栏 + 地址工具条（声明式动作，浏览器地址栏语义）—— architecture.md §2.2。
  *
- *   - 地址 = 激活视图的 `url`（本地文档 = 工作区路径 / 应用内资源 = app:// scheme / 网页 = 原 URL）
+ *   - 地址 = 激活视图的 `url`（本地文档 = 工作区路径 / 应用内资源 = plugin:// scheme / 网页 = 原 URL）
  *   - spinner 只在激活视图未就绪时出现在此（TabsBar 内不出 spinner）
  *   - 动作渲染进胶囊右端的地址工具条（可多个按钮）：
  *     插件 manifest `titlebarActions` 声明（按 actions.ts 语义目录渲染）
@@ -19,7 +19,9 @@ import {
 } from 'lucide-react';
 import { typeIcon } from '../resource/typeIcon.ts';
 import { useViewCommands, useViews } from '../../domains/views.ts';
+import type { ViewEntry } from '../../../../../shared/types.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
+import { useResource } from '../../../../shared/api/bridge.ts';
 import { FALLBACK_ACTION, TITLEBAR_ACTIONS } from './actions.ts';
 import { rendererIcon } from './icons.ts';
 
@@ -38,13 +40,19 @@ interface ToolbarAction {
 export function ResourceToolbar() {
   const views = useViews();
   const runViewCommand = useViewCommands();
+  const settingsPages = useResource<{ id: string; label: string }[]>(
+    'settings',
+    'pages',
+    [],
+  );
+  settingsPagesCache = settingsPages;
   const active = views.find((v) => v.active) ?? null;
 
   if (!active) return null;
 
   const loading =
     active.state !== 'ready' && active.state !== 'contentDelivered';
-  const url = displayAddress(active.tabKey, active.title, active.url);
+  const url = displayAddress(active);
   const actions: ToolbarAction[] = [];
 
   // 插件声明的声明式动作（manifest titlebarActions → 语义目录渲染）
@@ -153,17 +161,51 @@ export function ResourceToolbar() {
 }
 
 /** 地址栏只展示逻辑地址或相对工作区路径，不暴露本机绝对路径。 */
-function displayAddress(tabKey: string, title: string, rawUrl: string): string {
-  if (tabKey === '/welcome') return 'welcome://home';
-  if (tabKey.startsWith('/settings/page/')) {
-    return `settings://${tabKey.slice('/settings/page/'.length)}`;
+function displayAddress(view: ViewEntry): string {
+  const raw = view.url ?? '';
+  const parsed = parseUrl(raw);
+  if (parsed?.protocol === 'work:' && parsed.hostname === 'studio') {
+    const [page = '', card = ''] = parsed.pathname.split('/').filter(Boolean);
+    if (page === 'settings') {
+      const label = settingsLabel(card || cardOf(view.tabKey));
+      return label ? `设置 · ${label}` : view.title || '设置';
+    }
+    return view.title || SYSTEM_FALLBACK[page] || raw;
   }
-  if (tabKey.startsWith('/plugins/page/')) {
-    return `plugin://${tabKey.slice('/plugins/page/'.length)}`;
+  if (parsed?.protocol === 'plugin:') {
+    const id = parsed.hostname;
+    const kind = parsed.pathname.split('/').filter(Boolean)[0] ?? '';
+    const label = view.renderer?.label || id;
+    if (kind === 'settings') return view.title || `${label} · 设置`;
+    const ref = parsed.searchParams.get('ref');
+    return ref ? displayPath(ref) : view.title || label;
   }
-  if (tabKey.startsWith('/plugins/settings/')) {
-    return `plugin://${tabKey.slice('/plugins/settings/'.length)}/settings`;
-  }
-  const candidate = title.startsWith('file://') ? title : rawUrl;
+  if (/^https?:/i.test(raw)) return raw;
+  const candidate = view.title?.startsWith('file://') ? view.title : raw;
   return displayPath(candidate);
+}
+
+/** 系统页没有标题时的兜底名（标题由视图宿主提供，通常是权威来源）。 */
+const SYSTEM_FALLBACK: Record<string, string> = {
+  shell: '工作台',
+  capture: '捕获层',
+};
+
+/** 设置卡片名（`settings/pages` 投影；未命中返回空串）。 */
+let settingsPagesCache: { id: string; label: string }[] = [];
+function settingsLabel(id: string): string {
+  return settingsPagesCache.find((page) => page.id === id)?.label ?? '';
+}
+
+function cardOf(tabKey: string): string {
+  const prefix = '/settings/page/';
+  return tabKey.startsWith(prefix) ? tabKey.slice(prefix.length) : '';
+}
+
+function parseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
 }

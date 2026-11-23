@@ -20,9 +20,12 @@ export default defineCase({
       },
     });
 
-    const overlay = await ctx.waitForPage(/pages\/overlay\/index\.html/, {
-      text: '回归对话框',
-    });
+    const overlay = await ctx.waitForPage(
+      /^(work:\/\/studio\/overlay|.*pages\/overlay\/index\.html)/,
+      {
+        text: '回归对话框',
+      },
+    );
     await overlay.expect.text('body', '回归对话框');
     await overlay.evaluate(() => {
       const button = [...document.querySelectorAll('button')].find(
