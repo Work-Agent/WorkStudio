@@ -1,6 +1,8 @@
-# 目标架构：能力图与统一执行闸门
+# 目标架构：两入口一命令表
 
-> 本文描述 WorkStudio 的目标架构，并对照当前实现。目标架构取消 URA 作为独立层：资源发现、读取与操作收进 Business Domain；DomainRegistry 是唯一的能力图与执行闸门，传统页面与 Agent 都是它的投影。当前稳定实现见 [架构设计](./architecture.md)。
+> 本文描述 WorkStudio 的目标架构，并对照当前实现。界面分业务 UI 与助手 UI 两个入口，各自经过 IPCDispatcher 到达不同目标：业务 UI 直达 DomainRegistry，助手 UI 直达 AgentHarness。DomainRegistry 把域分为 System 与 Biz 两类，Biz Domain 是插件后端；AgentHarness 的工具按插件实现取数而不是做文本操作，所有写操作经 bash 执行 CLI 命令。两条入口最后汇合在同一张命令表上。当前稳定实现见 [架构设计](./architecture.md)。
+
+图示：[目标架构图](./architectrue.excalidraw)（六块：总览 · 插件实现层 · locator · 工具 · System Domain · 页面地址与 scheme）。
 
 ## 一、已实现架构
 
@@ -22,7 +24,7 @@
                │                                 │
      Resources domain                     Sessions domain
        → ResourcesService                   → AgentHost / SessionsService
-       → URA runtime                        → Harness（URA tools / office_gen）
+       → URA runtime                        → Harness（资源工具 / office_gen）
          ├─ UraRegistry
          │   ├─ transport / codec / store
          │   ├─ presenter / sidecar
@@ -39,16 +41,15 @@ Views / WindowManager / Native / Layout
 
 当前实现的关键事实：
 
-| 部分     | 现状                                                                           |
-| -------- | ------------------------------------------------------------------------------ |
-| 统一入口 | 资源门面在 resources domain 内；Agent 另有 harness tools，不经过 Dispatcher    |
-| 插件     | 插件 SDK 同时注册 transport / codec / presenter / sidecar / list / view action |
-| 插件前端 | 页面通过 `window.extension` 使用页面会话与内容总线                             |
-| 资源发现 | 侧栏列表 + 列表注册表；资源地图从列表生成 `AGENTS.md`                          |
-| 资源地图 | 单份工作区 `AGENTS.md`，harness 读取后注入 context                             |
-| Agent    | AgentHost / SessionsService；工具为固定资源工具 + office_gen                   |
-| 操作     | 以 read / write / edit / query + 页面保存为主；Office 命令尚未统一             |
-| 视图     | shell / assistant / overlay / capture + tabs；资源页 / 网页 / 设置 / 欢迎页    |
+| 部分     | 现状                                                                         |
+| -------- | ---------------------------------------------------------------------------- |
+| 入口     | 助手页与业务页共用同一条 workStudio 桥，全部落到 DomainRegistry              |
+| 路由     | IPCDispatcher 只按 sender 判 origin，不区分页面目标                          |
+| 会话     | sessions / models / skills / thinking 等作为 domain 挂在 DomainRegistry 下   |
+| 工具     | 手写的资源工具（read / write / edit / grep / find / ls / query）+ office_gen |
+| 资源发现 | 侧栏列表 + 列表注册表；资源地图从列表生成 `AGENTS.md` 注入 context           |
+| 插件     | 插件 SDK 注册 transport / codec / presenter / sidecar / list / view action   |
+| 操作     | 读走资源门面，写走 write / edit 工具；Office 生成走独立工具                  |
 
 ### 1.2 当前实现的模块边界
 
@@ -79,13 +80,8 @@ Main
 ```text
 workspace module（domain：workspaces / resources / lists / plugins）
   → WorkspacesRepo / Lists / Plugins
-  → ResourcesService
-  → URA runtime
-      → PluginHost
-      → UraRegistry（codec / transport / presenter / sidecar）
-      → ResourcePipeline
-      → PageSessions
-      → ResourceMap（依赖 ListRegistry）
+  → ResourcesService → URA runtime
+      → PluginHost / UraRegistry / ResourcePipeline / PageSessions / ResourceMap
 ```
 
 ### 1.3 结构轴已落地
@@ -99,109 +95,197 @@ workspace module（domain：workspaces / resources / lists / plugins）
 
 ### 1.4 能力轴尚未落地
 
-| 核心判断               | 状态   | 说明                                                   |
-| ---------------------- | ------ | ------------------------------------------------------ |
-| 两类 Domain            | 未落地 | 无 system / business 区分；现有域都是 UI 状态域        |
-| 插件即 Business Domain | 未落地 | 插件仍以 codec / presenter / sidecar / list 注册能力   |
-| 取消全量清单           | 未落地 | 每工作区生成资源地图，harness 每轮注入 context         |
-| 搜索下沉               | 部分   | 有全文检索，但无域归属、无 locator、无索引             |
-| Locator 归 Domain      | 未落地 | 编辑用字节区间，未形成可跨调用传递的 locator           |
-| 订阅只属于 UI          | 部分   | 实际只有页面订阅；但执行与订阅共用同一寻址，API 未分离 |
-| 统一命令入口           | 未落地 | 页面走域命令，Agent 直调资源门面，两条路径并存         |
+| 核心判断             | 状态   | 说明                                                |
+| -------------------- | ------ | --------------------------------------------------- |
+| 两个入口分离         | 未落地 | 助手页与业务页共用一条通道，最终都进 DomainRegistry |
+| Harness 独立成层     | 部分   | 有 Agent Layer，但会话与配置仍作为 domain 暴露      |
+| 工具由插件实现       | 未落地 | 工具是手写的资源门面封装，与插件注册面分开维护      |
+| ls / find 由地图服务 | 未落地 | 地图是注入 context 的清单文件，检索靠遍历           |
+| 写操作只有 bash      | 未落地 | 有 write / edit 工具；无命令通道                    |
+| locator 闭环         | 未落地 | 编辑用字节区间，读取结果不携带可复用的 locator      |
+| 命令表统一           | 未落地 | 页面命令、工具、插件注册面各自一套                  |
 
-## 二、目标架构
+## 二、目标分层
 
-### 2.1 总体结构
+### 2.1 五层
+
+| 层  | 职责                                                         | 不负责               |
+| --- | ------------------------------------------------------------ | -------------------- |
+| 1   | Renderer：业务 UI 与助手 UI 两个入口，全部走 preload 桥      | 状态、路由、能力     |
+| 2   | IPCDispatcher：origin → 通道判断、订阅归属、请求日志         | 业务逻辑、工具、授权 |
+| 3   | DomainRegistry 与 AgentHarness：两个并列模块，各占一条通道   | 引擎实现、数据存储   |
+| 4   | 插件实现层：Domain 通讯封装 · skills 封装 · 引擎，统一在这里 | 路由、GUI、会话      |
+| 5   | 数据层：结构（目录树 / ref）与外部来源；派生内容归引擎       | 协议、命令语义       |
 
 ```text
-┌─ Layer 1：Renderer 多页面 ──────────────────────────────────────┐
-│ 传统 UI：shell / settings / welcome                             │
-│ 插件前端：page / settings                                       │
-│ Agent UI：assistant                                             │
-└──────────────┬──────────────────────────────┬─────────────────┘
-               │ preload bridge               │
-               ▼                              ▼
-┌─ IPCDispatcher ────────────────┐   ┌─ Layer 2：Agent harness ─┐
-│ sender → origin                │   │ tools / context / skills │
-│ subscribe / invoke / notify    │   │ ToolBinder               │
-└──────────────┬─────────────────┘   └─────────────┬────────────┘
-               │                                   │
-               └────────────────┬──────────────────┘
+Layer 1 Renderer
+  业务 UI：shell / settings / welcome / overlay / 插件页
+  助手 UI：assistant
+        │ business                    │ assistant
+        ▼                             ▼
+Layer 2 IPCDispatcher
+        │                             │
+        ▼                             ▼
+Layer 3 ┌ DomainRegistry ──────┐  ┌ AgentHarness ──────────┐
+        │ System Domain        │  │ context（依赖 L5 结构） │
+        │ 命令表 → Biz 封装标准 │  │ tools：ls/find · read  │
+        │                      │  │        grep · bash     │
+        └──────────┬───────────┘  └──────────┬─────────────┘
+                   │                          │
+                   └────────────┬─────────────┘
                                 ▼
-┌─ App：DomainRegistry ───────────────────────────────────────────┐
-│ declare · describe · invoke · notify · watch · onCapabilities   │
-└───────────────┬───────────────────────────┬─────────────────────┘
-                ▼                           ▼
-┌─ System Domains ────────────────┐  ┌─ Business Domains（Plugins）────┐
-│ windows · views · pages         │  │ files · office · docs · email   │
-│ sessions · settings · theme     │  │ read · ls · find · search       │
-│ layout · dialogs                │  │ execute(op, target, input)      │
-│                                 │  │                                 │
-│ 管理应用运行时                  │  │ catalog · search index          │
-│ 不进入 Agent 工具面             │  │ locator · document model        │
-│                                 │  │ 自有前端与 engine               │
-└─────────────────────────────────┘  └──────────────┬──────────────────┘
-                                                    ▼
-                                       ┌─ Domain engine ──────────────┐
-                                       │ OOXML / PDF / Markdown       │
-                                       │ CLI / native API / script    │
-                                       └──────────────────────────────┘
+Layer 4 插件实现层：Domain 通讯封装 · skills 封装 · 引擎
+                                ▼
+Layer 5 数据层：结构（目录树 / ref）· 外部来源
 ```
 
-层级说明：
+- **Layer 1** 只有两个入口：业务 UI 与助手 UI。两者都通过 preload bridge 通讯，页面不持 Node，不触 Electron。
+- **Layer 2** 只做路由与归属：按页面判断通道，业务通道交给 Registry，助手通道交给 Harness。
+- **Layer 3** 是两个并列模块：Registry 在前，给出 System Domain 与 Biz Domain 的封装标准；Harness 在右，独占助手通道。
+- **Layer 4** 是插件实现层：上方是 `Domain 通讯接口封装` 与 `skills 封装`，下方是引擎；统一在这一层完成。
+- **两个封装**：Domain 把引擎的命令描述编译成类型化 op；skills 把它写成命令手册，由 bash 按需消费。
+- **Layer 5** 是数据层：结构（目录树、ref）供 `ls` / `find` 与 context 使用；引擎读写来源，派生内容留在插件实现层的引擎里。
 
-- **Layer 1：Renderer 多页面**：传统 UI、插件前端、Agent UI 是不同页面，不是同一个消费者框。
-- **IPCDispatcher**：只处理 sender → origin、订阅归属、请求/响应与 IPC 日志；不承载业务路由。
-- **Layer 2：Agent harness**：独立层，只服务 Agent UI；包含 ToolBinder，直接调用 DomainRegistry。
-- **DomainRegistry**：能力图与执行闸门；四个动词覆盖声明、发现、执行、订阅。
-- **System / Business Domain**：按 `type` 区分；System Domain 不进入 Agent 工具面。
-- **Domain engine**：Business Domain 内部的 OOXML / PDF / CLI / native 实现。
+### 2.2 两个入口
 
-### 2.2 一条契约，三种投影
+| 入口    | 页面                                          | 目标           | 通道内容                         |
+| ------- | --------------------------------------------- | -------------- | -------------------------------- |
+| 业务 UI | shell / settings / welcome / overlay / 插件页 | DomainRegistry | 命令 invoke、状态订阅、页面会话  |
+| 助手 UI | assistant                                     | AgentHarness   | 会话、消息、任务、模型与技能选择 |
 
-统一发生在契约层，不在传输层：
+- 业务 UI 不直接触达 Harness；它需要的模型、技能、扩展清单由 Harness 以**只读投影**登记到 Registry 的 `agent` 命名空间。
+- 助手 UI 不直接触达业务域；它对资料的全部操作都经过工具层，工具层再经命令表落到 Biz Domain。
+
+### 2.3 两条通道
 
 ```text
-DomainRegistry.declare()
-  → 能力图（manifest · state · ops）
-      ├─ describe(ui)    → 命令面板 / 权限提示 / 状态命令绑定
-      ├─ describe(tool)  → ToolBinder：schema · exposure · annotations
-      └─ 技能目录        → 由 describe(tool) 生成，只读，无运行时
+业务通道
+  invoke(command)     → DomainRegistry.invoke(origin, command)
+  subscribe(address)  → DomainRegistry 状态投影
+  page(op)            → 页面会话（System Domain）
 
-DomainRegistry.invoke(origin, request)
-      ├─ bridge：结构化结果 → 视图
-      ├─ tool：project() → 文本 + structuredContent
-      └─ 进度：UI → event，tool → onUpdate
+助手通道
+  session(op)         → AgentHarness 会话控制
+  subscribe(address)  → 会话投影（消息 / 流式 / 任务）
 ```
 
-三种投影共享同一份 schema、同一份授权表、同一份日志；差异只在**投递形态**。
+两条通道共用一个 preload 桥，由 Dispatcher 按页面通道名分流；不接受页面自行指定目标。
 
-### 2.3 两条轴
+助手会话的投影（消息、流式、任务）由 Harness 直接推送；设置页需要看的模型、技能、扩展清单是 Harness 登记到 Registry `agent` 命名空间的只读投影。两边不共享命令。
 
-| 轴     | 入口                    | 消费者                       | 是否给 Agent         |
-| ------ | ----------------------- | ---------------------------- | -------------------- |
-| 订阅轴 | `watch(owner, address)` | 页面                         | 否                   |
-| 执行轴 | `invoke` / `notify`     | 页面 / 插件页 / Agent / 技能 | 是（按 exposure）    |
-| 事件轴 | `event` / `emit`        | 页面 / 域之间                | 否（进度随执行返回） |
+## 三、AgentHarness
 
-- 订阅只属于 UI：Agent 不订阅，它在轮次里取快照或执行 op。
-- 命令两端共用：页面按钮、命令面板、工具调用、技能步骤产出同一个 `DomainRequest`。
-- 结果由 Domain 双投影：结构化值给 UI 与程序化调用，文本投影给模型。
-- `notify` 不是第二条通道，而是执行轴的无回执投递，仅限安全且无输出的 op。
+### 3.1 三块职责
 
-### 2.4 核心判断
+| 块      | 内容                           | 数据来源                           |
+| ------- | ------------------------------ | ---------------------------------- |
+| context | 资源地图、系统提示、会话历史   | 资源地图索引、会话文件             |
+| skills  | 按需加载的工作流说明           | 技能目录（名称 + 描述先入 prompt） |
+| tools   | read / ls / find / grep / bash | 地图索引、Biz Domain、CLI 命令     |
 
-1. **Domain 分两类**：System Domain 管理系统运行时；Business Domain 管理业务能力与业务资源。
-2. **插件就是 Business Domain**：插件不再只是 codec 注册表，而是业务能力的完整入口。
-3. **订阅只属于 UI**：Agent 通过 op 与 `detail` 取所需，不持有跨轮状态。
-4. **统一在能力图**：`describe` 是唯一能力来源，命令面板、工具声明、技能目录都由它生成。
-5. **搜索下沉到 Domain**：命中必须由 Domain 返回 `ref + locator`；没有 locator 只能作为只读线索。
-6. **Locator 泛型化**：locator 的具体类型由 Domain 决定，DomainRegistry 只透传，不解释。
-7. **没有全量清单**：不再维护全量文件目录 context；业务发现由 Domain 的 `search` / `ls` / `find` 完成。
+### 3.2 工具面
 
-## 三、Domain 声明模型
+工具不是文本操作，而是**按插件实现取数**：
 
-### 3.1 两类 Domain
+| 工具   | 取数路径               | 是否触达插件 | 返回                                |
+| ------ | ---------------------- | ------------ | ----------------------------------- |
+| `ls`   | 资源地图索引           | 否           | 目录下的条目（ref · domain · mime） |
+| `find` | 资源地图索引           | 否           | 匹配的路径与 ref                    |
+| `read` | Biz Domain 的 `read`   | 是           | 内容 + `locator`                    |
+| `grep` | Biz Domain 的 `grep`   | 是           | 命中（ref · 摘要 · `locator`）      |
+| `bash` | skills 封装 → 引擎 CLI | 经插件实现层 | stdout / exitCode                   |
+
+- `ls` / `find` 不发插件请求：它们查内存中的资源地图索引，因此是零延迟、跨域的。
+- `read` / `grep` 直接分发到插件实现方法；**返回值必须携带 locator**，供下一步写入使用。
+- 不提供 `write` / `edit` / `grep`(ripgrep) 三件文本工具：写与改一律经由 `bash` 执行 CLI 命令。
+- 工具名与插件实现解耦：同一套工具名覆盖所有 Biz Domain，域由 `ref` 或 `--domain` 决定。
+
+### 3.3 资源地图
+
+资源地图是**目录结构**，进入系统上下文；它同时是 `ls` / `find` 的索引。
+
+以下为索引形态；进入 context 的只有目录骨架与类型统计：
+
+```text
+workspace
+├─ 销售/                       (dir · files)
+│  ├─ 2026Q1.xlsx              (doc · office · xlsx)
+│  └─ notes.md                 (doc · markdown)
+├─ 交付/                       (dir · files)
+└─ mail/                       (dir · email，合成挂载)
+   └─ 2026-03-18 客户回执      (thread · email)
+```
+
+- 每个 Biz Domain 通过 `mount()` 贡献子树：文件域贡献真实目录，其他域贡献合成挂载点。
+- 进入 context 的是**目录结构 + 条目归类**，不是全量文件清单；单个目录内的文件由 `ls` 按需展开。
+- 上下文里以命名 section 注入，索引变化时整段替换，不改写历史消息。
+- 索引与 context 投影分离：索引全量驻留主进程，context 只投影目录骨架。
+
+### 3.4 locator 闭环
+
+```text
+read / grep  →  { content | hits[], locator }
+                     │
+                     ▼
+bash  ws edit <ref> --at <locator> --stdin
+                     │
+                     ▼
+              Biz Domain.execute
+```
+
+- `locator` 是**短字符串 token**，不是 JSON：可直接放进命令行参数，不需要转义。
+- 形式为 `<domain>:<type>:<id>[~<baseline>]`，例如 `office:cell:Q1!B2~v7`、`docs:para:p-17~sha1:3f9a`。
+- 携带基线：内容变化后 locator 失效，命令返回 `stale`，不静默错位。
+- 同一 Domain 内自洽：`read` / `grep` 产出的 locator 一定能被该域命令消费；跨域不通用。
+
+### 3.5 写操作只有 bash
+
+| 操作        | 路径                                         |
+| ----------- | -------------------------------------------- |
+| 创建 / 覆盖 | `ws write <ref> --stdin`                     |
+| 局部替换    | `ws edit <ref> --at <locator> --stdin`       |
+| 结构化修改  | `ws <domain> <op> <ref> [flags]`             |
+| 生成 Office | `ws office create <ref> --kind xlsx --stdin` |
+
+- 内容一律经标准输入传递，不放在参数里：避免引号、换行与长度问题。
+- 写命令内部走同一套校验、写队列与危险确认，与业务 UI 的 invoke 完全一致。
+- 不再有独立的 write / edit 工具；它们退化为 `files` 域的两个命令。
+- **bash 依赖按需加载的 skills**：工具本身不含命令用法；Agent 先加载对应技能，才知道该调哪些命令、以什么顺序组合。没有技能命中时，Agent 只剩发现类工具可用。
+
+### 3.6 skills 渐进披露
+
+- 启动时只有技能的**名称、描述、路径**进入系统提示；正文在任务匹配时才读取。
+- 每个 Biz Domain 提供一到多个技能，内容只写工作流，不写参数手册：
+
+```text
+1. 用 read / grep 取到目标与 locator；
+2. 用 ls / find 确认路径；
+3. 用 ws <domain> <op> --at <locator> 执行修改；
+4. 用 read 复核结果。
+```
+
+- 参数细节由 `ws <domain> <op> --help` 生成，skill 不复述，避免与代码漂移。
+- 技能正文与命令手册来自**引擎的同一份命令描述**：域封装把它编译成类型化 op，技能把它写成工作流手册，两份产物不会各写一套。
+- 技能不再描述资源清单：地图由 context 提供，技能只描述过程。
+
+## 四、DomainRegistry
+
+### 4.1 两类 Domain
+
+| 类型          | 例子                                                          | 职责                             | 工具面 |
+| ------------- | ------------------------------------------------------------- | -------------------------------- | ------ |
+| System Domain | windows / views / pages / settings / theme / layout / dialogs | 应用运行时、窗口、视图、状态管理 | 不进   |
+| Biz Domain    | files / office / docs / sheets / email                        | 业务资源、业务检索、业务命令     | 进入   |
+
+- Registry 给出两类封装标准：System Domain 是「命令 + 投影」，Biz Domain 是「mount / read / grep / execute + schema / locator」。
+- System Domain 只暴露命令与状态投影，供业务 UI 使用。
+- Biz Domain 分两层：**域封装**（类型化 op、命令表、授权、失效传播）依赖**引擎**（OOXML / PDF / Markdown 解析、文档模型、Markdown 缓存、locator 索引、CLI）。
+- 引擎只提供能力与命令描述，不感知 GUI、Agent 与 IPC；域封装与 skills 是它的两个集成。
+- 会话、模型、技能、扩展归 AgentHarness，不再是 Domain。
+
+### 4.2 命令表
+
+命令表是唯一真相，两个入口都是它的投递：
 
 ```ts
 interface DomainManifest {
@@ -210,393 +294,233 @@ interface DomainManifest {
   label: string;
   description?: string;
   scope?: 'app' | 'workspace';
-  mimes?: readonly string[];
-}
-```
-
-| 类型            | 例子                                                                     | 职责                             |
-| --------------- | ------------------------------------------------------------------------ | -------------------------------- |
-| System Domain   | windows / views / pages / sessions / settings / theme / layout / dialogs | 应用运行时、窗口、视图、状态管理 |
-| Business Domain | files / office / docs / sheets / email                                   | 业务资源、业务搜索、业务操作     |
-
-System Domain 不声明工具暴露；Business Domain 必须实现发现与执行 op。
-
-### 3.2 声明对象
-
-```ts
-interface DomainDeclaration {
-  manifest: DomainManifest;
-  dependencies?: readonly string[];
-  state?: Record<string, StateDeclaration>;
-  ops?: Record<string, OpDeclaration>;
-  start?(ctx: DomainScope): void | Promise<void>;
-  stop?(): void | Promise<void>;
 }
 
-interface StateDeclaration<T = unknown> {
-  /** 全量投影；watch 与 publish 共用同一份。 */
-  snapshot(ctx: DomainScope): T;
-}
-
-interface OpDeclaration<I = unknown, O = unknown, L = unknown> {
-  title: string;
-  description?: string;
-
-  /** 参数 schema：IPC、工具声明、执行前校验三处共用。 */
-  input: TSchema;
+interface CommandDecl {
+  name: string; // 域内唯一：read / edit / slide.add
+  summary: string;
+  /** 位置参数与选项；两者共同构成 argv 形态 */
+  args?: ArgSpec[];
+  options?: Record<string, OptSpec>;
+  /** JSON 形态；省略时由 args / options 推导 */
+  input?: TSchema;
   output?: TSchema;
-  /** Locator schema；由 Domain 定义，Registry 只透传。 */
-  target?: TSchema;
-
-  /** 归属投影；省略表示域级业务 op。 */
-  resource?: string;
-
+  /** 接受标准输入（内容类命令） */
+  stdin?: boolean;
   mutates?: boolean;
   danger?: 'safe' | 'confirm' | 'destructive';
-
-  /** 成功后自动推送的投影。 */
+  /** 成功后需要刷新哪些投影 */
   invalidates?: readonly string[];
-  /** 成功后发出的事件。 */
-  emits?: readonly string[];
-
-  /** Agent 面声明；缺省按 manifest.type 推导。 */
-  tool?: { exposure: 'direct' | 'codemode' | 'deferred' | 'hidden' };
-  /** 结构化结果 → 模型文本；缺省 JSON + detail 截断。 */
-  project?(value: O, io: OpIo): string;
-
-  run(input: I, ctx: OpContext<L>): O | Promise<O>;
-}
-
-interface OpContext<L = unknown> {
-  origin: Origin;
-  ref?: string;
-  target?: L;
-  signal: AbortSignal;
-  detail: 'summary' | 'full';
-  progress(stage: string, data?: unknown): void;
-  state: DomainScope;
-}
-```
-
-`OpContext` 是 Domain 唯一可见的执行环境：来源、寻址、取消、粒度、进度与投影写入。Domain 不接触视图、IPC、pi 或原生句柄。
-
-### 3.3 五类 op 与暴露
-
-| op 类别     | 例子                                          | 暴露                    | 效果                   |
-| ----------- | --------------------------------------------- | ----------------------- | ---------------------- |
-| 发现        | `read` / `ls` / `find` / `search`             | `direct`                | 稳定声明，模型总能看到 |
-| 业务细粒度  | `office.slide.add` / `docs.paragraph.replace` | `codemode` / `deferred` | 注册但不声明，按需发现 |
-| 写入 / 危险 | `office.create` / `files.replace`             | `direct` + 危险等级     | 权限确认据此触发       |
-| 状态命令    | `tabs.activate` / `scene.patch`               | 不暴露                  | 只有 UI 可调用         |
-| 页面会话    | `page.get` / `page.save`                      | 不暴露                  | 由页面宿主私有协议承载 |
-
-- 注册量不等于声明量：`codemode` / `deferred` 让 op 数量不进入 context。
-- 状态命令与页面会话不是另一套协议，它们只是不暴露给 Agent 的 op。
-- 工具名以 Domain 为命名空间，`read` / `write` 等短名跨域共存，不与外部工具名冲突。
-
-### 3.4 注册期校验
-
-框架的职责是让错误形状表达不出来。以下情况在声明期直接失败：
-
-| 校验                                   | 目的                     |
-| -------------------------------------- | ------------------------ |
-| System Domain 声明了工具暴露           | 系统域永不进入工具面     |
-| Business Domain 缺少 `read` / `search` | 业务契约完整             |
-| `mutates` 未声明 `danger`              | 写操作必须显式定级       |
-| `input` / `output` 不是合法 schema     | 双端 schema 同源         |
-| `resource` 指向未声明的 state          | 状态命令不能挂空投影     |
-| `invalidates` 指向未声明的 state       | 失效声明可验证           |
-| 同域 op 重名，或跨域重名未命名空间     | 命令面板与工具名不冲突   |
-| `notify` 可达的 op 非 `safe` 或带输出  | 无回执通道不能承载写操作 |
-
-### 3.5 作用域
-
-| 范围      | 内容                                                   |
-| --------- | ------------------------------------------------------ |
-| App       | Domain 清单、catalog、模型、凭证、全局设置、工作区列表 |
-| Workspace | 业务资源、索引、缓存、页面会话、会话索引、项目设置     |
-
-- 业务 Domain 的工作区实例以 `ws:<wsId>` 寻址；切换工作区即换实例，旧索引、缓存、locator 一并失效。
-- catalog 是 App 级：它只列能力与域，不列文件。
-
-## 四、DomainRegistry
-
-### 4.1 四个动词与注册原语
-
-```ts
-interface DomainRegistry {
-  declare(decl: DomainDeclaration): void;
-  /** 增量注册原语；declare 是它们的原子封装。 */
-  registerState(domain: string, name: string, decl: StateDeclaration): void;
-  registerOp(domain: string, name: string, decl: OpDeclaration): void;
-
-  describe(
-    origin: Origin,
-    filter?: { domain?: string; op?: string },
-  ): CapabilityView;
-
-  invoke<R = unknown>(
-    origin: Origin,
-    request: DomainRequest,
-    io?: Partial<OpIo>,
-  ): Promise<CallResult<R>>;
-
-  notify(origin: Origin, request: DomainRequest, io?: Partial<OpIo>): void;
-
-  watch(owner: WatchOwner, address: ResourceAddress): Promise<unknown>;
-  unwatch(owner: WatchOwner, address: ResourceAddress): void;
-
-  onCapabilities(listener: (change: CapabilityChange) => void): () => void;
+  /** 允许从哪些入口调用 */
+  exposure?: ReadonlyArray<'tool' | 'cli' | 'ui'>;
 }
 
 interface DomainRequest {
   domain: string;
   op: string;
-  /** 状态命令承载的投影；业务 op 省略。 */
-  resource?: string;
   ref?: string;
-  target?: unknown;
+  /** locator token */
+  target?: string;
   input?: unknown;
 }
+```
 
-interface ResourceAddress {
-  domain: string;
-  resource: string;
-}
+同一份声明同时给出两种形态：
 
-type WatchOwner = Extract<Origin, { type: 'view' }>;
+```text
+ws office edit deck.pptx --at office:shape:s-3 --stdin < content.json
+     ⇕
+{ domain: 'office', op: 'edit',
+  ref: 'file:///…/deck.pptx',
+  target: 'office:shape:s-3',
+  input: { content } }
+```
 
-/** 对外能力描述：声明去掉 run 与 project。 */
-interface OperationDescriptor {
-  domain: string;
-  name: string;
-  title: string;
+### 4.3 三个访问面
+
+| 面     | 入口                  | 形态             | 消费者                      |
+| ------ | --------------------- | ---------------- | --------------------------- |
+| 工具面 | Registry 的方法调用   | 结构化 + locator | AgentHarness 的 read / grep |
+| 命令面 | `invoke` 或 `ws` argv | 结构化 / argv    | 业务 UI、bash、skill        |
+| 投影面 | `subscribe`           | snapshot / patch | 业务 UI 与插件页            |
+
+工具面只有 `read` / `grep` 两条命令，声明为 `exposure: ['tool']`：`ls` / `find` 由地图索引承担，写操作归命令面。
+
+### 4.4 invoke
+
+```text
+1. origin → 通道与权限       业务 UI / 插件页 / CLI / service
+2. 查找命令声明              未注册 → denied
+3. 校验参数与 locator        argv 与 JSON 归一后同一套 schema
+4. 执行环境装配              signal · stdin · stdin 上限 · 进度
+5. 执行                       写命令按 (domain, ref) 串行
+6. 失效传播                  publish(invalidates) · 重建地图条目
+7. 结果归一                  结构化结果 + stdout + 退出码
+8. 记录                      origin · domain · op · 耗时 · 退出码
+```
+
+| 退出码 | 含义         |
+| ------ | ------------ |
+| 0      | 成功         |
+| 1      | 执行失败     |
+| 2      | 用法错误     |
+| 3      | 拒绝         |
+| 4      | locator 失效 |
+
+### 4.5 状态投影
+
+- 业务 UI 的状态一律是投影：订阅 `(domain, resource)` 拿 snapshot，变更收 patch / event。
+- 页面会话（打开、保存、重读、脏态）是 System Domain 的投影，不是业务命令。
+- Biz Domain 的投影只用于目录、任务与索引状态；资料内容不经投影传输。
+
+## 五、两入口汇合
+
+### 5.1 bash → 引擎 CLI
+
+```text
+业务路径  GUI invoke → DomainRegistry.invoke → Biz 域封装 ─┐
+                                                           ├─→ Engine 执行（同一份命令实现）
+助手路径  bash → ws（引擎 CLI）─────────────────────────────┘
+```
+
+- `ws` 是引擎的 CLI 入口；它的命令与域封装来自同一份命令描述。
+- 两条路径在**引擎实现**处汇合，不存在第二套写实现。
+- GUI 路径额外获得授权、写队列与失效传播；Agent 路径只拿 stdout 与退出码，基线校验与写队列由引擎执行。
+- 助手侧不需要知道 IPC 的存在：它只看到命令与退出码。
+
+### 5.2 shell 环境
+
+- `bash` 是真实 shell；Windows 上替换为 powershell，命令语义一致。
+- 启动时在 PATH 前注入一个只含 `ws` 的目录：域写入的唯一入口是它，且不会被同名命令遮蔽。
+- 系统 PATH 照常保留，`head` / `tail` / `wc` / `ls` 这类只读命令用于查看与过滤，不写工作区。
+- 环境变量暴露工作区与会话身份，供 `ws` 解析默认作用域。
+
+### 5.3 一致性与外部变更
+
+bash 的自由度意味着无法阻止绕过 `ws` 的写入。架构靠**观察**而不是禁止来保持一致：
+
+| 情况                 | 处理                                       |
+| -------------------- | ------------------------------------------ |
+| 经 `ws` 写入         | 事务语义；写队列；locator 基线推进         |
+| 绕过 `ws` 的外部写入 | 文件监听捕获 → 索引重建 → 页面标记外部变更 |
+| locator 基线失效     | 命令返回 `stale`，要求重新读取             |
+| 索引与磁盘不一致     | 以磁盘为准重建，投影随后刷新               |
+
+### 5.4 一次编辑的完整路径
+
+```text
+assistant
+  → grep { query: '华东', scope: '销售/' }
+  → hits [{ ref, snippet, locator: 'office:cell:Q1!B2~v7' }]
+  → bash: ws office edit 销售/2026Q1.xlsx --at office:cell:Q1!B2~v7 --stdin
+        └─ stdin: { value: 1200 }
+  → ws 解析 argv → 引擎执行 edit（命令描述来自域封装）
+  → 引擎校验 locator 基线 → 写入 → 返回新版本与新 locator
+  → 索引失效 → 地图条目更新 → 打开该文件的页面收到外部变更提示
+```
+
+业务 UI 里对同一单元格的修改与这条路径完全重合，只是入口从 bash 换成 `invoke`。
+
+## 六、插件实现层
+
+### 6.1 清单
+
+```ts
+interface PluginManifest {
+  id: string;
+  label: string;
   description?: string;
-  input: TSchema;
-  output?: TSchema;
-  target?: TSchema;
-  resource?: string;
-  mutates?: boolean;
-  danger?: 'safe' | 'confirm' | 'destructive';
-  tool?: { exposure: 'direct' | 'codemode' | 'deferred' | 'hidden' };
-}
-
-interface CapabilityView {
-  domains: DomainManifest[];
-  ops: OperationDescriptor[];
-}
-
-interface OpIo {
-  signal?: AbortSignal;
-  detail?: 'summary' | 'full';
-  progress?(stage: string, data?: unknown): void;
+  /** 插件后端提供的业务域 */
+  domain: DomainManifest;
+  /** 前端出口 */
+  page?: string;
+  settings?: string;
+  /** 提供的技能 */
+  skills?: string[];
 }
 ```
 
-- `origin` 是必填参数：不存在不携带来源的执行路径。
-- `declare` 与增量原语共用同一套注册期校验。
-- `describe` 与 `invoke` 共用同一份 manifest 与 schema，不存在“文档一套、实现一套”。
-- 域注册与撤销都触发 `onCapabilities`，适配器据此重建工具、命令与技能目录。
-
-### 4.2 invoke 流程
-
-```text
-1. origin → audience           view / page / service / tool
-2. 查找声明                    未注册 → denied
-3. 授权矩阵                    audience × danger → allow / confirm / deny
-4. 参数校验                    schema → invalid
-5. 执行环境装配                signal · detail · progress · state
-6. 执行 run()                  mutates 按 (domain, ref) 串行
-7. 失效传播                    publish(invalidates) + emit(emits)
-8. 结果归一与记录              CallResult + 来源 / 域 / op / 耗时
-```
-
-- 第 6 步的串行队列保证同一资源上的写操作不交错；Domain 不各自实现写锁。
-- 第 7 步把两条轴绑在一起：op 成功即投影更新，Domain 不手工 `publish`。
-- 第 8 步的记录覆盖 UI 与 Agent：工具调用第一次与页面命令出现在同一份日志里。
-
-### 4.3 notify
-
-`notify` 与 `invoke` 共用同一个闸门，只去掉回执。它只对声明为 `safe` 且无输出的 op 开放，用于布局拖拽、场景补丁这类高频动作。写操作无法走无回执通道，因此不会静默失败。
-
-### 4.4 授权矩阵
-
-| origin                         | System Domain | 本域 business                | 跨域 business    |
-| ------------------------------ | ------------- | ---------------------------- | ---------------- |
-| `view(shell/settings/welcome)` | 全权          | read / execute（危险需确认） | 只读             |
-| `view(page, pluginId=X)`       | 仅页面会话    | 全权                         | 只读且需显式声明 |
-| `service`                      | 全权          | 全权                         | 全权             |
-| `tool`                         | 拒绝          | 按 exposure                  | 按 exposure      |
-
-- 插件页只能执行本域 op；跨域读取需要在清单中声明，并在日志中留痕。
-- 工具面看不到 System Domain，即使它声明了 op。
-- 危险 op 的确认在 UI 由对话框承担，在 Agent 由权限扩展承担；两者读取同一份 `danger` 与注解。
-
-### 4.5 IPCDispatcher 只做传输
+### 6.2 声明面
 
 ```ts
-interface IPCDispatcher {
-  subscribe(sender, address): Promise<unknown>;
-  unsubscribe(sender, address): void;
-  invoke(sender, request): Promise<CallResult>;
-  notify(sender, request): void;
+interface BizPlugin {
+  manifest: PluginManifest;
+
+  /** 资源地图：贡献子树 */
+  mount(ctx: DomainScope): Promise<MountNode[]>;
+
+  /** 工具面：读取与检索，返回值必须带 locator */
+  read(
+    input: {
+      ref: string;
+      target?: string;
+      detail?: 'summary' | 'full';
+    },
+    ctx: OpContext,
+  ): Promise<{ content: string; locator?: string }>;
+
+  grep(
+    input: {
+      query: string;
+      scope?: string;
+      limit?: number;
+    },
+    ctx: OpContext,
+  ): Promise<Array<{ ref: string; snippet: string; locator: string }>>;
+
+  /** 命令面：写与结构化操作 */
+  commands: CommandDecl[];
+  execute(
+    command: string,
+    args: CommandArgs,
+    ctx: OpContext,
+  ): Promise<CommandResult>;
+
+  start?(ctx: DomainScope): void | Promise<void>;
+  stop?(): void | Promise<void>;
+}
+
+interface CommandResult {
+  stdout?: string;
+  data?: unknown;
+  exitCode?: number;
 }
 ```
 
-职责：sender → origin、订阅归属与释放、协议与日志、把请求交给 `registry`。
+- `read` / `grep` 是工具面上两条命令的实现，返回结构化结果与 locator。
+- `execute` 是命令面，接收已解析的 argv / JSON，返回 stdout + 数据 + 退出码。
+- 两份实现共用同一张命令表：`read` / `grep` 在表里以 `exposure: ['tool']` 出现，其余命令以 `['cli', 'ui']` 出现。
+- 引擎不是 SDK 面：插件自带引擎（原生库 / 脚本 / CLI），域封装只消费它的命令描述与文档模型；skills 封装消费同一份描述生成手册。
+- 两者共用同一个域实例与同一份索引，插件不必维护两套状态。
+- 不要求实现路径原语：插件不提供 `readFile` 之类的文件接口，也不接触绝对路径。
 
-不负责：Domain 业务逻辑、工具注入、Locator 解释、搜索策略、授权判定。
+### 6.3 前端出口
 
-### 4.6 ToolBinder
+- `page`：文档查看器，由资源打开流程装载，带文档内容与页面会话。
+- `settings`：配置页，只处理本域设置。
+- 插件页与业务 UI 走同一条通道；页面只能执行本域命令，跨域只读需在清单声明。
 
-```text
-registry.describe(tool)
-  → 每个 op 一条工具声明
-      name        = domain + '.' + op
-      namespace   = domain
-      parameters  = op.input
-      outputSchema= op.output
-      annotations = readOnlyHint / destructiveHint
-      exposure    = op.tool.exposure
-  → pi.registerTool
-  → onCapabilities 变化时重建
-```
+### 6.4 生命周期
 
-ToolBinder 是纯投影：不写业务格式化、不做截断、不判断权限。工具结果的文本由 `op.project` 或通用投影产出。
+- 装载：注册域 → 贡献地图子树 → 登记命令 → 技能进入目录。
+- 卸载：撤销命令、移除子树、删除索引与缓存、关闭已打开页面。
+- 工作区切换：域实例随工作区重建，地图与索引重新装载；App 级目录清单不变。
 
-## 五、搜索与 Locator
+### 6.5 地址栏展示
 
-### 5.1 用 catalog 取代全量清单
+地址栏显示的是**地址的投影**，不是加载地址本身；两者都不出现系统绝对路径。
 
-不再维护一份全量文件目录作为 context。替代结构很小：
+| 页面        | 内部地址                                     | 地址栏显示                           |
+| ----------- | -------------------------------------------- | ------------------------------------ |
+| 内置设置    | `work://studio/settings/appearance`          | 设置 · 外观                          |
+| 插件设置    | `plugin://markdown-viewer/settings`          | Markdown 阅读器 · 设置               |
+| 文档 / 表格 | `plugin://office/content?ref=file:///…`      | `销售/2026Q1.xlsx`（工作区相对路径） |
+| 网页        | `https://example.com/pricing`                | `example.com/pricing`                |
+| 邮件        | `plugin://mail/content?ref=mail://work/t-42` | 邮件 · 客户回执                      |
 
-```text
-Domain catalog（App 级，很小）
-  ├─ files：文本与目录
-  ├─ office：docx / xlsx / pptx
-  └─ docs：Markdown / PDF
-
-Domain.search(query)
-  → SearchHit { domain, ref, locator, snippet }
-  → Domain.read / Domain.execute
-```
-
-理由：全量目录无法为每个条目提供操作 locator；搜索结果没有 locator 就无法进入下一步；业务发现应由 Domain 自己负责。
-
-### 5.2 Domain 自有搜索
-
-每个 Business Domain 负责自己的：
-
-```text
-Markdown 缓存
-搜索索引
-locator 提取
-结果排序与预算
-```
-
-Office 域的闭环：
-
-```text
-docx / xlsx / pptx
-  → 解析为 Document
-  → 生成 Markdown 缓存
-  → 建立带 locator 的搜索索引
-  → search(query) 返回 sheet / cell、slide / shape、paragraph locator
-```
-
-```ts
-{
-  domain: 'office',
-  ref: 'file:///.../sales.xlsx',
-  mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  snippet: '华东 | 1200',
-  locator: { type: 'sheet-cell', sheet: '2026Q1', range: 'B2' },
-  actionable: true,
-}
-```
-
-### 5.3 Locator 归 Domain
-
-`Locator` 是 Domain 自己的类型。Registry 只保证一条约定：
-
-```text
-search 返回的 locator
-  → 可以传给同一 Domain 的 execute
-```
-
-Domain 负责 schema、验证、失效处理与文档模型映射。不同 Domain 的 locator 完全不同：
-
-```ts
-{ type: 'sheet-cell', sheet: 'Q1', range: 'B2' }   // office
-{ type: 'thread', threadId: '...' }                // email
-{ type: 'paragraph', blockId: 'p-17' }             // docs
-```
-
-locator 携带内容基线（版本或片段哈希）。基线失效时返回 `stale` 错误，不静默错位。
-
-### 5.4 无 locator 的命中
-
-```ts
-{
-  domain: 'pdf',
-  ref: 'file:///.../scan.pdf',
-  snippet: '...',
-  actionable: false,
-}
-```
-
-`actionable: false` 不能直接 `execute`，只能作为阅读线索；Domain 可以提供显式的 `locate` / `open` 操作把线索转成 locator。
-
-### 5.5 结果双投影
-
-```text
-Domain 返回结构化值
-  ├─ UI / 程序化调用：原样
-  └─ 模型：op.project()；缺省 JSON + detail 截断
-```
-
-- `detail: 'summary' | 'full'` 由调用者选择，由 Domain 解释：摘要给模型，全文给 UI。
-- 截断与分页归 Domain：只有它知道从哪里切不断结构。
-- 适配器不做业务截断，也不做业务格式化。
-- 工具结果同时携带文本与 `structuredContent`：模型读文本，codemode 脚本与技能直接取数据，不需要解析自然语言。
-
-### 5.6 跨域搜索
-
-全局搜索由 Registry 扇出并统一预算：
-
-```text
-registry.invoke(origin, { domain: '*', op: 'search', input: { query } })
-  → 各 Business Domain 并发搜索（超时 + 命中预算）
-  → 合并、去重、按 score 排序
-```
-
-- `domain: '*'` 只对 Business Domain 全部声明的发现类 op 有效（read / ls / find / search），其余 op 必须指定域。
-- 每个 Domain 有独立的超时与命中上限，单个域失败不影响其余域。
-- `domain` 作为过滤器传给工具与命令面板，避免模型盲扫。
-
-## 六、Domain 内部组织
-
-```text
-Business Domain（plugin）
-├─ manifest：id / label / mimes / 前端出口
-├─ ops
-│   ├─ read / ls / find / search
-│   └─ execute(op, target, input)
-├─ frontend
-│   └─ page / settings
-├─ index
-│   ├─ Markdown cache
-│   └─ locator index
-└─ engine
-    ├─ codec / parser
-    ├─ document model
-    └─ native operations
-```
-
-- codec / transport 不是独立的上层概念，它们是 Domain 内部实现细节。
-- Domain 可以包装 CLI、Python 脚本、原生库或 WASM 引擎；Agent 只看到 op。
-- 索引落在 App 空间下按工作区隔离的缓存目录，不进工作区内容区；Domain 卸载或工作区切换即删除。
-- Domain 安装/卸载时，自己的索引、缓存、前端页面与操作一起失效；该失效由 Registry 的能力变更统一触发。
+- `host` 提供名称：插件名来自清单 `label`，内置页名称来自页面注册表。
+- `ref` 提供内容标识：本地文件取工作区相对路径，网页取域名与路径，邮件取账号与线程标识。
+- 展示与 scheme 注册无关：注册只决定能否加载，展示由 host 与 ref 映射得到。
 
 ## 七、当前实现与差距
 
@@ -608,82 +532,70 @@ Business Domain（plugin）
 - 资源管道（transport / codec / pipeline / page session）与资源地图；
 - Agent 工具、插件安装、设置页与传统 UI。
 
-### 7.2 核心判断的状态
+### 7.2 差距表
 
-| 判断                   | 状态   | 差距                                             |
-| ---------------------- | ------ | ------------------------------------------------ |
-| 两类 Domain            | 未落地 | 无 `type` 区分；现有域全部按 UI 状态组织         |
-| 插件即 Business Domain | 未落地 | 插件注册的是 codec / presenter / sidecar / list  |
-| 取消全量清单           | 未落地 | 资源地图仍是注入 context 的主发现通道            |
-| 搜索下沉               | 部分   | 检索无域归属、无索引、无 locator                 |
-| Locator 归 Domain      | 未落地 | 只有字节区间，未形成跨调用可传递的 locator       |
-| 订阅只属于 UI          | 部分   | 实际只有页面订阅；执行与订阅共用同一寻址         |
-| 统一命令入口           | 未落地 | 页面与 Agent 是两条路径，工具也不经过 Dispatcher |
+| 主题 | 当前实现                           | 目标                           |
+| ---- | ---------------------------------- | ------------------------------ |
+| 入口 | 单入口，全部进 Registry            | 业务 / 助手两条通道            |
+| 会话 | sessions 等作为 domain             | 归 AgentHarness                |
+| 工具 | 手写资源工具 + office_gen          | read / ls / find / grep / bash |
+| 发现 | 全量清单文件                       | 目录结构地图 + 索引            |
+| 读取 | 门面返回 presentation              | 插件方法返回内容 + locator     |
+| 写入 | write / edit 工具                  | bash → ws → invoke             |
+| 命令 | 每类操作新增页面命令与工具         | 命令表新增一条声明             |
+| 插件 | codec / presenter / sidecar / list | mount / read / grep / commands |
 
-### 7.3 差距表
+### 7.3 现有能力去向
 
-| 主题        | 当前实现                                | 目标                            |
-| ----------- | --------------------------------------- | ------------------------------- |
-| 统一入口    | 资源门面 + 域命令双入口                 | Registry `invoke` 单一闸门      |
-| 插件        | codec / transport / presenter / sidecar | Business Domain 的 op 与前端    |
-| 资源发现    | 全量清单 + 资源地图                     | Domain catalog + Domain search  |
-| 搜索        | 全文扫描 / glob / 结构化查询            | Domain.search，带 locator       |
-| Locator     | 字节区间，仅编辑路径可见                | Domain 泛型 locator，跨调用传递 |
-| 操作        | 固定工具 + 部分 Office 命令             | `execute(op, target, input)`    |
-| 工具面      | 手写工具，各自格式化结果                | `describe` 生成，project 投影   |
-| UI 与 Agent | 两套调用路径                            | 同一个 `DomainRequest`          |
-| 命令扩展    | 每类操作新增一条命令与一个工具          | 新增一个 op 声明                |
-
-### 7.4 资源管道各段的去向
-
-| 现有概念      | 去向                | 处理                                   |
-| ------------- | ------------------- | -------------------------------------- |
-| transport     | 共享内核            | 保留为注入依赖，不再按 scheme 全局抢注 |
-| codec         | Domain 私有 engine  | 不再注册；Domain 内按 MIME 选择        |
-| presenter     | Domain frontend     | 由 manifest 声明页面出口               |
-| sidecar       | `read` 的投影       | 变成 `detail` 参数与 `project`         |
-| store / query | Domain op           | 变成 `execute` 的命名空间操作          |
-| binding       | Domain 设置         | 从全局绑定表降到 Domain 作用域         |
-| view action   | Domain frontend     | 随 Domain 卸载                         |
-| 列表 provider | Domain catalog      | 侧栏是 catalog 的投影                  |
-| 资源地图      | 删除                | 由 catalog 与 `search` 取代            |
-| 页面会话      | System Domain pages | 从资源域拆出，不进 Agent 工具面        |
+| 现有概念      | 去向                   | 处理                                   |
+| ------------- | ---------------------- | -------------------------------------- |
+| transport     | 共享内核               | 保留为注入依赖，不再按 scheme 全局抢注 |
+| codec         | Biz Domain 私有 engine | 不再注册；域内按 MIME 选择             |
+| presenter     | 插件前端出口           | 由清单声明页面                         |
+| sidecar       | `read` 的投影          | 变成 `detail` 参数                     |
+| store / query | 命令                   | 变成域命名空间命令                     |
+| binding       | 域设置                 | 从全局绑定表降到域作用域               |
+| view action   | 插件前端               | 随插件卸载                             |
+| list provider | 资源地图的子树         | 侧栏是地图的投影                       |
+| 资源地图文件  | 删除                   | 索引驻留主进程，context 只放目录骨架   |
+| 页面会话      | System Domain pages    | 从资源域拆出，不进工具面               |
 
 ## 八、需要坚守的规则
 
-- **没有 URA / Domain Gateway 独立层**：统一入口由 Registry 的 `invoke` 承担。
-- **插件就是 Business Domain**：插件负责资源、搜索、操作与前端。
-- **System / Business 分离**：窗口、视图、会话、设置不进业务插件，也不进工具面。
-- **订阅只属于 UI**：Agent 通过 op 与 `detail` 取数，不持有订阅。
-- **能力面只有一个来源**：命令面板、工具声明、技能目录都由 `describe` 生成。
-- **搜索必须带 locator**：没有 locator 的命中只能阅读，不能直接执行。
-- **Locator 归 Domain**：Registry 只透传，schema 由 Domain 定义。
-- **命令统一**：UI、插件页、Agent、技能都产出同一个 `DomainRequest`。
-- **注册量不等于声明量**：细粒度 op 用 `codemode` / `deferred`，不为每个 op 声明工具。
-- **结果双投影**：结构化值给 UI 与脚本，文本投影给模型；截断归 Domain。
-- **Domain 自有缓存**：索引、Markdown 缓存、locator 索引随 Domain 与工作区生命周期管理。
-- **不暴露裸 shell**：Domain 可以内部包装 CLI 或脚本，Agent 只看到 op。
-- **写操作收口**：所有变更都走 `invoke`，`mutates` 串行，不做旁路写入。
+- **两个入口**：业务 UI 只到 Registry，助手 UI 只到 Harness；不互相穿透。
+- **System / Biz 分离**：运行时域不进工具面；业务域不管理窗口与视图。
+- **工具按插件取数**：`read` / `grep` 落到插件实现，不做文本兜底。
+- **ls / find 只读索引**：两种工具不触发插件调用，保证发现成本恒定。
+- **locator 必须闭环**：读取结果没有 locator 就只能阅读，不能写。
+- **写操作只有 bash**：没有独立的 write / edit 工具，内容经 stdin。
+- **命令描述唯一**：域封装、CLI 命令、skills 手册来自引擎的同一份声明。
+- **argv 与 JSON 同构**：一种能力两种形态，校验、授权与日志只有一份。
+- **插件不接触路径**：插件只认 ref 与 locator，路径解析归内核。
+- **变更一致性靠观察**：绕过 `ws` 的写入不被阻止，但会被索引与页面识别。
+- **不暴露裸 shell 给插件**：插件可以包装 CLI，Agent 只看到域命令。
+- **引擎统一出命令**：域封装与 skills 是同一份命令描述的两个集成，不各自维护命令清单。
+- **bash 依赖 skills**：写与改的命令用法来自按需加载的技能，不在工具里内置业务知识。
 
 ## 九、收敛顺序
 
 每个里程碑独立可验收；代码改动按 `pnpm verify` 收口，UI / 交互改动按 `dev_test` 与隔离 e2e 收口。
 
-| 里程碑 | 内容                                                                                                                                     | 完成定义                                                       |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| M0     | 冻结契约：manifest、声明对象、请求与执行环境类型                                                                                         | 类型落地，`pnpm verify` 通过，运行时行为不变                   |
-| M1     | Registry 新 API：`declare` / `describe` / `invoke` / `notify` / `watch` / `onCapabilities`，含注册期校验与授权矩阵；旧注册面降为增量原语 | 现有域全部经增量原语注册且行为不变；e2e 全量通过               |
-| M2     | `files` Domain：五个 op 包住现有资源管道；页面改走 `invoke`；工具由 ToolBinder 生成                                                      | UI 与 Agent 同一 op 同一结果；工具调用出现在日志；手写工具删除 |
-| M3     | 发现模型切换：`search` 返回带 locator 的命中；删除资源地图；技能目录由 `describe` 生成                                                   | search → execute 闭环；工作区不再生成清单文件；目录与 op 一致  |
-| M4     | 拆分页面会话：资源域拆成 `pages`（System）与 `files`（Business）；插件页使用页面会话与域执行两条通道                                     | 页面保存 / 重读 / 冲突 e2e 全绿；插件页只能执行本域 op         |
-| M5     | 插件升级为 Business Domain：清单声明域与前端出口；旧注册入口映射为单域                                                                   | 三个内置插件迁移；已安装的旧插件仍可装载                       |
-| M6     | Office Domain：OOXML engine、Markdown 缓存、带 locator 的索引；生成脚本收进 Domain                                                       | docx / xlsx / pptx 可读可搜可改；生成不再暴露为独立工具        |
-| M7     | 清尾：删除资源门面、全局注册表、绑定表与资源地图                                                                                         | 卸载 Domain 后命令、工具、页面、索引同时失效                   |
+| 里程碑 | 内容                                                                                             | 完成定义                                                  |
+| ------ | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| M0     | 冻结契约：清单、命令声明、请求、locator、插件接口                                                | 类型落地，`pnpm verify` 通过，运行时行为不变              |
+| M1     | 命令表与 `invoke`：argv ⇄ JSON 同构、退出码、写队列、失效传播                                    | 现有命令迁移到命令表，行为不变；e2e 全量通过              |
+| M2     | `ws` 与 bash：PATH 注入、stdin、`--help`、`--at`、退出码                                         | bash 能完成一次创建与一次 locator 编辑；日志与 UI 同源    |
+| M3     | 资源地图索引：目录骨架进 context，`ls` / `find` 查索引                                           | 目录树与磁盘一致；`ls` / `find` 不触发插件调用            |
+| M4     | 工具面重定义：`read` / `grep` 落到 Biz Domain，返回 locator；删除 write / edit 工具              | 读取携带 locator；写入全部经 bash；手写工具删除           |
+| M5     | 入口拆分：助手通道直达 Harness，会话从 Registry 移出                                             | 助手页不再调用业务域命令；设置页经只读投影取 Harness 数据 |
+| M6     | 插件升级：清单声明域、mount、read / grep、commands；三个内置插件迁移                             | 卸载插件后命令、子树、索引、页面同时失效                  |
+| M7     | Office 域：引擎层（OOXML 解析、文档模型、Markdown 缓存、locator 索引）+ 域封装；生成脚本收进引擎 | docx / xlsx / pptx 可读可搜可改；生成走 `office create`   |
 
-顺序理由：先把入口与契约做实，再用最简单的文件域验证闭环，最后才动插件与 Office。反过来会得到两个并行系统。
+顺序理由：先命令表与 bash 通道，再地图索引与工具面，最后动入口与插件。反过来会得到两套并行的调用路径。
 
 ## 十、待确认
 
-- 跨域只读是否对所有 Domain 开放，还是只能由清单显式声明？（当前建议：显式声明）
-- 一个插件是否可以注册多个 Business Domain，还是保持一插件一域？（当前建议：一插件一域）
-- System Domain 是否允许 `service` 来源之外的调用方执行状态命令？（当前建议：不允许）
+- `bash` 的 PATH 是否只保留 `ws` 与少量只读过滤器，还是保留完整系统命令？
+- 资源地图的目录骨架是否包含文件名（更省一次 `ls`，但 context 更大），还是只放目录与类型统计？
+- 助手通道的投影是否也由 Harness 自己推送，还是统一登记到 Registry 的 `agent` 命名空间？
+- 插件是否允许贡献多个挂载点（例如一个插件同时挂 `docs/` 与 `templates/`）？
