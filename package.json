@@ -1,7 +1,7 @@
 {
   "name": "work-studio",
   "productName": "WorkStudio",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "WorkStudio desktop application",
   "keywords": [],
@@ -58,6 +58,7 @@
   },
   "type": "module",
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "fflate": "^0.8.3",
     "undici": "^8.12.3"
   }

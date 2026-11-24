@@ -525,7 +525,7 @@ node node_modules/electron/install.js
 ### 7.4 构建与打包
 
 - 构建产物 `out/{main,preload,renderer}` 与打包产物 `dist/` 都不进版本库。
-- macOS 本地构建走 ad-hoc 签名（`identity: '-'`）：fuses 会改写二进制，必须重签，否则系统直接终止应用；正式分发换成 Developer ID 或经 `CSC_LINK` 注入证书。
+- macOS 构建使用 **Developer ID Application** 证书签名（hardened runtime + 公证）：本地构建从钥匙串自动发现证书（需先在 Apple Developer 创建并导入）；CI 由 Release workflow 从 secrets 导入 p12。fuses 会改写二进制，electron-builder 在改写后重签。签名是应用内静默更新的前置条件——Squirrel.Mac 校验更新包与当前应用的代码签名一致（Team ID），ad-hoc 签名的副本无法静默升级到签名版本。
 - 安装包在对应平台（或 CI）上产出：macOS 主机默认只产 mac 目标，Windows / Linux 目标交给 CI。
 
 发版由 tag 触发：tag 版本必须与 `package.json` 的 `version` 一致，否则打包任务直接失败。
@@ -540,7 +540,21 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（arm64 / x64）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
+workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
+
+macOS 构建需要仓库配置以下 Actions secrets：
+
+| Secret                        | 说明                                             |
+| ----------------------------- | ------------------------------------------------ |
+| `MAC_CERTIFICATE`             | Developer ID Application 证书 p12 的 base64 编码 |
+| `MAC_CERT_PASSWORD`           | 导出 p12 时设置的密码                            |
+| `APPLE_ID`                    | Apple ID 邮箱（公证用）                          |
+| `APPLE_APP_SPECIFIC_PASSWORD` | appleid.apple.com 生成的 App 专用密码（公证用）  |
+| `APPLE_TEAM_ID`               | Team ID（公证用）                                |
+
+CI 在打包之后会验证签名身份（Developer ID Application）与 Gatekeeper 放行结果：公证凭据缺失或签名回退为 ad-hoc 时构建直接失败，避免发出无法静默更新的安装包。本地手动打包不注入公证凭据，因此只完成签名、不做公证。
+
+macOS 安装版的应用内更新为静默替换：electron-updater（Squirrel.Mac）下载 zip 后，退出应用时自动替换，或在设置页点「重启并安装」立即更新。`latest-mac.yml` 随 Release 发布，是更新 feed；首次从 ad-hoc 版本升级需手动 dmg 安装一次签名版。
 
 ### 7.5 技术栈
 

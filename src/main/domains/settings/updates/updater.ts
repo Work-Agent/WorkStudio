@@ -1,24 +1,36 @@
 /**
  * 客户端更新（GitHub Releases，architecture.md §6.5）。
  *
- * 检查：releases/latest API 拿 tag 与资产，按平台 / 架构匹配安装包名，
- * semver 与当前版本比对；有新版才进入下载。下载走共享代理链路
- * （net/proxy），流式写 <下载目录>/<资产名>.part 后原子改名，落定后自动
- * 打开安装包（不静默替换应用：mac ad-hoc 签名不支持 Squirrel 静默更新，
- * 各平台统一「下载 → 自动打开安装包」）。
+ * macOS（已签名安装版）：electron-updater（MacUpdater / Squirrel.Mac）静默
+ * 更新——检查 GitHub feed（latest-mac.yml），下载本架构 zip，退出应用时自动
+ * 静默替换，或主动「重启并安装」；Squirrel 校验新包代码签名与当前应用一致
+ * （Team ID），旧 ad-hoc 安装副本无法静默升级到签名版本。
+ *
+ * 其他平台与 macOS dev 模式：HTTP 管线——releases/latest API 拿 tag 与资产，
+ * 按平台 / 架构匹配安装包名，semver 比对；下载走共享代理链路（net/proxy），
+ * 流式写 <下载目录>/<资产名>.part 后原子改名，落定后自动打开安装包。
+ *
+ * 私有仓库：mac 静默链路经 GH_TOKEN 环境变量注入令牌（electron-updater
+ * GitHub provider 在首次检查时读取并缓存，之后配置 Token 需重启生效）；
+ * HTTP 链路每次请求携带令牌头。
  */
-import { app, dialog, shell } from 'electron';
+import { app, session, shell } from 'electron';
 import { createWriteStream } from 'node:fs';
 import { chmod, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fetch as undiciFetch } from 'undici';
+import { autoUpdater } from 'electron-updater';
+import type { UpdateInfo } from 'electron-updater';
 import { createLogger } from '../../../runtime/log.ts';
-import { ensureProxy } from '../../../runtime/net/proxy.ts';
+import { ensureProxy, resolveProxyUrl } from '../../../runtime/net/proxy.ts';
 
 const log = createLogger('updater');
 
 const RELEASES_API =
   'https://api.github.com/repos/Work-Agent/WorkStudio/releases/latest';
+
+/** macOS 已签名安装版走 electron-updater 静默更新；dev 模式与其他平台走 HTTP。 */
+const useAutoUpdater = process.platform === 'darwin' && app.isPackaged;
 
 export type UpdatePhase =
   | 'idle'
@@ -31,22 +43,24 @@ export type UpdatePhase =
 
 export interface UpdateAsset {
   name: string;
-  /** 资产的 API 端点（带令牌请求，Accept: octet-stream）。 */
+  /** 资产来源（HTTP 管线为 API 端点；静默链路为 feed 内文件名）。 */
   url: string;
   size: number;
 }
 
 export interface UpdateStatus {
   phase: UpdatePhase;
+  /** 是否走静默替换链路（macOS 安装版）；由主进程判定，渲染层不再自行推断。 */
+  silent: boolean;
   /** 当前安装版本（app.getVersion）。 */
   current: string;
-  /** 最新发布 tag（如 v0.2.0）。 */
+  /** 最新发布版本号（如 0.3.2）。 */
   latest: string | null;
-  /** 本平台对应的安装包资产。 */
+  /** 本平台对应的更新包资产。 */
   asset: UpdateAsset | null;
   received: number;
   total: number;
-  /** 下载完成的安装包绝对路径。 */
+  /** HTTP 管线下载完成的安装包绝对路径（静默链路为 null）。 */
   file: string | null;
   message: string | null;
 }
@@ -71,6 +85,12 @@ function authHeaders(token: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** 还原被临时覆盖的环境变量（undefined 表示原本不存在）。 */
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
 /** 资产端点：私有仓库不能匿名走 browser_download_url，统一走 API。 */
 function apiErrorMessage(status: number): string {
   if (status === 404)
@@ -78,6 +98,57 @@ function apiErrorMessage(status: number): string {
   if (status === 403) return 'GitHub API 限流或令牌无效，稍后再试';
   if (status === 401) return 'GitHub Token 无效或已过期';
   return `HTTP ${status}`;
+}
+
+/** 静默链路错误转译（electron-updater 错误消息较底层）。 */
+function autoErrorMessage(message: string, hasToken: boolean): string {
+  if (message.includes('404') || message.includes('ENOTFOUND')) {
+    return hasToken
+      ? '私有仓库拉取更新失败：令牌可能无效，或 Release 缺少 latest-mac.yml'
+      : '私有仓库需在下方配置 GitHub Token（配置后需重启应用生效）';
+  }
+  if (message.includes('401') || message.includes('403')) {
+    return 'GitHub Token 无效、过期或限流，稍后再试';
+  }
+  if (
+    message.includes('EPERM') ||
+    message.includes('EACCES') ||
+    message.includes('ERR_UPDATER')
+  ) {
+    return `无法应用更新（应用需位于「应用程序」文件夹且已签名安装）：${message}`;
+  }
+  return message;
+}
+
+/** electron-updater 走 Electron net（默认 session），代理须经 session 注入。 */
+async function applySessionProxy(): Promise<void> {
+  const proxy = resolveProxyUrl();
+  try {
+    await session.defaultSession.setProxy(
+      proxy ? { proxyRules: proxy } : { mode: 'direct' },
+    );
+  } catch (error) {
+    log.warn('session proxy apply failed, direct', error);
+  }
+}
+
+/** feed 内挑出当前架构的 zip 条目（产物名含 arch，见 electron-builder.yml）。 */
+function pickMacAsset(info: UpdateInfo | null | undefined): UpdateAsset | null {
+  const zips = (info?.files ?? []).filter(
+    (file) =>
+      typeof file.url === 'string' && file.url.toLowerCase().endsWith('.zip'),
+  );
+  const expected = `WorkStudio-mac-${process.arch}.zip`;
+  const chosen =
+    zips.find((file) => (file.url.split('/').pop() ?? '') === expected) ??
+    zips.find((file) => file.url.includes(process.arch));
+  if (!chosen) return null;
+  const url = chosen.url;
+  return {
+    name: url.split('/').pop() ?? url,
+    url,
+    size: typeof chosen.size === 'number' ? chosen.size : 0,
+  };
 }
 
 export class UpdateService {
@@ -89,6 +160,7 @@ export class UpdateService {
 
   private status: UpdateStatus = {
     phase: 'idle',
+    silent: useAutoUpdater,
     current: app.getVersion(),
     latest: null,
     asset: null,
@@ -110,10 +182,144 @@ export class UpdateService {
     return () => this.listeners.delete(listener);
   }
 
-  /** 检查新版本；失败回滚到检查前状态（不落 error）并抛错给页面 toast。 */
-  async check(): Promise<UpdateStatus> {
+  check(): Promise<UpdateStatus> {
+    return useAutoUpdater ? this.checkAuto() : this.checkHttp();
+  }
+
+  download(): Promise<UpdateStatus> {
+    return useAutoUpdater ? this.downloadAuto() : this.downloadHttp();
+  }
+
+  cancel(): UpdateStatus {
+    if (useAutoUpdater) {
+      // Squirrel 下载不可中止；mac 设置页不展示取消入口。
+      return this.currentStatus();
+    }
+    this.controller?.abort();
+    if (this.status.phase === 'downloading') {
+      this.patch({ phase: 'idle', message: '下载已取消' });
+    }
+    return this.currentStatus();
+  }
+
+  /** 应用更新：mac 静默链路重启并替换（Squirrel）；其他平台打开安装包。 */
+  install(): UpdateStatus {
+    if (useAutoUpdater) {
+      // 未下载完成时调用 quitAndInstall 会让 Squirrel 拿到空缓存直接失败
+      if (this.status.phase !== 'ready') throw new Error('更新尚未下载完成');
+      log.info('quit and install mac update');
+      autoUpdater.quitAndInstall();
+      return this.currentStatus();
+    }
+    const file = this.status.file;
+    if (file) void shell.openPath(file);
+    return this.currentStatus();
+  }
+
+  /**
+   * 静默检查：令牌注入环境变量（provider 首次检查时读取并缓存），
+   * session 代理就位后查 feed；semver 比对落 available / current。
+   */
+  private async checkAuto(): Promise<UpdateStatus> {
     if (this.busy) return this.currentStatus();
     this.busy = true;
+    const previousPhase = this.status.phase;
+    this.patch({ phase: 'checking', message: null });
+    // electron-updater 在首次检查时创建 provider 并从环境变量取令牌；
+    // 用完立即还原，避免令牌随进程环境泄漏给后续 spawn 的子进程。
+    const token = this.options.token();
+    const previousGhToken = process.env['GH_TOKEN'];
+    const previousGithubToken = process.env['GITHUB_TOKEN'];
+    if (token) {
+      process.env['GH_TOKEN'] = token;
+      process.env['GITHUB_TOKEN'] = token;
+    }
+    try {
+      await applySessionProxy();
+      autoUpdater.autoDownload = false;
+      autoUpdater.autoInstallOnAppQuit = true;
+      const result = await autoUpdater.checkForUpdates();
+      const latest = result?.updateInfo.version ?? null;
+      if (!latest) throw new Error('更新数据不完整（缺少版本号）');
+      const asset = pickMacAsset(result?.updateInfo);
+      if (!asset) {
+        throw new Error('Release 里没有本平台的更新包（WorkStudio-mac-*.zip）');
+      }
+      this.patch({
+        phase: isNewer(latest, this.status.current) ? 'available' : 'current',
+        latest,
+        asset,
+        file: null,
+      });
+      return this.currentStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn('mac update check failed', message);
+      // 已下载就绪的更新不能被一次失败的复检降级，否则「重启并安装」入口消失
+      this.patch({
+        phase:
+          previousPhase === 'ready'
+            ? 'ready'
+            : this.status.asset
+              ? 'available'
+              : 'idle',
+        message: autoErrorMessage(message, Boolean(token)),
+      });
+      throw error;
+    } finally {
+      if (token) {
+        restoreEnv('GH_TOKEN', previousGhToken);
+        restoreEnv('GITHUB_TOKEN', previousGithubToken);
+      }
+      this.busy = false;
+    }
+  }
+
+  /** 静默下载：进度映射到状态；完成后 Squirrel 已就位，退出即替换。 */
+  private async downloadAuto(): Promise<UpdateStatus> {
+    if (this.busy) return this.currentStatus();
+    if (this.status.phase !== 'available') throw new Error('请先检查更新');
+    this.busy = true;
+    try {
+      await applySessionProxy();
+      const total = this.status.asset?.size ?? 0;
+      this.patch({ phase: 'downloading', received: 0, total });
+      const onProgress = (progress: {
+        transferred: number;
+        total: number;
+      }): void => {
+        this.patch({ received: progress.transferred, total: progress.total });
+      };
+      autoUpdater.on('download-progress', onProgress);
+      try {
+        await autoUpdater.downloadUpdate();
+      } finally {
+        autoUpdater.removeListener('download-progress', onProgress);
+      }
+      log.info('mac update downloaded, install on quit or via install');
+      this.patch({
+        phase: 'ready',
+        total,
+        received: total,
+        message:
+          '更新已就绪：退出应用时自动静默替换，或点「重启并安装」立即更新',
+      });
+      return this.currentStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn('mac update download failed', message);
+      this.patch({ phase: 'error', message: autoErrorMessage(message, true) });
+      throw error;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** 检查新版本；失败回滚到检查前状态（不落 error）并抛错给页面 toast。 */
+  private async checkHttp(): Promise<UpdateStatus> {
+    if (this.busy) return this.currentStatus();
+    this.busy = true;
+    const previousPhase = this.status.phase;
     this.patch({ phase: 'checking', message: null });
     try {
       ensureProxy();
@@ -145,9 +351,15 @@ export class UpdateService {
       this.patch({ phase: next, latest, asset, file: null });
       return this.currentStatus();
     } catch (error) {
-      // 失败回滚到检查前的状态，避免状态卡在 checking（页面按钮禁用）
+      // 失败回滚到检查前的状态，避免状态卡在 checking（页面按钮禁用）；
+      // 已下载就绪的更新保持 ready，防止入口消失
       this.patch({
-        phase: this.status.asset ? 'available' : 'idle',
+        phase:
+          previousPhase === 'ready'
+            ? 'ready'
+            : this.status.asset
+              ? 'available'
+              : 'idle',
         message: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -157,7 +369,7 @@ export class UpdateService {
   }
 
   /** 下载本平台安装包；失败落 error 状态并抛错。 */
-  async download(): Promise<UpdateStatus> {
+  private async downloadHttp(): Promise<UpdateStatus> {
     if (this.busy) return this.currentStatus();
     const { asset } = this.status;
     if (!asset) throw new Error('请先检查更新');
@@ -206,20 +418,15 @@ export class UpdateService {
       if (process.platform === 'linux') await chmod(target, 0o755);
       log.info('update downloaded', target);
       this.patch({ phase: 'ready', received, total, file: target });
-      // 下载完打开安装包（mac 挂载 dmg / win 运行安装器 / linux 运行 AppImage）。
-      // mac 先弹窗确认并退出应用再打开 dmg：应用运行中拖拽替换会报「正在使用中」。
-      if (process.platform === 'darwin') {
-        void this.confirmAndInstall(target);
-      } else {
-        void shell.openPath(target).then((openError) => {
-          if (openError) {
-            log.warn('update auto open failed', openError);
-            this.patch({
-              message: `安装包已下载到下载目录，自动打开失败：${openError}`,
-            });
-          }
-        });
-      }
+      // 下载完打开安装包（win 运行安装器 / linux 运行 AppImage / mac dev 挂载 dmg）
+      void shell.openPath(target).then((openError) => {
+        if (openError) {
+          log.warn('update auto open failed', openError);
+          this.patch({
+            message: `安装包已下载到下载目录，自动打开失败：${openError}`,
+          });
+        }
+      });
       return this.currentStatus();
     } catch (error) {
       if (this.controller?.signal.aborted) {
@@ -234,44 +441,6 @@ export class UpdateService {
       this.controller = null;
       this.busy = false;
     }
-  }
-
-  /** 取消正在进行的下载；已完成的文件不受影响。 */
-  cancel(): UpdateStatus {
-    this.controller?.abort();
-    if (this.status.phase === 'downloading') {
-      this.patch({ phase: 'idle', message: '下载已取消' });
-    }
-    return this.currentStatus();
-  }
-
-  /**
-   * mac 安装确认：弹窗让用户选择退出应用并打开 dmg。退出后拖拽替换
-   * 不会再遇到「项目正在使用中」；选「稍后」则保持现状（手动处理）。
-   */
-  private async confirmAndInstall(target: string): Promise<void> {
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      title: '更新已就绪',
-      message: `新版 ${this.status.latest ?? ''} 已下载完成`,
-      detail:
-        '点击「退出并安装」将关闭应用并打开安装包，' +
-        '请将 WorkStudio 拖入「应用程序」文件夹完成替换。',
-      buttons: ['退出并安装', '稍后'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response !== 0) {
-      this.patch({
-        message: `安装包已下载到下载目录：${target}`,
-      });
-      return;
-    }
-    const openError = await shell.openPath(target);
-    if (openError) {
-      log.warn('update auto open failed', openError);
-    }
-    app.quit();
   }
 
   private patch(patch: Partial<UpdateStatus>): void {

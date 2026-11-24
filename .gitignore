@@ -174,7 +174,8 @@ src/plugins/*
 # macOS
 .DS_Store
 
-# Trae IDE HTML share cache
+# Trae IDE 工作区缓存与共享产物
+.trae/
 .trae-html-share-packages/
 
 # Playwright

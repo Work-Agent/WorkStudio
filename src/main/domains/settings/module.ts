@@ -191,6 +191,7 @@ export class SettingsDomain implements DomainModule {
       check: () => this.updates.check(),
       download: () => this.updates.download(),
       cancel: () => this.updates.cancel(),
+      install: () => this.updates.install(),
       open: () => {
         const file = this.updates.status().file;
         if (file) this.options.actions.openPath(file);

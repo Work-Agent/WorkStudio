@@ -48,16 +48,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS arm64
+          # macOS 双架构必须单 job 构建：electron-builder 一次构建产出唯一的
+          # latest-mac.yml（含 arm64 / x64 两条 zip 条目），拆 job 会互相覆盖。
+          - name: macOS arm64 + x64
             os: macos-15
             platform: mac
-            arch: arm64
-            artifact: mac-arm64
-          - name: macOS Intel x64
-            os: macos-15-intel
-            platform: mac
-            arch: x64
-            artifact: mac-x64
+            arch: arm64,x64
+            artifact: mac
           - name: Windows x64
             os: windows-latest
             platform: win
@@ -102,10 +99,45 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Package installers (${{ matrix.platform }} ${{ matrix.arch }})
+      - name: Import macOS signing certificate
+        if: matrix.platform == 'mac'
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/signing.p12"
+          echo "$MAC_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD="codesign-only"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          # 新建钥匙串必须进入搜索列表，否则 security / codesign 找不到导入的身份
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          # codesign: 分区放行是私钥被 codesign 取用的必要条件
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+      - name: Package installers (${{ matrix.platform }})
         # electron-builder must not self-publish: softprops/action-gh-release
-        # owns the GitHub Release in the publish job.
-        run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+        # owns the GitHub Release in the publish job. Notarization credentials
+        # are only consumed by the macOS build; absence skips notarization.
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            # 双架构一次构建：合并产出唯一的 latest-mac.yml
+            pnpm exec electron-builder --mac --arm64 --x64 --publish never
+          else
+            pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+          fi
 
       - name: Verify packaged artifacts
         run: |
@@ -119,14 +151,42 @@ jobs:
           fi
           printf '%s\n' "${artifacts[@]}"
 
+      - name: Verify macOS signature and notarization
+        # electron-builder 在证书导入失败或公证凭据缺失时只记录日志并继续出包，
+        # CI 会「绿着」产出未签名 / 未公证的安装包，导致客户端静默更新失败。
+        # 这里显式断言签名身份与 Gatekeeper 放行结果。
+        if: matrix.platform == 'mac'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(dist/mac*/WorkStudio.app)
+          if [[ ${#apps[@]} -eq 0 ]]; then
+            echo "::error::no packaged WorkStudio.app found under dist/mac*"
+            exit 1
+          fi
+          for app in "${apps[@]}"; do
+            echo "==> $app"
+            codesign --verify --deep --strict "$app"
+            if ! codesign -dv "$app" 2>&1 | grep -q "Developer ID Application"; then
+              echo "::error::$app is not signed with Developer ID Application"
+              exit 1
+            fi
+            if ! spctl -a -vvv "$app" 2>&1 | grep -q "accepted"; then
+              echo "::error::$app was rejected by Gatekeeper (not notarized?)"
+              spctl -a -vvv "$app" || true
+              exit 1
+            fi
+          done
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.artifact }}
           if-no-files-found: error
           compression-level: 0
-          # latest*.yml update feeds are excluded: both macOS jobs would write
-          # the same file name, and the app has no auto-updater configured.
+          # latest*.yml 是 electron-updater 更新 feed：mac 静默更新读
+          # latest-mac.yml（双架构条目在同一文件），Windows 留 latest.yml
+          # 备未来接入；yml 与安装包同上传到 Release。
           path: |
             dist/*.dmg
             dist/*.zip
@@ -135,6 +195,7 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.blockmap
+            dist/*.yml
 
   publish:
     name: Publish GitHub Release

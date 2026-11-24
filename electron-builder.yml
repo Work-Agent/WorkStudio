@@ -6,6 +6,16 @@ copyright: Copyright © 2026 qingo
 directories:
   output: dist
 
+# 更新 feed 来源：构建时生成 app-update.yml 内嵌到应用，
+# 运行期 electron-updater（mac）据此定位 GitHub Releases。
+# private: true 让 electron-updater 运行期从 GH_TOKEN 环境变量取访问令牌
+# （私有仓库，由更新服务在检查前注入用户配置的 Token）。
+publish:
+  provider: github
+  owner: Work-Agent
+  repo: WorkStudio
+  private: true
+
 # 只打包 electron-vite 的产物，不含源码与开发依赖
 files:
   - out/**/*
@@ -29,9 +39,11 @@ electronFuses:
 mac:
   category: public.app-category.productivity
   artifactName: ${productName}-mac-${arch}.${ext}
-  # ad-hoc 签名：fuses 会改写二进制，原签名失效后 macOS 会直接 SIGKILL。
-  # 正式分发改为 Developer ID（或经 CSC_LINK / CSC_IDENTITY_AUTO_DISCOVERY 注入证书）。
-  identity: '-'
+  # Developer ID 签名：不指定 identity，electron-builder 自动从钥匙串
+  # 发现 Developer ID Application 证书（CI 由 release workflow 导入 p12）。
+  # hardened runtime 是公证的前置条件；公证凭据（APPLE_ID 等）齐备时自动执行。
+  hardenedRuntime: true
+  gatekeeperAssess: false
   target:
     - dmg
     - zip

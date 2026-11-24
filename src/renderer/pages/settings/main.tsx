@@ -199,6 +199,7 @@ interface CatalogPackage {
 
 interface UpdateView {
   phase: string;
+  silent: boolean;
   current: string;
   latest: string | null;
   received: number;
@@ -1612,9 +1613,19 @@ function ExtensionsCard() {
   );
 }
 
+const PHASE_LABELS: Record<string, string> = {
+  idle: '未检查',
+  checking: '检查中',
+  current: '当前已是最新版本',
+  available: '有新版本可用',
+  downloading: '下载中',
+  ready: '更新已就绪',
+};
+
 function UpdatesCard() {
   const status = useResource<UpdateView>('settings', 'updates', {
     phase: 'idle',
+    silent: navigator.userAgent.includes('Macintosh'),
     current: '',
     latest: null,
     received: 0,
@@ -1628,6 +1639,9 @@ function UpdatesCard() {
     proxy: null,
     githubToken: null,
   });
+  // macOS 安装版走静默更新（electron-updater / Squirrel）：就绪后重启即替换。
+  // 是否静默由主进程判定（silent 字段），避免 dev 模式与主进程行为不一致。
+  const silentUpdate = status.silent;
   const [token, setToken] = useState('');
   useEffect(() => setToken(preferences.githubToken ?? ''), [preferences]);
   const progress =
@@ -1640,7 +1654,9 @@ function UpdatesCard() {
       <Row label="最新版本" value={status.latest ?? ''} />
       <Row
         label="状态"
-        value={`${status.phase}${progress ? ` · ${progress}` : ''}`}
+        value={`${PHASE_LABELS[status.phase] ?? status.phase}${
+          status.phase === 'downloading' && progress ? ` · ${progress}` : ''
+        }`}
       />
       {status.message && (
         <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
@@ -1666,31 +1682,57 @@ function UpdatesCard() {
           保存 Token
         </Button>
       </div>
-      <div className="flex justify-end gap-2">
-        <Button
-          disabled={status.phase === 'checking'}
-          onClick={() => void run('settings', 'updates', 'check')}
-        >
-          检查更新
-        </Button>
-        <Button
-          disabled={status.phase === 'downloading' || !status.latest}
-          onClick={() => void run('settings', 'updates', 'download')}
-        >
-          下载安装包
-        </Button>
-        <Button
-          disabled={!status.file}
-          onClick={() => void run('settings', 'updates', 'open')}
-        >
-          打开安装包
-        </Button>
+      <div className="flex items-center justify-end gap-3">
         {status.phase === 'downloading' && (
-          <Button onClick={() => void run('settings', 'updates', 'cancel')}>
+          <button
+            type="button"
+            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            onClick={() => void run('settings', 'updates', 'cancel')}
+          >
             取消下载
+          </button>
+        )}
+        {(status.phase === 'current' || status.phase === 'available') && (
+          <button
+            type="button"
+            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            onClick={() => void run('settings', 'updates', 'check')}
+          >
+            重新检查
+          </button>
+        )}
+        {status.phase === 'checking' ? (
+          <Button disabled>检查中…</Button>
+        ) : status.phase === 'downloading' ? (
+          <Button disabled>{`下载中 ${progress}`.trim()}</Button>
+        ) : status.phase === 'ready' ? (
+          silentUpdate ? (
+            <Button onClick={() => void run('settings', 'updates', 'install')}>
+              重启并安装
+            </Button>
+          ) : (
+            <Button
+              disabled={!status.file}
+              onClick={() => void run('settings', 'updates', 'open')}
+            >
+              打开安装包
+            </Button>
+          )
+        ) : status.phase === 'available' ? (
+          <Button onClick={() => void run('settings', 'updates', 'download')}>
+            下载更新
+          </Button>
+        ) : (
+          <Button onClick={() => void run('settings', 'updates', 'check')}>
+            检查更新
           </Button>
         )}
       </div>
+      {status.phase === 'ready' && silentUpdate && (
+        <p className="text-right text-[12px] text-zinc-500 dark:text-zinc-400">
+          退出应用时也会自动安装
+        </p>
+      )}
     </Panel>
   );
 }

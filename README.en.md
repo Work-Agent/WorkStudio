@@ -526,7 +526,7 @@ node node_modules/electron/install.js
 ### 7.4 Build and packaging
 
 - Build output `out/{main,preload,renderer}` and packaging output `dist/` are not committed.
-- macOS local builds use ad-hoc signing (`identity: '-'`): fuses rewrite the binary, so it must be re-signed or the system kills the app; switch to a Developer ID or inject a certificate via `CSC_LINK` for distribution.
+- macOS builds are signed with a **Developer ID Application** certificate (hardened runtime + notarization): local builds discover the certificate from the keychain (create it in Apple Developer and import first); CI imports the p12 from secrets in the Release workflow. Fuses rewrite the binary and electron-builder re-signs afterwards. Signing is a prerequisite for in-app silent updates — Squirrel.Mac verifies that the update bundle's code signature matches the running app (Team ID); ad-hoc signed copies cannot silently upgrade to a signed version.
 - Installers are produced on the matching platform (or in CI): a macOS host builds mac targets only by default; Windows / Linux targets belong to CI.
 
 Releases are triggered by a tag: the tag version must match `version` in `package.json`, otherwise the packaging jobs fail.
@@ -541,7 +541,21 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (arm64 / x64), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Once the workflows are merged, pushing the first tag produces the first Release.
+The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (a single dual-arch job producing the one `latest-mac.yml` update feed), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Once the workflows are merged, pushing the first tag produces the first Release.
+
+The macOS build requires the following repository Actions secrets:
+
+| Secret                        | Description                                                     |
+| ----------------------------- | --------------------------------------------------------------- |
+| `MAC_CERTIFICATE`             | base64-encoded Developer ID Application certificate (.p12)      |
+| `MAC_CERT_PASSWORD`           | The password set when exporting the p12                         |
+| `APPLE_ID`                    | Apple ID email (for notarization)                               |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from appleid.apple.com (for notarization) |
+| `APPLE_TEAM_ID`               | Team ID (for notarization)                                      |
+
+After packaging, CI verifies the signing identity (Developer ID Application) and the Gatekeeper verdict, so a missing notarization credential or an ad-hoc fallback fails the build instead of shipping an installer that cannot update silently. Local manual packaging does not inject notarization credentials, so it signs but does not notarize.
+
+In-app updates on macOS installed builds are silent replacements: electron-updater (Squirrel.Mac) downloads the zip, replaces the app automatically on quit, or updates immediately via "Restart and Install" on the settings page. `latest-mac.yml` ships with the Release as the update feed; the first upgrade from an ad-hoc build requires installing a signed dmg manually once.
 
 ### 7.5 Stack
 

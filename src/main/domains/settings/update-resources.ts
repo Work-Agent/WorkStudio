@@ -6,6 +6,7 @@ export interface UpdatesDeps {
   check(): Promise<UpdateStatus>;
   download(): Promise<UpdateStatus>;
   cancel(): UpdateStatus;
+  install(): UpdateStatus;
   open(): void;
 }
 
@@ -19,6 +20,7 @@ export function defineUpdatesDomain(
   resource.command<null, UpdateStatus>('check', () => deps.check());
   resource.command<null, UpdateStatus>('download', () => deps.download());
   resource.command<null, UpdateStatus>('cancel', () => deps.cancel());
+  resource.command<null, UpdateStatus>('install', () => deps.install());
   resource.command<null, null>('open', () => {
     deps.open();
     return null;

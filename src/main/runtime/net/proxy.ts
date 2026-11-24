@@ -19,18 +19,23 @@ export function setProxySource(reader: () => string | null): void {
 }
 
 /** 用户设置优先，其次环境变量（仅 HTTP 代理；socks 端口通常同服，改写协议即可用）。 */
+export function resolveProxyUrl(): string | null {
+  return (
+    (
+      proxyReader() ??
+      process.env.https_proxy ??
+      process.env.HTTPS_PROXY ??
+      process.env.http_proxy ??
+      process.env.HTTP_PROXY ??
+      ''
+    )
+      .trim()
+      .replace(/^socks\d+:\/\//, 'http://') || null
+  );
+}
+
 export function ensureProxy(): void {
-  const raw = (
-    proxyReader() ??
-    process.env.https_proxy ??
-    process.env.HTTPS_PROXY ??
-    process.env.http_proxy ??
-    process.env.HTTP_PROXY ??
-    ''
-  )
-    .trim()
-    .replace(/^socks\d+:\/\//, 'http://');
-  const desired = raw || null;
+  const desired = resolveProxyUrl();
   if (desired === appliedProxyUrl) return;
   try {
     if (desired) {

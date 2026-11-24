@@ -30,6 +30,10 @@ export class UpdatesService {
     return this.updater.download();
   }
 
+  install(): UpdateStatus {
+    return this.updater.install();
+  }
+
   cancel(): UpdateStatus {
     return this.updater.cancel();
   }
