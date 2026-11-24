@@ -156,33 +156,34 @@ Renderer pages
         │ window.workStudio
         │ subscribe / command / notify / onUpdate
 Runtime
-  DomainRegistry · Pipeline · Dispatcher · Views · Providers
-  Native · Layout · Dialogs
+  DomainRegistry · Dispatcher · storage / logging / network adapters
 Domains
-  workspaces · resources · settings · updates · lists
-  plugins · sessions · theme · windows · native
-Modules
-  agent · ura · resources · sessions · lists
-  plugins · browser · harness · updates
-Infrastructure
-  net · repo · preferences · paths · logging
+  workspaces · resources · lists · plugins
+  shell · settings
+  sessions · models · skills · thinking · extensions · tools · prompts · themes
+Domain modules
+  workspace: workspace lifecycle (workspaces + resources + lists + plugins)
+  shell / settings / agent
+Agent layer
+  pi runtime · harness · tools · session persistence
         │ official extension points
      pi SDK / URA
 ```
 
-- **Domain / Resource is the runtime unit**: a domain declares state, commands, subscriptions and pushes; one module per domain. There is no Capability, controller or lifecycle interface.
-- **Runtime owns the framework**: DomainRegistry, Pipeline, Dispatcher, Views, Providers, Native, Layout and Dialogs provide cross-domain mechanics and hold no business state.
-- **Modules own runtime implementations**: agent, URA, resources, sessions, lists, plugins, browser and harness are called by domains.
-- **Infrastructure owns adapters**: network, repositories, preferences, paths and logging are not business domains.
-- **App is the composition root**: it owns process lifecycle, windows, view providers, IPC and runtime assembly.
+- **Domain / Resource is the runtime unit**: domains follow capabilities (workspaces / resources / lists / plugins / shell / settings, plus sessions / models / skills / thinking / extensions / tools / prompts / themes under agent); lifecycle is grouped into four DomainModules — workspace / shell / settings / agent. There is no Capability, controller or separate lifecycle interface.
+- **Workspace is a scope, not a domain**: workspace-scoped resources use `ws:<wsId>` as a path condition (for example `resources/ws:<wsId>`, `lists/ws:<wsId>`); content pages keep `resources/current` as the active-workspace alias.
+- **Runtime owns the framework**: DomainRegistry, Dispatcher and storage / logging / network adapters provide cross-domain mechanics and hold no business state.
+- **DomainModules own implementations**: the workspace module manages resources / URA / lists / plugins; shell manages windows / views / layout / theme; settings manages settings / updates; the agent engine lives in a separate Agent layer owned by AgentDomain, split into sessions / models / skills / thinking / extensions / tools / prompts / themes domains.
+- **Dependencies are explicit**: DomainModule declares `dependencies`; DomainRegistry starts in topological order and stops in reverse. No DI container.
+- **App is the composition root**: it only owns process lifecycle, windows, view providers, IPC and assembly of the four DomainModules.
 - **Views have two layers**: window-level system views (assistant / overlay / capture) and content tabs (resource pages / web) are separate; Views only handles hosting, geometry, visibility and stacking.
 - **Layout / Scene is a window-level contract**: the main process computes layout; dragging only produces a preview. Committing writes the scene, and DOM and native views consume the same geometry.
 - **Lists are a provider pipeline**: documents, sessions, plugins, settings and sites share one provider → snapshot flow; the renderer only consumes snapshots.
-- **Settings is a consumer of domains on one page**: every card expands in place, and update state is its own `updates` domain.
-- **Middleware only handles IPC concerns**: logging, policy and tracing enter the Pipeline; business state never lives in middleware.
+- **Settings is a consumer of domains on one page**: every card expands in place, and update state is the `updates` resource of the `settings` domain.
+- **IPC logging is built in**: the Dispatcher records request address, origin, duration and result; there is no middleware and input is never logged.
 - **Resource pages and the browser are separate**: resource pages use URA transport / codec / presenter; the browser bypasses the pipeline and is navigated directly by the view host.
 - **One communication surface**: the renderer uses `workStudio`; resource and plugin pages expose restricted capabilities through `window.extension`; no raw IPC.
-- **One-way dependencies**: Renderer → workStudio → Runtime / Domains → Modules → Infrastructure → pi SDK / URA.
+- **One-way dependencies**: Renderer → workStudio → Runtime / Domains → Agent layer / URA → pi SDK.
 
 ## 5. Extension surfaces
 
@@ -506,10 +507,9 @@ node node_modules/electron/install.js
 ├── src/
 │   ├── main/
 │   │   ├── app.ts / index.ts      # composition root / Electron entry
-│   │   ├── runtime/               # domains / pipeline / views / native / layout
-│   │   ├── domains/               # business domains
-│   │   ├── modules/               # agent / URA / lists / plugins / resources / sessions / ...
-│   │   └── infrastructure/        # net / repo / preferences / paths / logging
+│   │   ├── runtime/               # DomainRegistry / Dispatcher / storage / log / net
+│   │   ├── domains/               # workspaces / resources / lists / plugins / shell / settings / agent
+│   │   └── agent/                 # Agent layer: pi runtime / harness / tools / sessions
 │   ├── preload/                   # preload contracts for pages and content views
 │   ├── renderer/
 │   │   ├── pages/                 # shell / assistant / overlay / settings / welcome

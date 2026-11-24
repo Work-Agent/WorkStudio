@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ResizeDirection, ThinkingLevel } from '../../../shared/types.ts';
+import { parsePopupAction } from '../../../shared/popup-action.ts';
 import '../../shared/styles/index.css';
 import { bridge } from './bridge.ts';
 import { matchCommands, runBuiltinCommand, useCommands } from './commands.ts';
@@ -231,7 +232,8 @@ function Assistant() {
 
   // ── tab 右键菜单（原生 Menu.popup；关闭族语义与资源面板一致）──
   const runTabAction = (actionId: string): void => {
-    const [action, path] = actionId.split(':');
+    // 动作 id 里带着会话路径（Windows 盘符含冒号），只在第一个冒号处切分。
+    const { action, value: path } = parsePopupAction(actionId);
     const state = openPaths;
     if (action === 'close' && path) closeTabs([path]);
     else if (action === 'closeOthers' && path)

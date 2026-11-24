@@ -24,8 +24,8 @@ export function WorkspaceSelect() {
 
   const pickWorkspace = async (): Promise<void> => {
     const dir = await command<string | null>(
+      'shell',
       'native',
-      'app',
       'pickDirectory',
       {},
     );

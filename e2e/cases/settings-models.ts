@@ -10,8 +10,8 @@ export default defineCase({
     await ctx.expect.poll(async () => {
       const count = await page.evaluate(async () => {
         const value = (await window.workStudio.subscribe(
-          'settings',
           'models',
+          'config',
         )) as { providers?: unknown[]; catalog?: unknown[] };
         return (value.providers?.length ?? 0) + (value.catalog?.length ?? 0);
       });

@@ -32,7 +32,9 @@ async function openItem(item: ListItem): Promise<void> {
 async function closeItem(item: ListItem, wsId: string | null): Promise<void> {
   const viewId = item.meta?.['viewId'];
   if (typeof viewId === 'string' && wsId) {
-    await command('tabs', wsId, 'close', viewId).catch(() => undefined);
+    await command('shell', `tabs:${wsId}`, 'close', viewId).catch(
+      () => undefined,
+    );
   }
 }
 

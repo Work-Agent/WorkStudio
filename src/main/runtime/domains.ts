@@ -224,7 +224,22 @@ export class Domain {
   }
 }
 
+/** 一个有自己生命周期的 Domain 模块；由 DomainRegistry 统一 start / stop。 */
+export interface DomainModule {
+  readonly id: string;
+
+  /** 启动依赖；DomainRegistry 按依赖拓扑排序后 start，反向 stop。 */
+  readonly dependencies?: readonly string[];
+
+  /** 注册 domain / resource / command / tool。 */
+  attach(registry: DomainRegistry): void;
+
+  start?(): void | Promise<void>;
+  stop?(): void | Promise<void>;
+}
+
 export class DomainRegistry {
+  private readonly modules = new Map<string, DomainModule>();
   private readonly domains = new Map<string, Domain>();
   private readonly updateListeners = new Set<(update: DomainUpdate) => void>();
   private readonly eventSubscribers = new Map<
@@ -237,6 +252,55 @@ export class DomainRegistry {
     return () => {
       this.updateListeners.delete(listener);
     };
+  }
+
+  /** 注册一个有生命周期的 Domain；attach 立即执行，start/stop 由 App 管理。 */
+  registerModule(module: DomainModule): void {
+    if (this.modules.has(module.id)) {
+      throw new Error(`domain module already registered: ${module.id}`);
+    }
+    module.attach(this);
+    this.modules.set(module.id, module);
+  }
+
+  async startModules(): Promise<void> {
+    for (const module of this.orderedModules()) {
+      await module.start?.();
+    }
+  }
+
+  async stopModules(): Promise<void> {
+    for (const module of this.orderedModules().reverse()) {
+      await module.stop?.();
+    }
+  }
+
+  /** 依赖拓扑序；用于 start / stop，不改变 attach 的注册顺序。 */
+  private orderedModules(): DomainModule[] {
+    const ordered: DomainModule[] = [];
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (module: DomainModule): void => {
+      if (visited.has(module.id)) return;
+      if (visiting.has(module.id)) {
+        throw new Error(`domain dependency cycle: ${module.id}`);
+      }
+      visiting.add(module.id);
+      for (const dependency of module.dependencies ?? []) {
+        const target = this.modules.get(dependency);
+        if (!target) {
+          throw new Error(
+            `domain "${module.id}" depends on missing "${dependency}"`,
+          );
+        }
+        visit(target);
+      }
+      visiting.delete(module.id);
+      visited.add(module.id);
+      ordered.push(module);
+    };
+    for (const module of this.modules.values()) visit(module);
+    return ordered;
   }
 
   define(name: string): Domain {

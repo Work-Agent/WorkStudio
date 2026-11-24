@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { ChevronLeft, ChevronRight, Pin, Plus, X } from 'lucide-react';
 import type { PopupMenuItem } from '../../../../../shared/types.ts';
+import { parsePopupAction } from '../../../../../shared/popup-action.ts';
 import { popupMenu } from '../../../../shared/api/runtime.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
 
@@ -141,7 +142,8 @@ export function TabsBar({
     el.addEventListener('scroll', updateScroll, { passive: true });
     const offSelect = popupMenu.onSelect((e) => {
       if (e.source !== MENU_SOURCE) return;
-      const [action, id] = e.actionId.split(':');
+      // 动作 id 里带着 tab id（可能含冒号），只在第一个冒号处切分。
+      const { action, value: id } = parsePopupAction(e.actionId);
       if (action === 'close' && id) onClose?.(id);
       else if (action === 'closeOthers' && id) bulkClose?.closeOthers?.(id);
       else if (action === 'closeLeft' && id) bulkClose?.closeLeft?.(id);

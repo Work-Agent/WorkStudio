@@ -44,8 +44,8 @@ function viewEntry(view: ViewSnapshot): ViewEntry {
 export function useViews(): ViewEntry[] {
   const wsId = useActiveWorkspaceId();
   const snapshot = useResource<{ list?: ViewSnapshot[] }>(
-    'tabs',
-    wsId ?? 'none',
+    'shell',
+    wsId ? `tabs:${wsId}` : 'none',
     { list: [] },
   );
   return (snapshot?.list ?? []).map(viewEntry);
@@ -67,7 +67,9 @@ export function useViewCommands(): (
       );
       const action = commandName.slice('views.'.length);
       const send = (name: string, data?: unknown): void => {
-        void command('tabs', wsId, name, data).catch(() => undefined);
+        void command('shell', `tabs:${wsId}`, name, data).catch(
+          () => undefined,
+        );
       };
       switch (commandName) {
         case 'views.activate':

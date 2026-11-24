@@ -23,7 +23,7 @@ export function installWorkStudioBridgeShim(): void {
   if (!next) return;
 
   const active = async (): Promise<string> => {
-    const state = (await next.subscribe('windows', 'list')) as {
+    const state = (await next.subscribe('shell', 'windows')) as {
       activeWsId?: string | null;
     };
     if (!state.activeWsId) throw new Error('workspace is not ready');
@@ -42,7 +42,10 @@ export function installWorkStudioBridgeShim(): void {
         data: await next.subscribe('workspaces', 'list'),
       };
     if (path === '/views') {
-      const tabs = (await next.subscribe('tabs', await active())) as {
+      const tabs = (await next.subscribe(
+        'shell',
+        `tabs:${await active()}`,
+      )) as {
         list?: unknown[];
       };
       return { ok: true as const, data: tabs.list ?? [] };
@@ -50,7 +53,7 @@ export function installWorkStudioBridgeShim(): void {
     if (path === '/dialogs')
       return {
         ok: true as const,
-        data: await next.subscribe('dialogs', 'list'),
+        data: await next.subscribe('shell', 'dialogs'),
       };
     if (path === '/settings/open')
       return next.command('settings', 'pages', 'open', {
@@ -61,7 +64,7 @@ export function installWorkStudioBridgeShim(): void {
     if (path === '/plugins/open')
       return next.command('plugins', 'list', 'open', value);
     if (path === '/dialogs/open')
-      return next.command('dialogs', 'list', 'open', value);
+      return next.command('shell', 'dialogs', 'open', value);
     const site = /^\/workspaces\/[^/]+\/sites\/web\/open$/.exec(path);
     if (site) {
       const result = await next.command(
@@ -91,9 +94,10 @@ export function installWorkStudioBridgeShim(): void {
     if (view) {
       const wsId = await active();
       const id = decodeURIComponent(view[1]!);
-      if (view[2] === 'close') return next.command('tabs', wsId, 'close', id);
+      if (view[2] === 'close')
+        return next.command('shell', `tabs:${wsId}`, 'close', id);
       if (view[2] === 'activate')
-        return next.command('tabs', wsId, 'activate', id);
+        return next.command('shell', `tabs:${wsId}`, 'activate', id);
     }
     return {
       ok: false as const,

@@ -10,13 +10,13 @@ export function useTheme(): {
   set(theme: string): void;
   toggle(): void;
 } {
-  const state = useResource<ThemeState | null>('theme', 'current', {
+  const state = useResource<ThemeState | null>('shell', 'theme', {
     theme: 'dark',
     themeSource: 'system',
   });
   const theme = state?.theme ?? 'dark';
   const set = (theme: string): void => {
-    void command('theme', 'current', 'set', theme).catch(() => undefined);
+    void command('shell', 'theme', 'set', theme).catch(() => undefined);
   };
   return {
     theme,

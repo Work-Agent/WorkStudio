@@ -133,15 +133,15 @@ function Overlay() {
       );
     };
     const off = bridge.onUpdate((update: DomainUpdate) => {
-      if (update.domain !== 'dialogs' || update.resource !== 'list') return;
+      if (update.domain !== 'shell' || update.resource !== 'dialogs') return;
       if (update.type === 'snapshot') apply(update.data as DialogView[]);
     });
     void bridge
-      .subscribe('dialogs', 'list')
+      .subscribe('shell', 'dialogs')
       .then((value) => apply((value as DialogView[]) ?? []));
     return () => {
       off();
-      bridge.unsubscribe('dialogs', 'list');
+      bridge.unsubscribe('shell', 'dialogs');
     };
   }, []);
 
@@ -149,7 +149,7 @@ function Overlay() {
     dialog: UiDialogRequest,
     response: { cancelled?: boolean; value?: string; confirmed?: boolean },
   ): void => {
-    void window.workStudio.command('dialogs', 'list', 'respond', {
+    void window.workStudio.command('shell', 'dialogs', 'respond', {
       id: dialog.id,
       response: { id: dialog.id, ...response },
       cancelled: response.cancelled === true,

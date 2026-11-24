@@ -1,5 +1,5 @@
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'fs';
-import { join, resolve } from 'path';
+import { cpSync, existsSync, readFileSync, rmSync } from 'fs';
+import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
@@ -71,7 +71,7 @@ function inlinePreloadChannels(): Plugin {
       if (!id.includes('/src/preload/') || !code.includes('/shared/channels'))
         return null;
       return code.replace(
-        /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*shared\/channels['"];?/g,
+        /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*shared\/channels(?:\.[cm]?[jt]s)?['"];?/g,
         (_match, names: string) =>
           names
             .split(',')

@@ -10,8 +10,8 @@ export const popupMenu = {
   async show(input: { source: string; items: PopupItem[] }): Promise<boolean> {
     try {
       const selected = await command<string | null>(
+        'shell',
         'native',
-        'app',
         'popupMenu',
         { items: input.items },
       );
@@ -42,7 +42,7 @@ export const electronAPI = {
   platform: platformName(),
   async openPath(path: string): Promise<string> {
     try {
-      await command('native', 'app', 'openPath', { path });
+      await command('shell', 'native', 'openPath', { path });
       return '';
     } catch (error) {
       return error instanceof Error ? error.message : String(error);

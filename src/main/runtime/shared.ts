@@ -132,44 +132,6 @@ export interface CallContext<I = unknown> {
 
 export type Next<T = unknown> = () => Promise<T>;
 
-export type Inbound =
-  | {
-      type: 'subscribe';
-      origin: Origin;
-      viewId: string;
-      domain: string;
-      resource: string;
-    }
-  | {
-      type: 'unsubscribe';
-      origin: Origin;
-      viewId: string;
-      domain: string;
-      resource: string;
-    }
-  | { type: 'command'; call: CallContext }
-  | {
-      type: 'notify';
-      origin: Origin;
-      domain: string;
-      resource: string;
-      action: string;
-      value: unknown;
-    };
-
-export type Outbound = {
-  type: 'update';
-  viewId: string;
-  update: DomainUpdate;
-};
-
-export type IpcMessage = Inbound | Outbound;
-
-export type Middleware = (
-  message: IpcMessage,
-  next: Next,
-) => unknown | Promise<unknown>;
-
 /**
  * 路由失败与结果归约。
  *

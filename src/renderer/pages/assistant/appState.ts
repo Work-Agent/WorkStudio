@@ -15,7 +15,7 @@ import type {
 import type {
   SessionListItem,
   SessionStreamState,
-} from '../../../main/modules/sessions/service.ts';
+} from '../../../main/agent/sessions/service.ts';
 import type { DomainUpdate } from '../../../main/runtime/shared.ts';
 import type { SessionTask } from '../../../shared/session-task.ts';
 
@@ -90,7 +90,7 @@ export function useAppTask(): SessionTask | null {
 }
 
 export function useAppModels(): ModelOption[] | null {
-  const models = useResource<ModelOption[]>('sessions', 'models', []);
+  const models = useResource<ModelOption[]>('models', 'available', []);
   return useAppAvailable() ? models : null;
 }
 
@@ -104,13 +104,13 @@ export function useAppShell(): AssistantShell | null {
   const agent = useAppAgent();
   const opened = useResource<string[]>('sessions', 'opened', []);
   const themeState = useResource<{ theme: 'light' | 'dark' }>(
+    'shell',
     'theme',
-    'current',
     { theme: 'dark' },
   );
   const scene = useResource<{ aiFloating?: boolean } | null>(
-    'scene',
-    workspace?.id ?? null,
+    'shell',
+    workspace?.id ? `scene:${workspace.id}` : 'none',
     null,
   );
 

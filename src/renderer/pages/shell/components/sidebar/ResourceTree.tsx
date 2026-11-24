@@ -116,7 +116,9 @@ function openItem(item: ListItem): void {
 function closeItem(item: ListItem, wsId: string | null): void {
   const viewId = item.meta?.['viewId'];
   if (typeof viewId === 'string' && wsId) {
-    void command('tabs', wsId, 'close', viewId).catch(() => undefined);
+    void command('shell', `tabs:${wsId}`, 'close', viewId).catch(
+      () => undefined,
+    );
   }
 }
 

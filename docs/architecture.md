@@ -8,18 +8,19 @@
 
 ### 1.1 分层
 
-主进程按职责分为四层：
+主进程按职责分为三层：
 
-| 层             | 职责                                                                                   | 不负责                 |
-| -------------- | -------------------------------------------------------------------------------------- | ---------------------- |
-| Runtime        | DomainRegistry · Pipeline · Dispatcher · Views · Providers · Native · Layout · Dialogs | 业务状态               |
-| Domains        | 业务状态、resource、command、订阅与推送                                                | 原生句柄、文件系统细节 |
-| Modules        | Agent、URA、资源、会话、列表、插件、浏览器、Harness 等运行时实现                       | 页面与窗口装配         |
-| Infrastructure | 网络、仓储、偏好、路径、日志                                                           | 业务语义               |
+| 层          | 职责                                                              | 不负责             |
+| ----------- | ----------------------------------------------------------------- | ------------------ |
+| Runtime     | DomainRegistry · Dispatcher · 存储 / 日志 / 网络适配              | 业务状态           |
+| Domains     | 业务状态、resource、command、订阅与推送，以及各自的内部实现       | 框架分发机制       |
+| Agent Layer | pi runtime、harness、tools、会话持久化；由 AgentDomain 持有与暴露 | 传统 UI 的资源装配 |
 
-App 是组合根，只负责创建运行时、装配 domain / provider / IPC、管理窗口与进程生命周期。
+Domain 按能力拆分为 `workspaces` / `resources` / `lists` / `plugins` / `shell` / `settings`，以及 agent 下的 `sessions` / `models` / `skills` / `thinking` / `extensions` / `tools` / `prompts` / `themes`；生命周期按依赖合并为四个 DomainModule：`workspace` 组合工作区、资源 / URA、列表与插件，`shell` 组合窗口、视图、布局、主题、对话框与通知，`settings` 组合设置、偏好、外观与更新，`agent` 是 Agent Layer 的 IPC / 资源边界。
 
-没有 Capability 类、controller 或生命周期接口。运行时模块由 domain 或组合根显式调用。
+App 是组合根，只负责创建 Runtime、装配四个 Domain / provider / IPC、管理窗口与进程生命周期。
+
+没有 Capability 类、controller、Port 接口或独立生命周期接口。DomainModule 声明 `dependencies`，DomainRegistry 按拓扑序 start、反向 stop。
 
 ### 1.2 总体图
 
@@ -31,37 +32,35 @@ App 是组合根，只负责创建运行时、装配 domain / provider / IPC、�
                                │ window.workStudio
                                │ subscribe / command / notify / onUpdate
 ┌─ Runtime ────────────────────▼───────────────────────────────────┐
-│ DomainRegistry · Pipeline · Dispatcher · Views · Providers        │
-│ Native · Layout · Dialogs                                        │
+│ DomainRegistry · Dispatcher                                      │
+│ storage · log · net · policy                                     │
 └──────────────────────────────┬───────────────────────────────────┘
 ┌─ Domains ────────────────────▼───────────────────────────────────┐
-│ workspaces · resources · settings · updates · lists · plugins     │
-│ sessions · theme · windows · native                              │
+│ workspaces · resources · lists · plugins                         │
+│ shell · settings                                                │
+│ agent：sessions · models · skills · thinking · extensions · tools · prompts · themes          │
+│ 生命周期模块：workspace / shell / settings / agent               │
 └──────────────────────────────┬───────────────────────────────────┘
-┌─ Modules ────────────────────▼───────────────────────────────────┐
-│ agent · ura · resources · sessions · lists · plugins             │
-│ browser · harness · updates                                      │
-└──────────────────────────────┬───────────────────────────────────┘
-┌─ Infrastructure ─────────────▼───────────────────────────────────┐
-│ net · repo · preferences · paths · logging                       │
+┌─ Agent Layer ────────────────▼───────────────────────────────────┐
+│ pi runtime · harness · tools · sessions · skills                 │
 └──────────────────────────────┬───────────────────────────────────┘
                                │ 官方扩展点
-                            pi SDK
+                            pi SDK / URA
 ```
 
 ### 1.3 关键决策
 
-| 决策       | 选择                              | 理由                                             |
-| ---------- | --------------------------------- | ------------------------------------------------ |
-| 组织单位   | Domain / Resource                 | 订阅、命令、推送都以 resource 为最小单位         |
-| 运行时装配 | App 组合根显式装配                | 依赖关系可见，不引入全局 service locator         |
-| 状态归属   | 主进程唯一真相源                  | 渲染层只持投影，避免人机两套状态                 |
-| 列表       | provider → snapshot               | 内置列表与插件列表共用同一条流程                 |
-| 通讯       | `window.workStudio`               | 页面不暴露裸 IPC，不依赖 Electron / Node         |
-| 内容页     | `window.extension` + 受限资源命令 | 资源页 / 插件页没有 Node，也不直接访问 domain    |
-| 视图       | 两层视图 + provider               | 系统视图与内容标签分开，新增内容形态不改视图能力 |
-| 布局       | 主进程计算，scene 持久化          | DOM 与原生视图消费同一份几何，拖拽不反复重排     |
-| 中间件     | 仅 IPC 横切                       | 日志、策略、追踪不承载业务状态                   |
+| 决策       | 选择                               | 理由                                                              |
+| ---------- | ---------------------------------- | ----------------------------------------------------------------- |
+| 组织单位   | Domain / Resource                  | 按依赖合并 DomainModule，订阅 / 命令 / 推送以 resource 为最小单位 |
+| 运行时装配 | DomainModule.dependencies + 拓扑序 | 依赖关系显式，不引入 DI / service locator                         |
+| 状态归属   | 主进程唯一真相源                   | 渲染层只持投影，避免人机两套状态                                  |
+| 列表       | provider → snapshot                | 内置列表与插件列表共用同一条流程                                  |
+| 通讯       | `window.workStudio`                | 页面不暴露裸 IPC，不依赖 Electron / Node                          |
+| 内容页     | `window.extension` + 受限资源命令  | 资源页 / 插件页没有 Node，也不直接访问 domain                     |
+| 视图       | 两层视图 + provider                | 系统视图与内容标签分开，新增内容形态不改视图能力                  |
+| 布局       | 主进程计算，scene 持久化           | DOM 与原生视图消费同一份几何，拖拽不反复重排                      |
+| IPC 日志   | Dispatcher 直接记录                | 不引入 middleware，不记录 input                                   |
 
 ## 二、状态与生命周期
 
@@ -74,7 +73,7 @@ App 是组合根，只负责创建运行时、装配 domain / provider / IPC、�
 | 模型 / 凭证 / 全局设定    | 进程     | AgentHost / ModelConfigStore / 设置存储 | 数据根下的模型、凭证与设置文件 |
 | 资源 / 列表 / 会话 / 站点 | 工作区   | Resources / Lists / Sessions / URA      | 工作区目录与 `sessions/`       |
 | 当前回复与任务            | 会话     | SessionsService                         | 由 pi 写入会话 JSONL           |
-| 设置页 / 更新 / 插件任务  | 应用     | settings / updates / plugins domain     | 由各自运行时持有               |
+| 设置页 / 更新 / 插件任务  | 应用     | settings / plugins domain               | 由各自运行时持有               |
 
 ### 2.2 作用域
 
@@ -133,11 +132,11 @@ interface Resource {
 - `publish` 推完整快照；`patch` 推增量；`event` 推一次性事件。
 - Domain 只暴露状态与命令，不暴露内部运行时对象。
 
-### 3.2 Pipeline / Dispatcher / Middleware
+### 3.2 DomainRegistry / Dispatcher
 
-- **Dispatcher**：sender → origin → Pipeline；识别 shell / 系统视图 / 内容视图来源。
-- **Pipeline**：middleware 链、domain 路由、update 分发。
-- **Middleware**：只包裹 IPC 入站与出站，不承载业务；用于日志、策略、追踪。
+- **Dispatcher**：sender → origin → DomainRegistry；识别 shell / 系统视图 / 内容视图来源，并直接记录 IPC 请求日志。
+- **DomainRegistry**：domain 注册、命令路由与 update 分发。
+- **日志开关**：`AppOptions.ipcLog` 或 `WA_IPC_LOG=1`；只记录地址、来源、耗时与结果。
 - 订阅只对 `(domain, resource)` 建立；更新只发给订阅该 resource 的 view。
 - 不存在的 domain / resource / action 返回明确错误，不静默降级。
 
@@ -167,62 +166,103 @@ WorkspaceWindow
 
 ## 四、Domains
 
-| Domain / Resource                                                      | State                                | Commands                                                                                                                                                                                              |
-| ---------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspaces/list`                                                      | 工作区列表                           | `open` / `close` / `rename` / `remove` / `refresh`                                                                                                                                                    |
-| `workspaces/current`                                                   | 当前工作区                           | —                                                                                                                                                                                                     |
-| `resources/current`                                                    | workspaceId / ready / pages          | `read` / `write` / `edit` / `ls` / `find` / `grep` / `query` / `tree` / `watch` / `openPage` / `savePage` / `reloadPage` / `closePage` / `open` / `openWeb` / `openPageView` / `saveCopy` / `refresh` |
-| `settings/pages`                                                       | 设置卡片清单                         | `open`                                                                                                                                                                                                |
-| `settings/appearance`                                                  | theme / zoom / effectiveTheme        | `set`                                                                                                                                                                                                 |
-| `settings/storage`                                                     | 数据根 / 工作区 / 路径 / 版本        | `open` / `changeRoot` / `changeSessionDir`                                                                                                                                                            |
-| `settings/browser`                                                     | allowlist                            | `set`                                                                                                                                                                                                 |
-| `settings/skills`                                                      | 已加载技能                           | `reload` / `setEnabled` / `diagnostics` / `openPlugin`                                                                                                                                                |
-| `settings/preferences`                                                 | theme / locale / proxy / githubToken | `set`                                                                                                                                                                                                 |
-| `settings/models`                                                      | providers / catalog / config         | login / logout / save / delete                                                                                                                                                                        |
-| `settings/advanced`                                                    | piconf / bindings                    | get / set / replace / setBinding / removeBinding                                                                                                                                                      |
-| `settings/extensions`                                                  | 扩展清单                             | catalog / install / remove                                                                                                                                                                            |
-| `settings/resourceInfo`                                                | URA 来源 / 格式 / 表现层诊断         | —                                                                                                                                                                                                     |
-| `updates/status`                                                       | 更新状态                             | `check` / `download` / `cancel` / `open`                                                                                                                                                              |
-| `lists/current`                                                        | 侧栏快照                             | `refresh` / `action`                                                                                                                                                                                  |
-| `plugins/list`                                                         | 运行时插件                           | `open` / `getSetting` / `setSetting` / `install` / `remove` / `reload` / `catalog`                                                                                                                    |
-| `plugins/installed`                                                    | 已安装来源                           | —                                                                                                                                                                                                     |
-| `plugins/task`                                                         | 安装任务                             | `cancel` / `retry`                                                                                                                                                                                    |
-| `sessions/current`                                                     | 当前会话                             | new / open / prompt / steer / followUp / abort / compact / retry / fork / rename / delete / setModel / setThinking / refresh                                                                          |
-| `sessions/list` / `opened` / `active` / `task` / `thinking` / `skills` | 会话投影                             | —                                                                                                                                                                                                     |
-| `theme/current`                                                        | light / dark / system + effective    | `set`                                                                                                                                                                                                 |
-| `windows/list`                                                         | 窗口集合                             | `focus` / `close` / `open` / `beginMove` / `updateMove` / `endMove`                                                                                                                                   |
-| `scene/<wsId>`                                                         | 窗口现场                             | `patch`                                                                                                                                                                                               |
-| `layout/<wsId>`                                                        | 布局快照                             | `begin` / `move` / `end` / `cancel`                                                                                                                                                                   |
-| `dialogs/list`                                                         | 对话框                               | `open` / `ask` / `respond`                                                                                                                                                                            |
-| `notices/list`                                                         | 通知                                 | `notify` / `dismiss`                                                                                                                                                                                  |
+| Domain / Resource                           | State                                | Commands                                                                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces/list`                           | 工作区列表                           | `open` / `close` / `rename` / `remove` / `refresh`                                                                                                                                                    |
+| `workspaces/current`                        | 当前工作区                           | —                                                                                                                                                                                                     |
+| `resources/current` · `resources/ws:<wsId>` | workspaceId / ready / pages          | `read` / `write` / `edit` / `ls` / `find` / `grep` / `query` / `tree` / `watch` / `openPage` / `savePage` / `reloadPage` / `closePage` / `open` / `openWeb` / `openPageView` / `saveCopy` / `refresh` |
+| `lists/current` · `lists/ws:<wsId>`         | 侧栏快照                             | `refresh` / `action`                                                                                                                                                                                  |
+| `plugins/list`                              | 运行时插件                           | `open` / `getSetting` / `setSetting` / `install` / `remove` / `reload` / `catalog`                                                                                                                    |
+| `plugins/installed`                         | 已安装来源                           | —                                                                                                                                                                                                     |
+| `plugins/catalog`                           | 插件目录来源                         | —                                                                                                                                                                                                     |
+| `plugins/task`                              | 安装任务                             | `cancel` / `retry`                                                                                                                                                                                    |
+| `settings/pages`                            | 设置卡片清单                         | `open`                                                                                                                                                                                                |
+| `settings/appearance`                       | theme / zoom / effectiveTheme        | `set`                                                                                                                                                                                                 |
+| `settings/storage`                          | 数据根 / 工作区 / 路径 / 版本        | `open` / `changeRoot` / `changeSessionDir`                                                                                                                                                            |
+| `settings/browser`                          | allowlist                            | `set`                                                                                                                                                                                                 |
+| `settings/preferences`                      | theme / locale / proxy / githubToken | `set`                                                                                                                                                                                                 |
+| `settings/advanced`                         | piconf / bindings                    | get / set / replace / setBinding / removeBinding                                                                                                                                                      |
+| `settings/extensions`                       | 扩展清单                             | catalog / install / remove                                                                                                                                                                            |
+| `settings/resourceInfo`                     | URA 来源 / 格式 / 表现层诊断         | —                                                                                                                                                                                                     |
+| `settings/updates`                          | 更新状态                             | `check` / `download` / `cancel` / `open`                                                                                                                                                              |
+| `sessions/current`                          | 当前会话                             | new / open / prompt / steer / followUp / abort / compact / retry / fork / rename / delete / setModel / refresh                                                                                        |
+| `sessions/list` / `opened` / `active`       | 会话投影                             | —                                                                                                                                                                                                     |
+| `sessions/task` / `commands`                | 任务与命令投影                       | `opened.close`                                                                                                                                                                                        |
+| `models/available`                          | 可用模型目录                         | —                                                                                                                                                                                                     |
+| `models/config`                             | providers / catalog / config         | login / logout / save / delete                                                                                                                                                                        |
+| `skills/active`                             | 当前激活技能                         | `setActive`                                                                                                                                                                                           |
+| `skills/catalog`                            | 技能清单 / 诊断                      | reload / setEnabled / diagnostics / openPlugin                                                                                                                                                        |
+| `thinking/current`                          | level / levels                       | `set`                                                                                                                                                                                                 |
+| `extensions/list` / `errors`                | 已加载扩展 / 装载错误                | `reload`                                                                                                                                                                                              |
+| `tools/list`                                | 扩展注册工具                         | —                                                                                                                                                                                                     |
+| `prompts/list`                              | 提示词模板                           | —                                                                                                                                                                                                     |
+| `themes/list`                               | 主题资源                             | —                                                                                                                                                                                                     |
+| `shell/theme`                               | light / dark / system + effective    | `set`                                                                                                                                                                                                 |
+| `shell/windows`                             | 窗口集合                             | `focus` / `close` / `open` / `beginMove` / `updateMove` / `endMove`                                                                                                                                   |
+| `shell/tabs:<wsId>`                         | 窗口标签集合                         | activate / close / togglePin / move / closeOthers / closeToLeft / closeToRight / closeAll / goBack / goForward / navigate / action                                                                    |
+| `shell/scene:<wsId>`                        | 窗口现场                             | `patch`                                                                                                                                                                                               |
+| `shell/layout:<wsId>`                       | 布局快照                             | `begin` / `move` / `end` / `cancel`                                                                                                                                                                   |
+| `shell/dialogs`                             | 对话框                               | `open` / `ask` / `respond`                                                                                                                                                                            |
+| `shell/notices`                             | 通知                                 | `notify` / `dismiss`                                                                                                                                                                                  |
+| `shell/native`                              | —                                    | openPath / openExternal / pickDirectory / pickSaveFile / popupMenu                                                                                                                                    |
 
-## 五、Modules 与 Infrastructure
+## 五、Domain 内部实现与 Runtime 适配
 
-### 5.1 Modules
+### 5.1 DomainModule 与依赖
 
-| Module      | 职责                                                                |
+| DomainModule | 依赖                          | 拥有                                                                                                              |
+| ------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `shell`      | —                             | WindowManager、Views、Scene、Theme、Layout、Dialogs、Notices                                                      |
+| `workspace`  | `shell`                       | WorkspacesRepo、URA、ResourcesService、Lists、Plugins、Sites（domain 仍拆分）                                     |
+| `agent`      | `shell`、`workspace`          | AgentHost、SessionsService；domain：sessions / models / skills / thinking / extensions / tools / prompts / themes |
+| `settings`   | `shell`、`workspace`、`agent` | 设置资源、偏好、外观、扩展、更新                                                                                  |
+
+- `workspace` 是生命周期模块 id，不是 domain；其内部 domain 为 `workspaces` / `resources` / `lists` / `plugins`。
+- `DomainModule` 只声明 `id`、`dependencies`、`attach` 与可选 `start` / `stop`。
+- `DomainRegistry` 按依赖拓扑序 start，按反向序 stop；缺依赖或出现环直接报错。
+- 不引入 DI 容器、DomainGateway 或 service locator；跨 Domain 依赖由组合根或显式 getter 连接。
+
+### 5.2 Workspace module 内部
+
+| 实现        | 职责                                                                |
 | ----------- | ------------------------------------------------------------------- |
-| `agent`     | AgentHost、pi session、模型配置、认证、工作区、资源装载             |
 | `ura`       | transport / codec / store / presenter / sidecar、资源地图、页面会话 |
 | `resources` | 资源读写 / 检索 / 页面会话编排                                      |
-| `sessions`  | 会话列表、消息、流式投影、任务状态、标签集合                        |
 | `lists`     | 列表定义、provider、snapshot 构建                                   |
 | `plugins`   | 插件安装、catalog、PluginHost、插件注册面                           |
 | `browser`   | 浏览器能力注册、站点集合、a11y 动作                                 |
-| `harness`   | 技能、prompt、浏览器 / Office / URA 工具                            |
-| `updates`   | 版本检查、下载、取消、安装包打开                                    |
+| `sites`     | 站点快照与白名单过滤                                                |
+| `repo`      | 工作区注册仓储                                                      |
 
-### 5.2 Infrastructure
+### 5.3 Shell 内部
 
-| Module                 | 职责                            |
-| ---------------------- | ------------------------------- |
-| `net`                  | 代理与出站 HTTP 调度            |
-| `repo`                 | 工作区注册等持久化仓储          |
-| `preferences`          | 用户偏好与工作区策略            |
-| `paths` / `path-codec` | 应用路径与 URL / 文件路径编解码 |
-| `log`                  | 诊断日志                        |
+| 实现             | 职责                                              |
+| ---------------- | ------------------------------------------------- |
+| `native`         | WindowManager、ThemeManager、Scene、SystemActions |
+| `views`          | GlobalViews / Tabs、视图记录与发送                |
+| `view-providers` | 打开契约 → ViewSpec                               |
+| `app-views`      | 助手 / 浮层 / 欢迎 / 资源页 / 插件页的打开入口    |
+| `layout`         | 每窗口 scene / layout resource 与交互绑定         |
+| `interaction`    | 布局计算与拖拽 preview                            |
+| `dialogs`        | 对话框与通知                                      |
+| `menu`           | 应用菜单                                          |
+| `app-pages`      | `app://` 页面协议                                 |
 
-Modules 可以依赖 Infrastructure；Domains 不直接依赖 Electron / Node 句柄；Infrastructure 不反向依赖 Domains。
+### 5.4 Settings / Agent
+
+- `settings` 内部持有更新服务；`settings/updates` 与设置资源共享生命周期。
+- `agent`（AgentDomain）是 Agent Layer 的边界：AgentHost、SessionsService、模型、技能与 harness 都在 `src/main/agent`，对外拆成 `sessions` / `models` / `skills` / `thinking` / `extensions` / `tools` / `prompts` / `themes` 八个 domain。
+
+### 5.5 Runtime 适配
+
+| 实现      | 职责                                   |
+| --------- | -------------------------------------- |
+| `storage` | 数据根、StoragePaths、偏好、路径编解码 |
+| `net`     | 代理与出站 HTTP 调度                   |
+| `log`     | 诊断日志                               |
+| `policy`  | WebContents 安全加固                   |
+
+Runtime 不反向依赖 Domains；Domain 内部实现不直接改 Views 之外的原生状态。
 
 ## 六、跨进程契约
 
@@ -306,14 +346,15 @@ ListRegistry
         ↓
 buildListSnapshot()
         ↓
-lists/current
+lists/ws:<wsId>
 ```
 
-- 定义、provider、snapshot 构建在 modules/lists；domain 只暴露快照与打开动作。
+- 定义、provider、snapshot 构建在 workspace module 内部；domain 只暴露快照与打开动作。
+- `lists/current` 是当前工作区别名，供不持有 wsId 的页面使用。
 - 每个 provider 返回分组；组内 item 携带标题、图标、字段、动作与 meta。
 - 列表行状态（open / active / dirty）由当前视图集合回写。
 - 单组失败只标记该组 error + diagnostics，其他组继续。
-- 用户点击只发 `lists/current.action { action: 'open', item }`；打开目标由 App 路由到资源 / 设置 / 插件。
+- 用户点击只发 `lists/ws:<wsId>.action { action: 'open', item }`；打开目标由 workspace module 路由到资源 / 设置 / 插件。
 
 ## 九、资源管道 URA
 
@@ -345,7 +386,7 @@ ref ─► transport ─► RawContent
 - 任务状态包含 running / stopping / stopped / failed / done / unconfirmed；停止要等待运行时确认。
 - 失败重试重发原请求；可能有副作用时先要求确认。
 - 技能启用状态归工作区；本轮选中集随 prompt 传入；未选中表示全部启用。
-- 助手视图只消费 sessions domain，不直接访问 AgentHost。
+- 助手视图只消费 agent domain，不直接访问 AgentHost。
 
 ## 十一、渲染层
 
@@ -379,7 +420,7 @@ shared/
 
 - 设置是单页 domain 消费方：卡片默认收起，展开后直接使用 workStudio resource / command，无 iframe。
 - 外观只有 light / dark / system；界面缩放使用百分比。
-- 更新独立为 `updates/status` domain；设置页只是消费者。
+- 更新是 `settings/updates` resource；设置页只是消费者。
 - 插件安装任务、技能诊断、模型供应商、URA 绑定、存储路径与资源诊断都有独立 resource / command。
 - 设置写入不得覆盖未提交表单；路径展示以 `app/` / `workspace/` 等逻辑根呈现。
 
@@ -388,7 +429,7 @@ shared/
 ### 13.1 依赖与边界
 
 - 渲染层不 import 主进程；只走 preload 暴露的 workStudio / extension。
-- Domain 不持 Electron / Node 句柄；Modules 不直接改 Views；Infrastructure 不反向依赖业务。
+- Domain 不持 Electron / Node 句柄；内部实现不绕过 Views 修改原生状态；Runtime 不反向依赖业务。
 - 视图管理不碰格式、版本、写队列。
 - 页面无 Node、无裸 IPC；浏览器页不暴露应用 bridge。
 
