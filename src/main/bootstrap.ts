@@ -29,7 +29,6 @@ export interface BootstrapOptions {
   ipcLog?: boolean;
   shell?: Omit<ShellHostOptions, 'origins'>;
   builtinPluginsRoot?: string;
-  builtinSkillsRoot?: string;
 }
 
 export interface BootstrapResult {
@@ -74,9 +73,6 @@ export async function bootstrapNext(
     ...(options.shell ? { shell: options.shell } : {}),
     ...(options.builtinPluginsRoot
       ? { builtinPluginsRoot: options.builtinPluginsRoot }
-      : {}),
-    ...(options.builtinSkillsRoot
-      ? { builtinSkillsRoot: options.builtinSkillsRoot }
       : {}),
   });
 

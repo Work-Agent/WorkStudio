@@ -7,7 +7,7 @@
 
 import { ipcMain, webContents } from 'electron';
 import type { DomainUpdate } from '../contract.ts';
-import { BRIDGE_CHANNELS } from '../../preload/bridge.ts';
+import { BRIDGE_CHANNELS } from '../../shared/channels.ts';
 import type { Dispatcher } from './dispatcher.ts';
 import type { Origins } from './origins.ts';
 

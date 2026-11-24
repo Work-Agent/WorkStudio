@@ -5,12 +5,12 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import { BRIDGE_CHANNELS } from './bridge.ts';
 import type {
   CallResult,
   DomainUpdate,
   WorkStudioBridge,
 } from '@workstudio/sdk';
+import { BRIDGE_CHANNELS } from '../shared/channels.ts';
 
 const bridge: WorkStudioBridge = {
   subscribe: (domain, resource) =>

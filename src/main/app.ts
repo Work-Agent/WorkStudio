@@ -52,29 +52,12 @@ export interface NextAppOptions {
   settingsPages?: SettingsPage[];
   /** 构建产物中的内置插件根目录；存在时播种到 plugins/installed。 */
   builtinPluginsRoot?: string;
-  builtinSkillsRoot?: string;
   /** 打开 IPC 请求日志。 */
   ipcLog?: boolean;
   /** 覆盖默认 IPC 投递（测试或自定义通道）。 */
   sendUpdate?(viewId: string, update: DomainUpdate): void;
   /** Electron shell 宿主；不传则只保留结构投影。 */
   shell?: Omit<ShellHostOptions, 'origins'>;
-}
-
-function seedSkills(targetRoot: string, sourceRoot: string | undefined): void {
-  if (!sourceRoot || !existsSync(sourceRoot)) return;
-  mkdirSync(targetRoot, { recursive: true });
-  for (const name of readdirSync(sourceRoot)) {
-    const source = join(sourceRoot, name);
-    if (!statSync(source).isDirectory()) continue;
-    const target = join(targetRoot, name);
-    if (existsSync(target)) continue;
-    try {
-      cpSync(source, target, { recursive: true });
-    } catch (error) {
-      console.warn('[skills] seed builtin failed', name, error);
-    }
-  }
 }
 
 function seedBuiltins(store: PluginStore, root: string | undefined): void {
@@ -123,7 +106,6 @@ export class NextApp {
 
     this.pluginStore = new PluginStore(this.storage);
     seedBuiltins(this.pluginStore, options.builtinPluginsRoot);
-    seedSkills(this.storage.skillsRoot, options.builtinSkillsRoot);
     this.plugins = new PluginManager(
       this.registry,
       this.transport,

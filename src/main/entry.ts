@@ -15,7 +15,6 @@ runNext({
   rendererRoot: join(here, '../renderer'),
   ...(devBase ? { devBase } : {}),
   builtinPluginsRoot: join(here, '../plugins'),
-  builtinSkillsRoot: join(here, '../skills'),
   shell: {
     preload: join(here, '../preload/work-studio.cjs'),
     capturePreload: join(here, '../preload/capture.cjs'),
