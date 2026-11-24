@@ -172,18 +172,7 @@ async function serve(url: string, protocols: Protocols): Promise<Response> {
   const resolved = protocols.resolve(url);
   if (!resolved) return notFound();
   try {
-    if ('proxy' in resolved) {
-      const response = await net.fetch(resolved.proxy);
-      const type = response.headers.get('content-type') ?? '';
-      if (!type.includes('text/html')) return response;
-      return new Response(
-        rewriteDevHtml(await response.text(), resolved.proxy),
-        {
-          status: response.status,
-          headers: response.headers,
-        },
-      );
-    }
+    if ('proxy' in resolved) return await net.fetch(resolved.proxy);
     return await net.fetch(pathToFileURL(resolved.file).toString());
   } catch {
     return notFound();
@@ -193,18 +182,6 @@ async function serve(url: string, protocols: Protocols): Promise<Response> {
 function isWithin(root: string, file: string): boolean {
   const rel = relative(root, file);
   return rel === '' || (!rel.startsWith('..') && !rel.includes(`..${sep}`));
-}
-
-/** 开发态 HTML 里的相对/根路径资源改写到 Vite 源，页面仍由 work:// 承载。 */
-function rewriteDevHtml(html: string, proxy: string): string {
-  const url = new URL(proxy);
-  const origin = url.origin;
-  const base = proxy.slice(0, proxy.lastIndexOf('/') + 1);
-  return html
-    .replace(/(\b(?:src|href)=")\/([^"]*)"/g, `$1${origin}/$2"`)
-    .replace(/(\b(?:src|href)=")\.\/([^"]*)"/g, `$1${base}$2"`)
-    .replace(/(\bfrom\s+")\/([^"]*)"/g, `$1${origin}/$2"`)
-    .replace(/(\bfrom\s+")\.\/([^"]*)"/g, `$1${base}$2"`);
 }
 
 function notFound(): Response {
