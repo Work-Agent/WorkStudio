@@ -67,7 +67,9 @@ jobs:
             platform: linux
             arch: x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Apple 公证队列可能长时间排队（实测单架构可达 33 分钟），双架构叠加后
+    # 60 分钟不够，留足余量避免无故被超时打断。
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -112,6 +114,9 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD="codesign-only"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # 关闭空闲自动上锁：双架构公证可能排队数十分钟，期间钥匙串一旦上锁，
+          # 后续 codesign 会等待无法在 CI 上弹出的授权框而无限挂起。
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
           # 新建钥匙串必须进入搜索列表，否则 security / codesign 找不到导入的身份
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
@@ -122,6 +127,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           rm -f "$CERT_PATH"
+
+      - name: Unlock macOS signing keychain
+        # 二次兜底：公证排队期间钥匙串仍可能被系统策略上锁。
+        if: matrix.platform == 'mac'
+        run: security unlock-keychain -p "codesign-only" "$RUNNER_TEMP/build.keychain"
 
       - name: Package installers (${{ matrix.platform }})
         # electron-builder must not self-publish: softprops/action-gh-release
