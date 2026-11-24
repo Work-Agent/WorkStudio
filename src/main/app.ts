@@ -37,7 +37,9 @@ import { Protocols } from './protocols.ts';
 import { PluginLifecycle } from './plugin/lifecycle.ts';
 import { PluginManager } from './plugin/manager.ts';
 import { DomainRegistry } from './registry/registry.ts';
+import { ipcMain } from 'electron';
 import { createLog } from './log.ts';
+import { INITIAL_THEME_CHANNEL } from '../shared/channels.ts';
 import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -231,6 +233,15 @@ export class NextApp {
     if (this.started) return;
     this.started = true;
     this.ipc.attach();
+    ipcMain.on(INITIAL_THEME_CHANNEL, (event) => {
+      const appearance = this.registry.snapshot({
+        domain: 'shell',
+        resource: 'appearance',
+      }) as { theme?: string } | null;
+      event.returnValue = {
+        theme: appearance?.theme === 'dark' ? 'dark' : 'light',
+      };
+    });
     this.capture.attach((_senderId, message) => {
       const windowId = this.shellHost?.activeWindow();
       if (!windowId) return;
@@ -267,6 +278,7 @@ export class NextApp {
   async stop(): Promise<void> {
     if (!this.started) return;
     this.started = false;
+    ipcMain.removeAllListeners(INITIAL_THEME_CHANNEL);
     this.ipc.detach();
     this.capture.detach();
     await this.registry.stop();

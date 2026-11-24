@@ -6,3 +6,6 @@ export const BRIDGE_CHANNELS = {
   notify: 'workstudio:notify',
   update: 'workstudio:update',
 } as const;
+
+/** preload 启动首帧同步读取当前外观，避免白屏闪一下。 */
+export const INITIAL_THEME_CHANNEL = 'workstudio:initial-theme';
