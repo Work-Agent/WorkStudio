@@ -1,4 +1,3 @@
-import type { ViewActionView } from './ura.ts';
 // ─── 共享类型（主进程 + 渲染层 + preload 三方共用） ─────────────────
 //
 // 本文件是三端之间的唯一契约面：渲染层只依赖这些类型（不 import 任何进程内模块）。
@@ -133,33 +132,6 @@ export interface LoadedResourcesView {
   errors: Array<{ path: string; message: string }>;
 }
 
-/** 工作区清单项（工作区设置页）。 */
-export interface WorkspaceInfo {
-  path: string;
-  name: string;
-  wsId: string;
-  createdAt: number;
-  lastOpenedAt: number;
-  current: boolean;
-  exists: boolean;
-}
-
-export interface AgentStatus {
-  configured: boolean;
-  provider?: string;
-  modelId?: string;
-  thinkingLevel?: ThinkingLevel;
-  workspacePath?: string;
-}
-
-export interface AgentConfigureInput {
-  provider?: string;
-  modelId?: string;
-  apiKey?: string;
-  thinkingLevel?: ThinkingLevel;
-  workspacePath?: string;
-}
-
 // ─── 会话 ─────────────────────────────────────────────────
 
 /** Session 元数据（来自会话索引 / JSONL 落盘）。 */
@@ -194,218 +166,6 @@ export type ParsedMessage = {
   entryId?: string;
   blocks: ParsedBlock[];
 };
-
-// ─── URA 统一资源访问器 ────────────────────────────────────
-
-/** 资源三分法：content 全文可注入 / data 仅 schema 注入 / snapshot 页面状态存证。 */
-export type UraType = 'content' | 'data' | 'snapshot';
-
-/** 数据文档的 schema 描述（data 轨唯一可注入的数据形态）。 */
-export interface UraSchema {
-  label: string;
-  fields: Array<{
-    name: string;
-    type: string;
-    description?: string;
-    required?: boolean;
-  }>;
-  states?: string[];
-  relations?: Array<{ target: string; description: string }>;
-}
-
-/** URA 分组（同 source 内的二级分组）——web source 的「域 = 分组」即此类。 */
-export interface UraGroup {
-  /** 分组 id（source 命名空间内稳定，web = 域名，如 github.com）。 */
-  id: string;
-  /** 分组标题（web = 站点主标题优先，回退域名）。 */
-  title: string;
-  /** 分组图标（favicon data-url；可缺省 → 壳层回退默认图标）。 */
-  icon?: string;
-}
-
-/** 分组视图（侧边栏分组行 / 域名列表的数据面）。 */
-export interface UraGroupInfo extends UraGroup {
-  source: string;
-  sourceLabel: string;
-  count: number;
-  updatedAt: number;
-}
-
-/** 统一资源元数据：侧边栏 / 文档路由的通用模型。 */
-export interface DocumentMeta {
-  /** 唯一 id（资源地址的稳定键，对渲染层不透明）。 */
-  id: string;
-  /** 标题（文件名，tabs / 侧边栏短标题）。 */
-  title: string;
-  /** 命名空间内相对地址（资源定位，如 src/main/index.ts）。 */
-  path?: string;
-  /** 路径行地址：本地文档 = 工作区相对路径；应用内资源 = plugin:// 地址。 */
-  url?: string;
-  /** 文件类型（扩展名，不含点，小写）→ 决定用哪个扩展视图渲染。 */
-  ext: string;
-  /** 三轨类别。 */
-  type: UraType;
-  /** 来源 source id → 决定侧边栏分组。 */
-  source: string;
-  /** 来源展示名（如「本地文档」「业务数据」）。 */
-  sourceLabel: string;
-  /** 所属分组（无分组 = undefined；图标经 documents_groups 单独下发）。 */
-  group?: UraGroup;
-  createdAt: number;
-  updatedAt?: number;
-  size?: number;
-  description?: string;
-  /** data 类资源的 schema。 */
-  schema?: UraSchema;
-}
-
-/** 文档读取结果（content 全文 / data 为 schema 描述）。 */
-export interface DocumentContent {
-  content: string;
-  ext: string;
-  type: UraType;
-  size?: number;
-}
-
-/** URA 搜索结果。 */
-export interface UraSearchResult {
-  title: string;
-  type: UraType;
-  source: string;
-  score: number;
-  snippet: string;
-}
-
-// ─── 插件 ─────────────────────────────────────────────────
-
-/** Skill 声明。 */
-export interface SkillSpec {
-  name: string;
-  path: string;
-}
-
-/** 工具声明（四类贡献点之一：操作 tool）。 */
-export interface ToolSpec {
-  name: string;
-  handler: string;
-}
-
-/** 扩展页面声明。 */
-export interface ExtensionSpec {
-  id: string;
-  label: string;
-  src: string;
-  /** 匹配的文件扩展名列表（不含点，小写）。 */
-  fileExtensions: string[];
-  /** 壳层动作贡献（声明式）：TitleBar 地址栏动作区按激活实例类型追加的按钮 id。 */
-  titlebarActions?: string[];
-}
-
-/** 插件配置页声明（manifest.config，渲染为扩展视图）。 */
-export interface PluginConfigSpec {
-  id: string;
-  label: string;
-  src: string;
-}
-
-/** 插件清单（manifest.json）。 */
-export interface PluginManifest {
-  id: string;
-  name: string;
-  version: string;
-  description?: string;
-  author?: string;
-  skills?: SkillSpec[];
-  extensions?: ExtensionSpec[];
-  tools?: ToolSpec[];
-  config?: PluginConfigSpec;
-}
-
-/** 扩展定义（运行时展开，含所属插件）。 */
-export interface ExtensionDef {
-  id: string;
-  label: string;
-  extensions: string[];
-  src: string;
-  pluginId: string;
-  /** 壳层动作贡献（声明式，源自 manifest extensions[].titlebarActions）。 */
-  titlebarActions?: string[];
-  /** 兜底渲染器（无扩展名匹配时使用）。 */
-  default?: boolean;
-}
-
-/** 扩展视图实例的运行时元数据。 */
-export interface ExtensionInstance {
-  instanceId: string;
-  extensionId: string;
-  label: string;
-  url: string;
-  /** 关联的文档 id，无绑定时为 null。 */
-  documentId: string | null;
-  visible: boolean;
-  /** 当前原生视图矩形（窗口坐标）；渲染层尚未丈量时为全零 —— 全零 = 不显示。 */
-  bounds: { x: number; y: number; width: number; height: number };
-  pluginId: string;
-  /** webview 已报告 data:loaded（渲染层重载后可从主进程恢复，避免 spinner 永挂）。 */
-  loaded: boolean;
-  /** raw 网页视图（browser 插件面板：加载任意 URL，非扩展页面）。 */
-  raw: boolean;
-  /** raw 视图：可交互元素（ref 标记 + overlay）是否上屏；导航后自动复位 false。 */
-  interactiveElements?: boolean;
-  /** raw 视图且域名不在名单内 = 临时网页（不落盘，侧边栏「临时网页」分组跟随标签页）。 */
-  temporary?: boolean;
-}
-
-/** 插件运行时信息（供 UI 展示）。 */
-export interface PluginInfo {
-  loaded?: boolean;
-  error?: string;
-  id: string;
-  name: string;
-  version: string;
-  description?: string;
-  author?: string;
-  builtin: boolean;
-  /** 自定义图标（favicon 格式，data: URL）。 */
-  iconUrl?: string;
-  extensionCount: number;
-  skillCount: number;
-  /** 工具贡献点数。 */
-  toolCount: number;
-  hasHome: boolean;
-  /** 是否声明了配置页。 */
-  hasConfig: boolean;
-  /** 安装来源（zip / 本地路径 / 内置）。 */
-  source?: string;
-  /** zip 完整性哈希。 */
-  hash?: string;
-  /** 插件 API 版本。 */
-  apiVersion?: number;
-}
-
-/** Skill 信息（供 UI 选择器 / 技能设置页展示）。 */
-export interface SkillInfo {
-  name: string;
-  description: string;
-  pluginId: string;
-  pluginName: string;
-  /** SKILL.md 绝对路径（展示 / 打开用）。 */
-  path?: string;
-  /** 装载作用域：user / project / temporary / builtin… */
-  scope?: string;
-  /** 来源标识（settings / package / builtin…）。 */
-  source?: string;
-  /** 仅手动调用（不注入提示词）。 */
-  manualOnly?: boolean;
-}
-
-/** 技能视图（设置页：清单 + 装载诊断 + 当前启用集合）。 */
-export interface SkillViewResult {
-  skills: SkillInfo[];
-  diagnostics: Array<{ type: string; message: string; path?: string }>;
-  /** 当前启用集合（空 = 全量注入，pi 默认）。 */
-  active: string[];
-}
 
 // ─── 用户操作状态（UiState，主进程 ui-state.json 持久化） ─────
 
@@ -462,10 +222,13 @@ export interface PopupMenuItem {
   disabled?: boolean;
 }
 
-export interface PopupSelectEvent {
-  /** 调用方标识（多菜单源共存时路由，如 'tabs'）。 */
-  source: string;
-  actionId: string;
+/** Agent 状态投影（pi 快照的渲染层子集）。 */
+export interface AgentStatus {
+  configured: boolean;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: ThinkingLevel;
+  workspacePath?: string;
 }
 
 // ─── pi 事件流（渲染层消费子集） ───────────────────────────
@@ -526,12 +289,6 @@ export interface PiEventFrame {
 
 /** pi:cmd:invoke 响应（结构化）。 */
 // ─── 视图总线消息（主窗口监听 webview 上报） ─────────────────
-
-export interface BusMessage {
-  channel: string;
-  payload: unknown;
-  fromInstanceId: string | null;
-}
 
 // ═══════════════════════════════════════════════════════════
 // 主进程新契约（README.md / architecture.md）
@@ -594,7 +351,16 @@ export interface RendererInfo {
   codec?: string;
 }
 
+/** 插件地址栏动作投影（构建期 / 插件声明）。 */
+export interface ViewActionView {
+  id: string;
+  label: string;
+  icon?: string;
+  active?: boolean;
+}
+
 export interface ViewEntry {
+  renderer?: RendererInfo;
   id: string;
   tabKey: string;
   type: ViewType;
@@ -612,9 +378,6 @@ export interface ViewEntry {
   conflict?: boolean;
   temporary?: boolean;
   interactiveElements?: boolean;
-  renderer?: RendererInfo;
-  document?: DocumentMeta;
-  plugin?: PluginInfo;
   /** 声明式标题栏动作 id（manifest 声明；主窗口按语义渲染按钮）。 */
   titlebarActions?: string[];
   /** 插件注册的地址栏动作（URA 视图动作）。 */
@@ -671,15 +434,6 @@ export type InteractionType =
 /** 缩放方向（view-resize；缺省 = 右下角 'se'）。 */
 export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-export interface InteractionBeginInput {
-  type: InteractionType;
-  /** pane-resize: 'left' | 'right'；view-*: 'assistant'；tab-reorder: tabKey。 */
-  target: string;
-  /** view-resize 的缩放方向（八向；缺省 'se'）。 */
-  direction?: ResizeDirection;
-  anchor: { x: number; y: number };
-}
-
 // ─── 扩展 UI（ws:ui） ──────────────────────────────────────
 
 export type UiDialogType = 'select' | 'confirm' | 'input' | 'editor';
@@ -712,8 +466,6 @@ export interface UiNotifyMessage {
   level: 'info' | 'warning' | 'error';
   source?: string;
 }
-
-export type UiRequest = UiDialogRequest | UiNotifyMessage;
 
 // ─── 交互 ──────────────────────────────────────────────────
 

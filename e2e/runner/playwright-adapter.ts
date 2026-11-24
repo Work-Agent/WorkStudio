@@ -39,7 +39,7 @@ function locator(page: Page, selector: string) {
 function pageHandle(page: Page): PageHandle {
   return {
     url: () => page.url(),
-    evaluate: (fn) => page.evaluate(fn),
+    evaluate: (fn, arg) => page.evaluate(fn, arg),
     text: async (selector) => locator(page, selector).first().innerText(),
     expect: {
       text: async (selector, expected) => {
@@ -88,7 +88,7 @@ export async function createPlaywrightContext(options: {
       shell.getByTestId('doc-tabs').getByTitle(title).click(),
     fillTestId: (testId, value) => shell.getByTestId(testId).fill(value),
     press: (key) => shell.keyboard.press(key),
-    evaluate: (fn) => shell.evaluate(fn),
+    evaluate: (fn, arg) => shell.evaluate(fn, arg),
     legacyBridge: bridge,
     expect: {
       poll: async (check, message) => {

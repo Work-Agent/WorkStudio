@@ -1,566 +1,293 @@
 /**
- * app 组件：应用运行时 + IPC transport。
+ * App 组合根（App 作用域）。
  *
- *   Dispatcher   sender → origin → DomainRegistry + IPC 请求日志
- *   App          Domain / View / Dispatcher 的组合根与 IPC 生命周期
+ *   registry/   DomainRegistry：域注册 · 生命周期 · 分发 · 订阅
+ *   ipc/        origins · dispatcher · ipc 通道（bridge 契约在 src/preload）
+ *   composition.ts  模块的唯一组合入口（App 不认识具体模块）
+ *   domains/    shell · workspace · plugin · settings · browser · agent
+ *   plugin/     manifest · contribution · context · manager · lifecycle
+ *   transport/  ResourceAdapter · 工作区文件 · 网页缓存
+ *   protocols.ts  scheme 注册与 host → 页面文件
  *
- * App.start() 必须在 Electron ready 之后调用；进程生命周期、单实例锁、
- * whenReady、quit 等由 main 的 Bootstrap 负责。
+ * App 只装配基础设施并调用 DomainRegistry.start / stop；
+ * 不持有具体域，也不调用域的方法。
  */
 
-import { join } from 'node:path';
-import { app as electronApp, ipcMain, protocol, session } from 'electron';
-import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
-import { initDataRoot, profileDir } from './runtime/storage/data-root.ts';
-import { initWorkspaceStorage } from './agent/workspace.ts';
-import { PageHost, servePages } from './runtime/pages.ts';
-import { readUserPreferences } from './runtime/storage/preferences.ts';
-import { CH_BUS, CH_URA, CH_URA_WATCH } from '../shared/channels.ts';
-import { normalizeAppearance } from '../shared/appearance.ts';
-import { DomainRegistry } from './runtime/domains.ts';
+import type { DomainUpdate } from './contract.ts';
+import type { ListItem } from '../shared/lists.ts';
+import { TransportRouter } from './transport/router.ts';
+import { WebCache } from './transport/web-cache.ts';
+import { WorkspaceFiles } from './transport/workspace-files.ts';
+import { registerSystemModules, type SettingsPage } from './composition.ts';
+import { createStorageLayout, type StorageLayout } from './platform/paths.ts';
 import {
-  createStoragePaths,
-  type StoragePaths,
-} from './runtime/storage/storage-paths.ts';
-import { ShellDomain } from './domains/shell/module.ts';
-import { WorkspaceModule } from './domains/workspace/module.ts';
-import { AgentDomain } from './domains/agent/module.ts';
-import { SettingsDomain } from './domains/settings/module.ts';
-import { Dispatcher } from './runtime/dispatcher.ts';
-import { IPC_CHANNELS } from './runtime/shared.ts';
-import type {
-  SceneOptions,
-  WindowOptions,
-  WorkspaceWindow,
-} from './domains/shell/native.ts';
-import { registerAppProviders } from './domains/workspace/app-providers.ts';
+  createAppearanceStore,
+  type AppearanceStore,
+} from './platform/appearance.ts';
+import { PluginStore } from './plugin/store.ts';
+import { PluginService } from './plugin/service.ts';
+import { PluginCatalogService } from './plugin/catalog.ts';
+import { PageRouter, type PageTarget } from './page-router.ts';
+import { ShellHost, type ShellHostOptions } from './domains/shell/native.ts';
+import { Dispatcher } from './ipc/dispatcher.ts';
+import { Origins } from './ipc/origins.ts';
+import { IpcChannel } from './ipc/channel.ts';
+import { CaptureChannel } from './ipc/capture.ts';
+import { Protocols } from './protocols.ts';
+import { PluginLifecycle } from './plugin/lifecycle.ts';
+import { PluginManager } from './plugin/manager.ts';
+import { DomainRegistry } from './registry/registry.ts';
+import { createLog } from './log.ts';
+import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 
-export interface AppOptions {
-  /** 启动时打开的工作区；之后用 openWorkspace 打开更多窗口。 */
-  workspaceId?: string;
-  url?: string;
-  /** 应用 preload（系统页 / 内容页 / 网页共用）。 */
-  preloads?: {
-    workStudio?: string;
-  };
-  /** 渲染层产物目录（work://studio 的根）。 */
-  rendererRoot?: string;
+export interface NextAppOptions {
+  dataRoot: string;
+  workspaceRoot: string;
+  /** 系统页产物目录（work://studio 的根）。 */
+  rendererRoot: string;
   /** 开发模式的 vite 地址；有值时页面请求代理过去。 */
   devBase?: string;
-  /** 系统页地址（work://studio/...）。 */
-  rendererPage?: (
-    page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
-  ) => string;
-  window?: WindowOptions;
-  scene?: SceneOptions;
-  /** 交互捕获层 preload（透明 WebContentsView）。 */
-  capturePreload?: string;
-  /** Chromium remote debugging 端口；缺省读 WA_DEBUG_PORT。 */
-  debugPort?: string;
-  /** 打开 IPC 请求日志；缺省读 WA_IPC_LOG。 */
+  settingsPages?: SettingsPage[];
+  /** 构建产物中的内置插件根目录；存在时播种到 plugins/installed。 */
+  builtinPluginsRoot?: string;
+  builtinSkillsRoot?: string;
+  /** 打开 IPC 请求日志。 */
   ipcLog?: boolean;
-  /** bootstrap 已解析的存储路径。 */
-  storage: StoragePaths;
+  /** 覆盖默认 IPC 投递（测试或自定义通道）。 */
+  sendUpdate?(viewId: string, update: DomainUpdate): void;
+  /** Electron shell 宿主；不传则只保留结构投影。 */
+  shell?: Omit<ShellHostOptions, 'origins'>;
 }
 
-export type AppRunOptions = Omit<AppOptions, 'storage'>;
+function seedSkills(targetRoot: string, sourceRoot: string | undefined): void {
+  if (!sourceRoot || !existsSync(sourceRoot)) return;
+  mkdirSync(targetRoot, { recursive: true });
+  for (const name of readdirSync(sourceRoot)) {
+    const source = join(sourceRoot, name);
+    if (!statSync(source).isDirectory()) continue;
+    const target = join(targetRoot, name);
+    if (existsSync(target)) continue;
+    try {
+      cpSync(source, target, { recursive: true });
+    } catch (error) {
+      console.warn('[skills] seed builtin failed', name, error);
+    }
+  }
+}
 
-export class App {
-  readonly domains: DomainRegistry;
+function seedBuiltins(store: PluginStore, root: string | undefined): void {
+  if (!root || !existsSync(root)) return;
+  for (const name of readdirSync(root)) {
+    const sourceDir = join(root, name);
+    if (!statSync(sourceDir).isDirectory()) continue;
+    try {
+      store.seedBuiltin({ id: name, sourceDir });
+    } catch (error) {
+      console.warn('[plugin] seed builtin failed', name, error);
+    }
+  }
+}
+
+export class NextApp {
+  readonly registry = new DomainRegistry();
+  readonly storage: StorageLayout;
+  readonly appearance: AppearanceStore;
+  readonly protocols: Protocols;
+  readonly origins = new Origins();
+  readonly transport: TransportRouter;
+  readonly cache: WebCache;
+  readonly plugins: PluginManager;
+  readonly lifecycle: PluginLifecycle;
+  readonly pluginStore: PluginStore;
+  readonly pluginService: PluginService;
+  readonly pages: PageRouter;
+  readonly shellHost: ShellHost | null;
   readonly dispatcher: Dispatcher;
+  readonly ipc: IpcChannel;
+  readonly capture = new CaptureChannel();
 
-  private readonly options: AppOptions;
-  private readonly storage: StoragePaths;
-  private readonly shellDomain: ShellDomain;
-  private readonly workspaceModule: WorkspaceModule;
-  private readonly agentDomain: AgentDomain;
-  private readonly settingsDomain: SettingsDomain;
-  private viewWatch: { close(): void } | null = null;
-  private ipcAttached = false;
   private started = false;
 
-  constructor(options: AppOptions) {
-    this.options = options;
-    this.storage = options.storage;
-    this.domains = new DomainRegistry();
-    this.shellDomain = new ShellDomain({
-      registry: this.domains,
-      storage: this.storage,
-      ...(options.window ? { window: options.window } : {}),
-      ...(options.scene ? { scene: options.scene } : {}),
-      ...(options.capturePreload
-        ? { capturePreload: options.capturePreload }
-        : {}),
-      appViews: {
-        ...(options.rendererPage ? { rendererPage: options.rendererPage } : {}),
-        ...(options.preloads ? { preloads: options.preloads } : {}),
-      },
-      started: () => this.started,
-      currentWorkspace: () => this.workspaceModule.current,
-      ensureResources: () => this.workspaceModule.ensure(),
-      resources: () => this.workspaceModule.resources(),
-      ensureAgent: () => this.agentDomain.ensure(),
-      openWorkspace: (wsId) => this.openWorkspace(wsId),
-      onThemeSource: (source) => this.settingsDomain.setThemeSource(source),
-    });
-    this.domains.registerModule(this.shellDomain);
-    this.workspaceModule = new WorkspaceModule({
-      storage: this.storage,
-      appPath: () => electronApp.getAppPath(),
-      views: this.shellDomain.views,
-      agent: () => this.agentDomain,
-      openWindow: (wsId) => this.openWorkspace(wsId),
-      closeWindow: (wsId) => this.closeWorkspace(wsId),
-      openResource: (ref) => this.shellDomain.appViews.openResource(ref),
-      openWeb: (url, title) => this.shellDomain.appViews.openWeb(url, title),
-      openPlugin: (pluginId, surface) =>
-        this.shellDomain.appViews.openPlugin(pluginId, surface),
-      openPageView: (ref) =>
-        this.shellDomain.appViews.openResourcePageView(ref),
-      savePageCopy: (pageId, content) =>
-        this.shellDomain.appViews.savePageCopy(pageId, content),
-      openItem: async (item) => {
-        const meta = item.meta ?? {};
-        const ref = meta['ref'];
-        if (typeof ref === 'string' && ref)
-          return this.shellDomain.appViews.openResource(ref);
-        const pageId = meta['pageId'];
-        if (typeof pageId === 'string' && pageId)
-          return this.shellDomain.appViews.openSettings(pageId);
-        const pluginId = meta['pluginId'];
-        if (typeof pluginId === 'string' && pluginId)
-          return this.shellDomain.appViews.openPlugin(pluginId, 'settings');
-        throw new Error(`list item has no open target: ${item.key}`);
-      },
-      onChanged: () => this.publishResources(),
-      onSettingsChanged: () => this.publishSettings(),
-    });
-    this.domains.registerModule(this.workspaceModule);
-    this.agentDomain = new AgentDomain({
-      current: () => this.workspaceModule.current,
-      storage: this.storage,
-      workspace: this.workspaceModule,
-      views: this.shellDomain.views,
-      windows: this.shellDomain.windows,
-      actions: this.shellDomain.actions,
-      dialogs: this.shellDomain.dialogs,
-      notices: this.shellDomain.notices,
-      openWeb: (url, title) => this.shellDomain.appViews.openWeb(url, title),
-      openPlugin: (pluginId) =>
-        this.shellDomain.appViews.openPlugin(pluginId, 'settings'),
-      onSettingsChanged: () => this.publishSettings(),
-      onListsChanged: () => {
-        void this.workspaceModule.refresh();
-      },
-    });
-    this.domains.registerModule(this.agentDomain);
-    this.settingsDomain = new SettingsDomain({
-      current: () => this.workspaceModule.current,
-      storage: this.storage,
-      workspace: this.workspaceModule,
-      agent: this.agentDomain,
-      theme: this.shellDomain.theme,
-      views: this.shellDomain.views,
-      actions: this.shellDomain.actions,
-      openSettings: (pageId) => this.shellDomain.appViews.openSettings(pageId),
-      onBrowserChanged: () => {
-        void this.workspaceModule.refresh();
-      },
-      appPath: () => electronApp.getAppPath(),
-      appVersion: () => electronApp.getVersion(),
-    });
-    this.domains.registerModule(this.settingsDomain);
-    registerAppProviders(this.shellDomain.views, {
-      options: this.options,
-      ensureResources: () => this.workspaceModule.ensure(),
-      resources: () => this.workspaceModule.resources(),
-    });
+  constructor(options: NextAppOptions) {
+    this.storage = createStorageLayout(options.dataRoot);
+    this.appearance = createAppearanceStore(this.storage);
+    this.protocols = new Protocols(options.rendererRoot, options.devBase);
+    this.cache = new WebCache(this.storage.webCacheRoot);
 
-    this.dispatcher = new Dispatcher(this.shellDomain.views, this.domains, {
-      log: options.ipcLog ?? process.env['WA_IPC_LOG'] === '1',
-    });
-    this.shellDomain.windows.onOpen((window) => {
-      this.shellDomain.appViews.ensureAssistant(window);
-      this.shellDomain.appViews.ensureOverlay(window);
-    });
-    this.shellDomain.windows.onClose((window) => {
-      this.releaseWorkspace(window);
-      if (this.workspaceModule.current?.id === window.wsId) {
-        this.workspaceModule.setCurrent(null);
-        this.workspaceModule.reset();
-      }
-      this.publishWorkspaces();
-      this.publishResources();
-    });
-  }
+    const files = new WorkspaceFiles(options.workspaceRoot);
+    this.transport = new TransportRouter(files);
+    // 工作区文件是内建传输适配器；内容读取经由 ref → 域 → adapter。
+    this.transport.register('files', files, [{ prefixes: ['file://'] }]);
 
-  /** 进程入口：single instance / whenReady / 退出事件都在这里。 */
-  static async run(options: AppRunOptions = {}): Promise<App | null> {
-    if (!electronApp.requestSingleInstanceLock()) {
-      electronApp.quit();
-      return null;
-    }
-
-    App.applyRemoteDebugging(options.debugPort);
-    // 两个 scheme 承担信任边界：系统页与插件页各自一个来源。
-    const privileges = {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-    } as const;
-    protocol.registerSchemesAsPrivileged([
-      { scheme: 'work', privileges },
-      { scheme: 'plugin', privileges },
-    ]);
-    const dataRoot = initDataRoot();
-    const storage = createStoragePaths({
-      dataRoot: dataRoot.root,
-      profileDir: profileDir(),
-    });
-    initWorkspaceStorage(storage);
-    await electronApp.whenReady();
-    const app = new App({ ...options, storage });
-    servePages(
-      session.defaultSession,
-      new PageHost({
-        rendererRoot:
-          options.rendererRoot ?? join(process.cwd(), 'out', 'renderer'),
-        ...(options.devBase ? { devBase: options.devBase } : {}),
-        plugin: (id) => app.pluginPage(id),
-      }),
+    this.pluginStore = new PluginStore(this.storage);
+    seedBuiltins(this.pluginStore, options.builtinPluginsRoot);
+    seedSkills(this.storage.skillsRoot, options.builtinSkillsRoot);
+    this.plugins = new PluginManager(
+      this.registry,
+      this.transport,
+      this.pluginStore,
     );
-
-    electronApp.on('second-instance', () => app.activate());
-    electronApp.on('activate', () => app.activate());
-    electronApp.on('window-all-closed', () => {
-      if (process.platform !== 'darwin') electronApp.quit();
+    this.lifecycle = new PluginLifecycle(this.plugins, this.protocols);
+    this.pluginService = new PluginService({
+      store: this.pluginStore,
+      lifecycle: this.lifecycle,
+      catalog: new PluginCatalogService(this.storage),
+    });
+    this.shellHost = options.shell
+      ? new ShellHost({ ...options.shell, origins: this.origins })
+      : null;
+    this.pages = new PageRouter(this.protocols, this.plugins, {
+      openRef: (ref) => {
+        void this.registry.dispatchCommand(
+          { domain: 'workspace', resource: 'registry' },
+          'openRef',
+          { ref },
+          {
+            origin: { type: 'service', id: 'page-router' },
+            changed: (target, type) => this.registry.changed(target, type),
+            log: createLog('page-router'),
+          },
+        );
+      },
     });
 
-    await app.start();
-    return app;
+    registerSystemModules(this.registry, {
+      storage: this.storage,
+      workspaceRoot: options.workspaceRoot,
+      protocols: this.protocols,
+      transport: this.transport,
+      cache: this.cache,
+      plugins: this.plugins,
+      lifecycle: this.lifecycle,
+      pluginStore: this.pluginStore,
+      pluginService: this.pluginService,
+      appearance: this.appearance,
+      ...(this.shellHost ? { shellHost: this.shellHost } : {}),
+      openItem: (item) => this.openListItem(item),
+      ...(options.settingsPages
+        ? { settingsPages: options.settingsPages }
+        : {}),
+    });
+
+    let ipc: IpcChannel | null = null;
+    this.dispatcher = new Dispatcher(this.registry, this.origins, {
+      ...(options.ipcLog === undefined ? {} : { log: options.ipcLog }),
+      sendUpdate:
+        options.sendUpdate ??
+        ((viewId, update) => ipc?.sendUpdate(viewId, update)),
+    });
+    ipc = new IpcChannel(this.dispatcher, this.origins);
+    this.ipc = ipc;
   }
 
-  /**
-   * CDP 调试端口：必须在 ready 前追加，ready 之后再设置不生效。
-   * e2e / live-dev 通过固定端口连接 dev 窗口，不能依赖各入口自行处理。
-   */
-  private static applyRemoteDebugging(port: string | undefined): void {
-    // Playwright / 外部启动器已经占了调试端口时不要再追加一个。
-    if (electronApp.commandLine.hasSwitch('remote-debugging-port')) return;
-    const value = port ?? process.env['WA_DEBUG_PORT'];
-    if (!value || !/^\d+$/.test(value)) return;
-    electronApp.commandLine.appendSwitch('remote-debugging-port', value);
-  }
-
-  get isStarted(): boolean {
-    return this.started;
-  }
-
-  /** 在 Electron ready 之后同步启动；不负责单实例锁或进程事件。 */
-  /** 插件页查询（plugin:// 的插件来源）。 */
-  pluginPage(
-    id: string,
-  ): { root: string; page?: string; settings?: string } | null {
-    const host = this.workspaceModule?.runtime()?.ura.host;
-    const entry = host?.getPage(id);
-    const root = host?.rootOf(id);
-    if (!entry || !root) return null;
-    return {
-      root,
-      ...(entry.page ? { page: entry.page } : {}),
-      ...(entry.settings ? { settings: entry.settings } : {}),
-    };
-  }
-
-  async start(): Promise<this> {
-    if (this.started) return this;
-    if (!electronApp.isReady()) {
-      throw new Error('App.start() must be called after app.whenReady()');
+  private async openListItem(item: ListItem): Promise<unknown> {
+    const snapshot = this.registry.snapshot({
+      domain: 'workspace',
+      resource: 'registry',
+    }) as { current?: { id?: string } | null } | null;
+    const workspaceId = snapshot?.current?.id;
+    if (!workspaceId) throw new Error('没有当前工作区');
+    const meta = item.meta ?? {};
+    const ref = typeof meta['ref'] === 'string' ? meta['ref'] : '';
+    const pageId = typeof meta['pageId'] === 'string' ? meta['pageId'] : '';
+    const pluginId =
+      typeof meta['pluginId'] === 'string' ? meta['pluginId'] : '';
+    const url = typeof meta['url'] === 'string' ? meta['url'] : '';
+    let target: PageTarget;
+    if (ref) {
+      target = { type: 'resource', workspaceId, ref };
+    } else if (pageId) {
+      target = { type: 'settings', workspaceId, pageId };
+    } else if (pluginId) {
+      target = {
+        type: 'plugin',
+        workspaceId,
+        pluginId,
+        surface: 'settings',
+      };
+    } else if (url) {
+      target = { type: 'web', workspaceId, url, title: item.title };
+    } else {
+      throw new Error(`列表项没有打开目标：${item.key}`);
     }
-
-    try {
-      this.dispatcher.activate();
-      await this.domains.startModules();
-      this.shellDomain.theme.apply(
-        normalizeAppearance(readUserPreferences().appearance).theme,
+    const page = this.pages.resolve(target);
+    if (page.ref) {
+      const opened = await this.registry.dispatchCommand(
+        { domain: 'workspace', resource: 'registry' },
+        'openRef',
+        { ref: page.ref },
+        {
+          origin: { type: 'service', id: 'page-router' },
+          changed: (ref, type) => this.registry.changed(ref, type),
+          log: createLog('page-router'),
+        },
       );
-      this.started = true;
-      this.attachIpc();
-      this.shellDomain.views.setZoomFactor(
-        normalizeAppearance(readUserPreferences().appearance).zoom / 100,
-      );
-      const restored = this.workspaceModule.restore(this.options.workspaceId);
-      if (restored) this.openWorkspace(restored.id);
-      else if (this.options.workspaceId)
-        this.openWorkspace(this.options.workspaceId);
-    } catch (error) {
-      await this.rollbackStart();
-      throw error;
+      if (!opened.ok) throw new Error(opened.error.message);
     }
+    const result = await this.registry.dispatchCommand(
+      { domain: 'shell', resource: 'views' },
+      'open',
+      {
+        id: page.contentPath,
+        type: page.type === 'web' ? 'web' : 'page',
+        title: page.title,
+        url: page.url,
+      },
+      {
+        origin: { type: 'service', id: 'list' },
+        changed: (ref, type) => this.registry.changed(ref, type),
+        log: createLog('list'),
+      },
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    return result.data;
+  }
 
-    return this;
+  async start(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    this.ipc.attach();
+    this.capture.attach((_senderId, message) => {
+      const windowId = this.shellHost?.activeWindow();
+      if (!windowId) return;
+      const action =
+        message.type === 'up'
+          ? 'end'
+          : message.type === 'cancel'
+            ? 'cancel'
+            : 'move';
+      void this.registry.dispatchCommand(
+        { domain: 'shell', resource: 'layout' },
+        action,
+        {
+          windowId,
+          ...(message.type === 'move'
+            ? {
+                input: {
+                  pointerX: message.clientX,
+                  pointerY: message.clientY,
+                },
+              }
+            : {}),
+        },
+        {
+          origin: { type: 'service', id: 'capture' },
+          changed: (ref, type) => this.registry.changed(ref, type),
+          log: createLog('capture'),
+        },
+      );
+    });
+    await this.registry.start();
   }
 
   async stop(): Promise<void> {
     if (!this.started) return;
-
     this.started = false;
-    this.detachIpc();
-
-    try {
-    } finally {
-      await this.domains.stopModules();
-      this.dispatcher.deactivate();
-    }
-  }
-
-  openWorkspace(wsId: string): WorkspaceWindow {
-    if (!this.started) throw new Error('app is not started');
-
-    const meta = this.workspaceModule.find(wsId);
-    const previous =
-      meta &&
-      this.workspaceModule.current &&
-      this.workspaceModule.current.id !== meta.id
-        ? this.shellDomain.windows
-            .list()
-            .filter((window) => window.wsId !== wsId)
-        : [];
-    if (meta) this.workspaceModule.setCurrent(meta);
-
-    const existing = this.shellDomain.windows.get(wsId);
-    if (existing) {
-      existing.focus();
-      this.publishWorkspaces();
-      return existing;
-    }
-
-    const window = this.shellDomain.windows.open(wsId, this.options.window);
-    if (this.options.url) window.load(this.options.url);
-    else if (this.options.window?.show !== false) window.show();
-    this.publishWorkspaces();
-    this.shellDomain.appViews.ensureAssistant(window);
-    this.shellDomain.appViews.ensureOverlay(window);
-    this.shellDomain.appViews.ensureWelcome(window);
-    this.domains.define('shell').resource(`layout:${wsId}`).publish();
-    if (previous.length > 0) {
-      // 当前实现是单 agent / 单资源运行时：切换工作区后关闭旧窗口。
-      // 延后到命令响应之后再关，避免发起切换的 renderer 被中途销毁。
-      setTimeout(() => {
-        for (const old of previous) old.close();
-      }, 80);
-    }
-    void this.workspaceModule.ensure().catch((error: unknown) => {
-      console.error('[app] resources init failed', error);
-    });
-    void this.agentDomain.ensure().catch((error: unknown) => {
-      console.error('[app] agent init failed', error);
-    });
-    return window;
-  }
-
-  closeWorkspace(wsId: string): void {
-    if (!this.started) return;
-    if (this.workspaceModule.current?.id === wsId) {
-      this.workspaceModule.setCurrent(null);
-      this.workspaceModule.reset();
-    }
-    this.shellDomain.windows.close(wsId);
-    this.publishWorkspaces();
-  }
-
-  activate(): void {
-    if (!this.started) return;
-
-    const active = this.shellDomain.windows.active();
-    if (active) {
-      active.focus();
-      return;
-    }
-
-    const wsId =
-      this.shellDomain.windows.lastWorkspaceId ?? this.options.workspaceId;
-    if (wsId) this.openWorkspace(wsId);
-  }
-
-  private attachIpc(): void {
-    if (this.ipcAttached) return;
-    this.ipcAttached = true;
-
-    try {
-      ipcMain.handle(IPC_CHANNELS.subscribe, this.onSubscribe);
-      ipcMain.on(IPC_CHANNELS.unsubscribe, this.onUnsubscribe);
-      ipcMain.handle(IPC_CHANNELS.command, this.onCommand);
-      ipcMain.on(IPC_CHANNELS.notify, this.onNotify);
-      ipcMain.on(CH_BUS, this.onViewBus);
-      ipcMain.handle(CH_URA_WATCH, this.onUraWatch);
-    } catch (error) {
-      this.detachIpc();
-      throw error;
-    }
-  }
-
-  private detachIpc(): void {
-    if (!this.ipcAttached) return;
-
-    ipcMain.removeHandler(IPC_CHANNELS.subscribe);
-    ipcMain.removeListener(IPC_CHANNELS.unsubscribe, this.onUnsubscribe);
-    ipcMain.removeHandler(IPC_CHANNELS.command);
-    ipcMain.removeListener(IPC_CHANNELS.notify, this.onNotify);
-    ipcMain.removeListener(CH_BUS, this.onViewBus);
-    ipcMain.removeHandler(CH_URA_WATCH);
-    this.viewWatch?.close();
-    this.viewWatch = null;
-    this.ipcAttached = false;
-  }
-
-  private readonly onSubscribe = (
-    event: IpcMainInvokeEvent,
-    domain: string,
-    resource: string,
-  ) => this.dispatcher.subscribe(event.sender.id, domain, resource);
-
-  private readonly onUnsubscribe = (
-    event: IpcMainEvent,
-    domain: string,
-    resource: string,
-  ) => {
-    this.dispatcher.unsubscribe(event.sender.id, domain, resource);
-  };
-
-  private readonly onCommand = (
-    event: IpcMainInvokeEvent,
-    domain: string,
-    resource: string,
-    action: string,
-    input: unknown,
-  ) =>
-    this.dispatcher.command(event.sender.id, domain, resource, action, input);
-
-  private readonly onNotify = (
-    event: IpcMainEvent,
-    domain: string,
-    resource: string,
-    action: string,
-    value: unknown,
-  ) => {
-    this.dispatcher.notify(event.sender.id, domain, resource, action, value);
-  };
-
-  private viewOfSender(senderId: number): {
-    id: string;
-    sessionId: string | null;
-  } | null {
-    const origin = this.shellDomain.views.originOf(String(senderId));
-    if (origin?.type !== 'view') return null;
-    const record = this.shellDomain.views.get(origin.viewId);
-    return record ? { id: record.id, sessionId: record.sessionId } : null;
-  }
-
-  private readonly onViewBus = (
-    event: IpcMainEvent,
-    message: unknown,
-  ): void => {
-    const view = this.viewOfSender(event.sender.id);
-    if (!view) return;
-    const value = message as {
-      type?: string;
-      dirty?: boolean;
-    };
-    if (value.type === 'loaded') {
-      if (view.sessionId && this.workspaceModule.resources()) {
-        const payload = this.workspaceModule
-          .resources()
-          ?.pageContent(view.sessionId);
-        if (payload !== undefined) {
-          event.sender.send(CH_BUS, { type: 'content', payload });
-        }
-      }
-      event.sender.send(CH_BUS, {
-        type: 'theme',
-        theme: this.shellDomain.theme.read(),
-      });
-      return;
-    }
-    if (value.type === 'dirty' && typeof value.dirty === 'boolean') {
-      this.shellDomain.views.setDirty(view.id, value.dirty);
-      return;
-    }
-    if (value.type === 'actionState') {
-      const state = message as { id?: string; value?: unknown };
-      this.shellDomain.views.setActionState(
-        view.id,
-        String(state.id ?? ''),
-        String(state.value ?? ''),
-      );
-      return;
-    }
-    if (value.type === 'navigate') {
-      const nav = message as { url?: string };
-      if (nav.url) this.shellDomain.views.navigate(view.id, nav.url);
-      return;
-    }
-    if (value.type === 'self-action') {
-      const action = message as { id?: string };
-      this.shellDomain.views.sendAction(view.id, String(action.id ?? 'save'));
-      return;
-    }
-    if (value.type === 'self-reload') {
-      void this.shellDomain.views.refresh(view.id);
-    }
-  };
-
-  private readonly onUraWatch = (
-    event: IpcMainInvokeEvent,
-    ref?: string,
-  ): { ref: string } => {
-    const target = String(ref ?? '');
-    this.viewWatch?.close();
-    this.viewWatch = null;
-    const ura = this.workspaceModule.ura();
-    if (!target || !ura) return { ref: target };
-    this.viewWatch = ura.ura.watch(target, (change) => {
-      if (!event.sender.isDestroyed()) event.sender.send(CH_URA, change);
-    });
-    return { ref: target };
-  };
-
-  private async rollbackStart(): Promise<void> {
-    this.started = false;
-    this.detachIpc();
-
-    try {
-    } finally {
-      await this.domains.stopModules();
-      this.dispatcher.deactivate();
-    }
-  }
-
-  private publishSettings(): void {
-    this.settingsDomain.publish();
-  }
-
-  private publishResources(): void {
-    this.workspaceModule.publishResources();
-    if (this.resourcesReady()) {
-      void this.workspaceModule.refresh().catch(() => undefined);
-    }
-  }
-
-  private resourcesReady(): boolean {
-    return Boolean(this.workspaceModule.runtime());
-  }
-
-  private publishWorkspaces(): void {
-    this.workspaceModule.publish();
-  }
-
-  private releaseWorkspace(window: WorkspaceWindow): void {
-    const viewIds = [...window.global.ids(), ...window.tabs.ids()];
-    this.shellDomain.views.release(window);
-    window.global.clear();
-    window.tabs.clear();
-    for (const viewId of viewIds) this.domains.unsubscribeView(viewId);
+    this.ipc.detach();
+    this.capture.detach();
+    await this.registry.stop();
+    this.shellHost?.dispose();
   }
 }

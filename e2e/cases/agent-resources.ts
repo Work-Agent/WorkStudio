@@ -2,21 +2,35 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'agent.resources',
-  title: 'agent 子 domain 的扩展 / 工具 / 提示词 / 主题可订阅',
+  title: 'agent 子资源：扩展 / 工具 / 提示词 / 主题可订阅',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ctx.expect.poll(
-      () =>
-        ctx.evaluate(async () => {
-          const [extensions, tools, prompts, themes] = await Promise.all([
-            window.workStudio.subscribe('extensions', 'list'),
-            window.workStudio.subscribe('tools', 'list'),
-            window.workStudio.subscribe('prompts', 'list'),
-            window.workStudio.subscribe('themes', 'list'),
-          ]);
-          return [extensions, tools, prompts, themes].every(Array.isArray);
-        }),
-      'agent 资源 domain 未就绪',
-    );
+    await ctx.expect.poll(async () => {
+      const result = await ctx.evaluate(async () => {
+        const [extensions, tools, prompts, themes] = await Promise.all([
+          window.workStudio.subscribe('agent', 'extensions'),
+          window.workStudio.subscribe('agent', 'tools'),
+          window.workStudio.subscribe('agent', 'prompts'),
+          window.workStudio.subscribe('agent', 'themes'),
+        ]);
+        return {
+          extensions,
+          tools: Array.isArray(tools),
+          commandTool: Array.isArray(tools)
+            ? tools.some((tool) => tool?.name === 'command')
+            : false,
+          prompts: Array.isArray(prompts),
+          themes: Array.isArray(themes),
+        };
+      });
+      return (
+        typeof result.extensions === 'object' &&
+        result.extensions !== null &&
+        result.tools &&
+        result.commandTool &&
+        result.prompts &&
+        result.themes
+      );
+    }, 'agent 资源未就绪');
   },
 });

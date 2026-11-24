@@ -1,164 +1,158 @@
-/** 工作区持久化：注册表 / 当前工作区 / 恢复 / 命名。 */
+/**
+ * 工作区注册表：目录自描述，当前工作区只记在 windows.json。
+ *
+ * 目录布局与旧数据兼容：
+ *   workspaces/<wsId>/workspace.json
+ *   workspaces/<wsId>/sessions/
+ *   workspaces/<wsId>/settings.json
+ */
 
 import {
+  existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { basename, join } from 'node:path';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
-import {
-  ensureDefaultWorkspace,
-  getWorkspaceId,
-  listWorkspaces,
-  registerWorkspace,
-  removeWorkspaceState,
-  workspaceLabel,
-} from '../../agent/workspace.ts';
-import { join } from 'node:path';
-import { getWorkspaceBase } from '../../agent/workspace.ts';
+import type { StorageLayout } from '../../platform/paths.ts';
 import {
   readWindowState,
   writeWindowState,
-} from '../../runtime/storage/window-state.ts';
-import type { StoragePaths } from '../../runtime/storage/storage-paths.ts';
+} from '../../platform/window-state.ts';
 
-export interface WorkspacesStore {
-  /** 工作区回落 / 切换时的提示（无则 null）。 */
-  readonly notice: string | null;
-  restore(): WorkspaceMeta;
-  list(): WorkspaceMeta[];
-  readCurrent(): string | null;
-  register(path: string): WorkspaceMeta;
-  rename(id: string, name: string): WorkspaceMeta | null;
-  remove(id: string): void;
-  writeCurrent(id: string | null): void;
+interface WorkspaceFile {
+  path: string;
+  name?: string;
+  createdAt?: number;
+  lastOpenedAt?: number;
 }
 
-export class WorkspacesRepo implements WorkspacesStore {
-  private fallbackNotice: string | null = null;
-
-  constructor(private readonly storage: StoragePaths) {}
-
-  get notice(): string | null {
-    return this.fallbackNotice;
-  }
-
-  /** 恢复上次工作区；不可写（目录被删 / macOS 拒绝文稿访问）时选下一个可用者。 */
-  restore(): WorkspaceMeta {
-    const restoredId = readWindowState(this.storage).workspaceId;
-    const registered = listWorkspaces();
-    const ordered = [
-      ...registered.filter((meta) => getWorkspaceId(meta.path) === restoredId),
-      ...registered.filter((meta) => getWorkspaceId(meta.path) !== restoredId),
-    ];
-    const path =
-      ordered.find((meta) => isWritableWorkspace(meta.path))?.path ??
-      this.defaultWorkspace(ordered[0]?.path);
-    const id = registerWorkspace(path);
-    writeWindowState(this.storage, { workspaceId: id });
-    const meta = this.metaOf(id);
-    if (!meta) throw new Error(`workspace ${path} not registered`);
-    return meta;
-  }
+export class WorkspaceRepository {
+  constructor(
+    private readonly layout: StorageLayout,
+    private readonly defaultWorkspacePath?: string,
+  ) {}
 
   list(): WorkspaceMeta[] {
-    return listWorkspaces().map((meta) => this.toView(meta));
+    const root = this.layout.workspacesRoot;
+    if (!existsSync(root)) return [];
+    const result: WorkspaceMeta[] = [];
+    for (const id of readdirSync(root)) {
+      const meta = this.metaOf(id);
+      if (meta) result.push(meta);
+    }
+    return result.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
   }
 
-  readCurrent(): string | null {
-    return readWindowState(this.storage).workspaceId;
+  restore(): WorkspaceMeta | null {
+    const currentId = readWindowState(this.layout).workspaceId;
+    const workspaces = this.list();
+    const current = currentId
+      ? (workspaces.find((workspace) => workspace.id === currentId) ?? null)
+      : null;
+    if (current && current.exists) return current;
+    const existing = workspaces.find((workspace) => workspace.exists);
+    if (existing) return existing;
+    if (!this.defaultWorkspacePath) return null;
+    try {
+      return this.register(this.defaultWorkspacePath);
+    } catch {
+      return null;
+    }
+  }
+
+  find(id: string): WorkspaceMeta | null {
+    return this.metaOf(id);
   }
 
   register(path: string): WorkspaceMeta {
     if (!isDirectory(path)) throw new Error('工作区目录不存在或不可访问');
-    const id = registerWorkspace(path);
-    const meta = this.metaOf(id);
-    if (!meta) throw new Error(`workspace ${path} not registered`);
-    return meta;
+    const id = workspaceIdOf(path);
+    const base = this.layout.workspaceBase(id);
+    const file = join(base, 'workspace.json');
+    const previous = readWorkspaceFile(file);
+    const now = Date.now();
+    const meta = {
+      path,
+      name: previous?.name || basename(path) || path,
+      createdAt: previous?.createdAt ?? now,
+      lastOpenedAt: now,
+    };
+    mkdirSync(this.layout.sessionsDir(id), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(meta, null, 2)}\n`, 'utf-8');
+    return this.toView(id, meta);
   }
 
   rename(id: string, name: string): WorkspaceMeta | null {
-    const meta = this.metaOf(id);
-    if (!meta) return null;
-    const file = join(getWorkspaceBase(id), 'workspace.json');
-    mkdirSync(getWorkspaceBase(id), { recursive: true });
-    let raw: Record<string, unknown> = {};
-    try {
-      raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>;
-    } catch {
-      /* 首写 */
-    }
-    writeFileSync(file, JSON.stringify({ ...raw, name }, null, 2), 'utf-8');
-    return { ...meta, name };
+    const file = this.fileOf(id);
+    const current = readWorkspaceFile(file);
+    if (!current) return null;
+    const next = { ...current, name };
+    writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, 'utf-8');
+    return this.toView(id, next);
   }
 
   remove(id: string): void {
-    removeWorkspaceState(id);
+    rmSync(this.layout.workspaceBase(id), { recursive: true, force: true });
+    if (readWindowState(this.layout).workspaceId === id) {
+      writeWindowState(this.layout, { workspaceId: null });
+    }
   }
 
   writeCurrent(id: string | null): void {
-    writeWindowState(this.storage, { workspaceId: id });
-  }
-
-  /** 默认工作区；无可写工作区时用提示说明原因（回落数据根 / 切换目录）。 */
-  private defaultWorkspace(inaccessible?: string): string {
-    const { path, fallback } = ensureDefaultWorkspace();
-    if (fallback) {
-      this.fallbackNotice = `无法写入用户目录，默认工作区已创建在 ${path}`;
-    } else if (inaccessible) {
-      this.fallbackNotice = `无法访问工作区 ${inaccessible}，已切换到 ${path}`;
-    }
-    return path;
-  }
-
-  private toView(meta: {
-    path: string;
-    createdAt: number;
-    lastOpenedAt: number;
-  }): WorkspaceMeta {
-    const id = getWorkspaceId(meta.path);
-    return {
-      id,
-      path: meta.path,
-      name: this.nameOf(id, meta.path),
-      createdAt: meta.createdAt,
-      lastOpenedAt: meta.lastOpenedAt,
-      exists: isDirectory(meta.path),
-    };
+    writeWindowState(this.layout, { workspaceId: id });
   }
 
   private metaOf(id: string): WorkspaceMeta | null {
-    const meta = listWorkspaces().find(
-      (item) => getWorkspaceId(item.path) === id,
-    );
-    return meta ? this.toView(meta) : null;
+    const raw = readWorkspaceFile(this.fileOf(id));
+    if (!raw || typeof raw.path !== 'string') return null;
+    return this.toView(id, raw);
   }
 
-  private nameOf(id: string, path: string): string {
-    try {
-      const raw = JSON.parse(
-        readFileSync(join(getWorkspaceBase(id), 'workspace.json'), 'utf-8'),
-      ) as { name?: unknown };
-      if (typeof raw.name === 'string' && raw.name) return raw.name;
-    } catch {
-      /* 无文件 */
-    }
-    return workspaceLabel(path);
+  private toView(id: string, raw: WorkspaceFile): WorkspaceMeta {
+    const now = Date.now();
+    return {
+      id,
+      path: raw.path,
+      name: raw.name || basename(raw.path) || raw.path,
+      createdAt: raw.createdAt ?? now,
+      lastOpenedAt: raw.lastOpenedAt ?? now,
+      exists: isDirectory(raw.path),
+    };
+  }
+
+  private fileOf(id: string): string {
+    return join(this.layout.workspaceBase(id), 'workspace.json');
   }
 }
 
-/** 工作区可用 = 是目录且可写；macOS 拒绝文稿访问会在探测写入时暴露。 */
-function isWritableWorkspace(path: string): boolean {
-  const probe = join(path, `.workstudio.${process.pid}.probe`);
+export function workspaceIdOf(path: string): string {
+  return createHash('sha1').update(path).digest('hex').slice(0, 12);
+}
+
+function readWorkspaceFile(file: string): WorkspaceFile | null {
   try {
-    if (!statSync(path).isDirectory()) return false;
-    writeFileSync(probe, '');
-    rmSync(probe, { force: true });
-    return true;
+    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const value = parsed as Record<string, unknown>;
+    if (typeof value['path'] !== 'string') return null;
+    return {
+      path: value['path'],
+      ...(typeof value['name'] === 'string' ? { name: value['name'] } : {}),
+      ...(typeof value['createdAt'] === 'number'
+        ? { createdAt: value['createdAt'] }
+        : {}),
+      ...(typeof value['lastOpenedAt'] === 'number'
+        ? { lastOpenedAt: value['lastOpenedAt'] }
+        : {}),
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 

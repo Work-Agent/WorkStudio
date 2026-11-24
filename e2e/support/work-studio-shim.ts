@@ -24,31 +24,30 @@ export function installWorkStudioBridgeShim(): void {
 
   const active = async (): Promise<string> => {
     const state = (await next.subscribe('shell', 'windows')) as {
-      activeWsId?: string | null;
+      active?: string | null;
     };
-    if (!state.activeWsId) throw new Error('workspace is not ready');
-    return state.activeWsId;
+    if (!state.active) throw new Error('workspace is not ready');
+    return state.active;
   };
   const call = async (path: string, input?: unknown) => {
     const value = (input ?? {}) as Record<string, unknown>;
-    if (path === '/workspaces/current')
-      return {
-        ok: true as const,
-        data: await next.subscribe('workspaces', 'current'),
+    if (path === '/workspaces/current') {
+      const registry = (await next.subscribe('workspace', 'registry')) as {
+        current?: unknown;
       };
-    if (path === '/workspaces')
-      return {
-        ok: true as const,
-        data: await next.subscribe('workspaces', 'list'),
+      return { ok: true as const, data: registry.current ?? null };
+    }
+    if (path === '/workspaces') {
+      const registry = (await next.subscribe('workspace', 'registry')) as {
+        workspaces?: unknown[];
       };
+      return { ok: true as const, data: registry.workspaces ?? [] };
+    }
     if (path === '/views') {
-      const tabs = (await next.subscribe(
-        'shell',
-        `tabs:${await active()}`,
-      )) as {
-        list?: unknown[];
+      return {
+        ok: true as const,
+        data: await next.subscribe('shell', 'views'),
       };
-      return { ok: true as const, data: tabs.list ?? [] };
     }
     if (path === '/dialogs')
       return {
@@ -60,19 +59,18 @@ export function installWorkStudioBridgeShim(): void {
         pageId: value['pageId'],
       });
     if (path === '/workspaces/open')
-      return next.command('workspaces', 'list', 'open', value);
+      return next.command('workspace', 'registry', 'open', value);
     if (path === '/plugins/open')
-      return next.command('plugins', 'list', 'open', value);
-    if (path === '/dialogs/open')
-      return next.command('shell', 'dialogs', 'open', value);
+      return next.command('plugin', 'installed', 'open', {
+        id: value['pluginId'],
+      });
+    if (path === '/dialogs/open') {
+      const request = (value['request'] ?? value) as Record<string, unknown>;
+      return next.command('shell', 'dialogs', 'open', request);
+    }
     const site = /^\/workspaces\/[^/]+\/sites\/web\/open$/.exec(path);
     if (site) {
-      const result = await next.command(
-        'resources',
-        'current',
-        'openWeb',
-        value,
-      );
+      const result = await next.command('browser', 'tabs', 'open', value);
       return result.ok
         ? {
             ok: true as const,
@@ -82,7 +80,12 @@ export function installWorkStudioBridgeShim(): void {
     }
     const resource = /^\/workspaces\/[^/]+\/resources\/pages\/open$/.exec(path);
     if (resource) {
-      const result = await next.command('resources', 'current', 'open', value);
+      const result = await next.command('shell', 'views', 'open', {
+        id: String(value['ref'] ?? ''),
+        type: 'page',
+        title: String(value['ref'] ?? ''),
+        url: String(value['ref'] ?? ''),
+      });
       return result.ok
         ? {
             ok: true as const,
@@ -90,14 +93,13 @@ export function installWorkStudioBridgeShim(): void {
           }
         : result;
     }
-    const view = /^\/views\/([^/]+)\/([^/]+)$/.exec(path);
+    const view = /^\/views\/(.+)\/(close|activate)$/.exec(path);
     if (view) {
-      const wsId = await active();
       const id = decodeURIComponent(view[1]!);
       if (view[2] === 'close')
-        return next.command('shell', `tabs:${wsId}`, 'close', id);
+        return next.command('shell', 'views', 'close', { id });
       if (view[2] === 'activate')
-        return next.command('shell', `tabs:${wsId}`, 'activate', id);
+        return next.command('shell', 'views', 'activate', { id });
     }
     return {
       ok: false as const,

@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { DomainUpdate } from '../../../main/runtime/shared.ts';
+import type { DomainUpdate } from '@workstudio/sdk';
 import type { UiDialogRequest } from '../../../shared/types.ts';
 
 interface Props {
@@ -151,7 +151,10 @@ function Overlay() {
   ): void => {
     void window.workStudio.command('shell', 'dialogs', 'respond', {
       id: dialog.id,
-      response: { id: dialog.id, ...response },
+      ...(response.value !== undefined ? { value: response.value } : {}),
+      ...(response.confirmed !== undefined
+        ? { confirmed: response.confirmed }
+        : {}),
       cancelled: response.cancelled === true,
     });
     setDialogs((prev) => prev.filter((d) => d.id !== dialog.id));

@@ -1,7 +1,7 @@
+import '@workstudio/sdk/global';
 /** workStudio 访问与资源订阅：每个模块只订阅自己消费的资源。 */
 import { useEffect, useState } from 'react';
-import type { WorkStudioBridge } from '../../../main/runtime/client.ts';
-import type { DomainUpdate } from '../../../main/runtime/shared.ts';
+import type { WorkStudioBridge, DomainUpdate } from '@workstudio/sdk';
 
 export function workStudio(): WorkStudioBridge | undefined {
   return typeof window !== 'undefined' ? window.workStudio : undefined;
@@ -16,14 +16,29 @@ export function useResource<T>(
   useEffect(() => {
     const bridge = workStudio();
     if (!bridge) return;
+    const apply = (current: T, data: unknown): T => {
+      if (data === null || data === undefined) return current;
+      if (Array.isArray(data)) return data as T;
+      if (
+        typeof data === 'object' &&
+        typeof current === 'object' &&
+        current !== null
+      ) {
+        return { ...current, ...(data as Record<string, unknown>) } as T;
+      }
+      return data as T;
+    };
     const off = bridge.onUpdate((update: DomainUpdate) => {
       if (update.domain !== domain || update.resource !== resource) return;
-      if (update.type === 'snapshot') setValue(update.data as T);
-      else if (update.type === 'patch') {
-        setValue((current) => ({ ...current, ...update.data }) as T);
+      if (update.type === 'snapshot') {
+        setValue((current) => apply(current, update.data));
+      } else if (update.type === 'patch') {
+        setValue((current) => apply(current, update.data));
       }
     });
-    void bridge.subscribe(domain, resource).then((data) => setValue(data as T));
+    void bridge
+      .subscribe(domain, resource)
+      .then((data) => setValue((current) => apply(current, data)));
     return () => {
       off();
       bridge.unsubscribe(domain, resource);

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { ListItem } from '../../../../../shared/lists.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
-import type { ListEntry } from '../../../../../shared/ura.ts';
+import type { Entry } from '@workstudio/sdk';
 import { command } from '../../../../shared/api/bridge.ts';
 import { openListItem } from '../../../../shared/domains/lists.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
@@ -42,11 +42,9 @@ export function FindList() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const pattern = query.includes('*') ? query.trim() : `*${query.trim()}*`;
-      const scope = current?.id ? `ws:${current.id}` : 'current';
       setLoading(true);
-      void command<ListEntry[]>('resources', scope, 'find', {
-        pattern,
-        options: { limit: 200 },
+      void command<Entry[]>('workspace', 'search', 'find', {
+        query: pattern,
       })
         .then((items) => {
           setHits(

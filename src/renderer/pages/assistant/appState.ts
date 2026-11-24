@@ -12,12 +12,32 @@ import type {
   ParsedMessage,
   SessionMeta,
 } from '../../../shared/types.ts';
-import type {
-  SessionListItem,
-  SessionStreamState,
-} from '../../../main/agent/sessions/service.ts';
-import type { DomainUpdate } from '../../../main/runtime/shared.ts';
+import type { DomainUpdate } from '@workstudio/sdk';
 import type { SessionTask } from '../../../shared/session-task.ts';
+
+interface SessionListItem {
+  id: string;
+  path: string;
+  name: string;
+  preview?: string;
+  createdAt: number;
+  messageCount?: number;
+}
+
+interface SessionToolState {
+  id: string;
+  name: string;
+  args: unknown;
+  result: unknown;
+  done: boolean;
+}
+
+interface SessionStreamState {
+  streaming: boolean;
+  text: string;
+  thinking: string;
+  tools: SessionToolState[];
+}
 
 export interface AssistantShell {
   ui: {
@@ -54,15 +74,26 @@ function useResource<T>(
       typeof window !== 'undefined' ? window.workStudio : undefined;
     if (!bridge || !resource) return;
     let alive = true;
+    const apply = (current: T, data: unknown): T => {
+      if (data === null || data === undefined) return current;
+      if (Array.isArray(data)) return data as T;
+      if (
+        typeof data === 'object' &&
+        typeof current === 'object' &&
+        current !== null
+      ) {
+        return { ...current, ...(data as Record<string, unknown>) } as T;
+      }
+      return data as T;
+    };
     const off = bridge.onUpdate((update: DomainUpdate) => {
       if (update.domain !== domain || update.resource !== resource) return;
-      if (update.type === 'snapshot') setValue(update.data as T);
-      else if (update.type === 'patch') {
-        setValue((current) => ({ ...current, ...update.data }) as T);
+      if (update.type === 'snapshot' || update.type === 'patch') {
+        setValue((current) => apply(current, update.data));
       }
     });
     void bridge.subscribe(domain, resource).then((data) => {
-      if (alive) setValue(data as T);
+      if (alive) setValue((current) => apply(current, data));
     });
     return () => {
       alive = false;
@@ -77,42 +108,62 @@ export function useAppAvailable(): boolean {
   return typeof window !== 'undefined' && Boolean(window.workStudio);
 }
 
+interface SessionsAggregate {
+  current?: AgentSnapshot | null;
+  task?: SessionTask | null;
+  items?: SessionMeta[];
+  opened?: string[];
+  commands?: Array<{ name: string; description?: string; source?: string }>;
+  thinking?: { level?: string | null; levels?: string[] };
+  active?: SessionsActive;
+}
+
+function useSessions(): SessionsAggregate {
+  return useResource<SessionsAggregate>('agent', 'sessions', {});
+}
+
 function useWorkspace(): WorkspaceMeta | null {
-  return useResource<WorkspaceMeta | null>('workspaces', 'current', null);
+  const registry = useResource<{ current?: WorkspaceMeta | null }>(
+    'workspace',
+    'registry',
+    {},
+  );
+  return registry.current ?? null;
 }
 
 export function useAppAgent(): AgentSnapshot | null {
-  return useResource<AgentSnapshot | null>('sessions', 'current', null);
+  return useSessions().current ?? null;
 }
 
 export function useAppTask(): SessionTask | null {
-  return useResource<SessionTask | null>('sessions', 'task', null);
+  return useSessions().task ?? null;
 }
 
 export function useAppModels(): ModelOption[] | null {
-  const models = useResource<ModelOption[]>('models', 'available', []);
+  const models = useResource<ModelOption[]>('agent', 'models', []);
   return useAppAvailable() ? models : null;
 }
 
 export function useAppSessions(): SessionMeta[] | null {
-  const sessions = useResource<SessionListItem[]>('sessions', 'list', []);
+  const sessions = useSessions().items ?? [];
   return useAppAvailable() ? sessions : null;
 }
 
 export function useAppShell(): AssistantShell | null {
   const workspace = useWorkspace();
   const agent = useAppAgent();
-  const opened = useResource<string[]>('sessions', 'opened', []);
+  const sessions = useSessions();
+  const opened = sessions.opened ?? [];
   const themeState = useResource<{ theme: 'light' | 'dark' }>(
     'shell',
-    'theme',
+    'appearance',
     { theme: 'dark' },
   );
-  const scene = useResource<{ aiFloating?: boolean } | null>(
-    'shell',
-    workspace?.id ? `scene:${workspace.id}` : 'none',
-    null,
-  );
+  const layouts = useResource<
+    Array<{ windowId: string; scene?: { aiFloating?: boolean } }>
+  >('shell', 'layout', []);
+  const scene =
+    layouts.find((record) => record.windowId === workspace?.id)?.scene ?? null;
 
   if (!useAppAvailable()) return null;
   const activePath = agent?.sessionFile ?? null;
@@ -188,11 +239,12 @@ export function useAppMessages(activePath: string | null): {
   clearNewTask: () => void;
 } | null {
   const available = useAppAvailable();
-  const active = useResource<SessionsActive>('sessions', 'active', {
+  const sessions = useSessions();
+  const active = sessions.active ?? {
     sessionId: null,
     messages: [],
     stream: idleStream(),
-  });
+  };
   const [pending, setPending] = useState<PendingUser | undefined>(undefined);
   const sessionId = activePath ? encodeURIComponent(activePath) : null;
   const matches = active.sessionId === sessionId;

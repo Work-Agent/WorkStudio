@@ -1,0 +1,64 @@
+/**
+ * 数据根下的固定路径视图。
+ *
+ * 运行期只有一组写路径：内置插件与外部插件都落到 plugins/installed，
+ * 插件数据在 plugins/data，用户/内置技能在 skills。没有 appRoot 扫描根。
+ */
+
+import { join, resolve } from 'node:path';
+
+export const PLUGINS_DIR = 'plugins';
+export const INSTALLED_DIR = 'installed';
+export const PLUGIN_DATA_DIR = 'data';
+export const STAGING_DIR = 'staging';
+export const RECOVERY_DIR = 'recovery';
+export const INSTALLED_FILE = 'installed.json';
+export const SKILLS_DIR = 'skills';
+export const WORKSPACES_DIR = 'workspaces';
+export const WEB_CACHE_DIR = 'web-cache';
+
+export interface StorageLayout {
+  readonly dataRoot: string;
+  readonly workspacesRoot: string;
+  readonly pluginsRoot: string;
+  readonly pluginsInstalledRoot: string;
+  readonly pluginsDataRoot: string;
+  readonly pluginsStagingRoot: string;
+  readonly pluginsRecoveryRoot: string;
+  readonly pluginsIndexFile: string;
+  readonly skillsRoot: string;
+  readonly userSettingsFile: string;
+  readonly windowsFile: string;
+  readonly uiStateFile: string;
+  readonly webCacheRoot: string;
+  workspaceBase(workspaceId: string): string;
+  workspaceSettingsFile(workspaceId: string): string;
+  sessionsDir(workspaceId: string): string;
+  sitesDir(workspaceId: string): string;
+}
+
+export function createStorageLayout(dataRoot: string): StorageLayout {
+  const root = resolve(dataRoot);
+  const workspacesRoot = join(root, WORKSPACES_DIR);
+  const pluginsRoot = join(root, PLUGINS_DIR);
+  return {
+    dataRoot: root,
+    workspacesRoot,
+    pluginsRoot,
+    pluginsInstalledRoot: join(pluginsRoot, INSTALLED_DIR),
+    pluginsDataRoot: join(pluginsRoot, PLUGIN_DATA_DIR),
+    pluginsStagingRoot: join(pluginsRoot, STAGING_DIR),
+    pluginsRecoveryRoot: join(pluginsRoot, RECOVERY_DIR),
+    pluginsIndexFile: join(pluginsRoot, INSTALLED_FILE),
+    skillsRoot: join(root, SKILLS_DIR),
+    userSettingsFile: join(root, 'settings.json'),
+    windowsFile: join(root, 'windows.json'),
+    uiStateFile: join(root, 'ui-state.json'),
+    webCacheRoot: join(root, WEB_CACHE_DIR),
+    workspaceBase: (workspaceId) => join(workspacesRoot, workspaceId),
+    workspaceSettingsFile: (workspaceId) =>
+      join(workspacesRoot, workspaceId, 'settings.json'),
+    sessionsDir: (workspaceId) => join(workspacesRoot, workspaceId, 'sessions'),
+    sitesDir: (workspaceId) => join(workspacesRoot, workspaceId, 'sites'),
+  };
+}

@@ -1,0 +1,277 @@
+/**
+ * PluginManager：把插件贡献登记进 DomainRegistry 与 TransportRouter。
+ *
+ * 提供 DomainManager 的五项能力：register / revoke / resolve /
+ * dispatchCommand / changed；撤销按 pluginId 一次完成。
+ */
+
+import type {
+  PluginCommandInput,
+  PluginContribution,
+  PluginContext,
+  PluginSettings,
+} from '@workstudio/sdk';
+import type { CallResult, ChangeType } from '../contract.ts';
+import { createLog } from '../log.ts';
+import type { TransportRouter } from '../transport/router.ts';
+import type { Address } from '../registry/address.ts';
+import { parseAddress } from '../registry/address.ts';
+import type { CommandContext, CommandInput } from '../registry/command.ts';
+import type { DomainRegistry, Target } from '../registry/registry.ts';
+import { matchesClaim } from '../transport/resource.ts';
+import type { PluginPackage } from './manifest.ts';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import type { PluginStore } from './store.ts';
+
+export interface PluginRegistration {
+  package: PluginPackage;
+  contribution: PluginContribution;
+}
+
+export class PluginManager {
+  private readonly registrations = new Map<string, PluginRegistration>();
+  private readonly settings = new Map<string, Record<string, unknown>>();
+  private readonly settingsListeners = new Map<
+    string,
+    Set<(next: unknown) => void>
+  >();
+
+  constructor(
+    private readonly registry: DomainRegistry,
+    private readonly transport: TransportRouter,
+    private readonly store?: PluginStore,
+  ) {}
+
+  /** 激活期登记：把贡献注册成一个 Biz 域；生命周期归 DomainRegistry。 */
+  register(pkg: PluginPackage, contribution: PluginContribution): void {
+    const id = pkg.manifest.id;
+    const domainName = pkg.manifest.id;
+    // Biz 命令地址固定为 <domain>/<domain>/<action>：CLI 只有 domain 与 action，
+    // 具体的 ref 放进入参，由域自己解释。
+    const commandResource = domainName;
+
+    try {
+      this.registry.registerModule({
+        id,
+        attach: (registry) => {
+          const domain = registry.define(domainName);
+          if (!domain.resourceOf(commandResource)) {
+            domain.resource(commandResource);
+          }
+
+          // 页面 SDK 的 page.settings.watch / set 使用 <domain>/settings。
+          const settings = domain.resource('settings');
+          settings.snapshot(() => this.settings.get(id) ?? {});
+          settings.command('set', {
+            summary: '更新插件设置',
+            args: {},
+            run: (input) => {
+              const next = this.applySettings(id, input);
+              settings.publish();
+              return next;
+            },
+          });
+
+          for (const [name, adapter] of Object.entries(
+            contribution.resources,
+          )) {
+            if (!domain.resourceOf(name)) domain.resource(name);
+            this.transport.register(
+              domainName,
+              adapter,
+              pkg.manifest.claims ?? [],
+            );
+          }
+
+          for (const [key, command] of Object.entries(contribution.commands)) {
+            const dot = key.indexOf('.');
+            const action = dot < 0 ? key : key.slice(dot + 1);
+            registry.declareCommand({
+              address: { domain: domainName, resource: commandResource },
+              action,
+              decl: { summary: command.summary, args: command.args ?? {} },
+              owner: id,
+              run: (input, ctx) =>
+                command.run(
+                  input as PluginCommandInput,
+                  this.contextOf(pkg, ctx),
+                ),
+            });
+          }
+        },
+      });
+    } catch (error) {
+      // setup 失败：撤销已登记的数据适配器，域由 registry 自己回滚。
+      this.transport.revoke(domainName);
+      throw error;
+    }
+
+    this.registrations.set(id, { package: pkg, contribution });
+    if (!this.settings.has(id)) {
+      this.settings.set(id, this.store?.readSettings(id) ?? {});
+    }
+  }
+
+  /** 域已在注册表中登记，这里只触发热激活。 */
+  activate(pluginId: string): Promise<void> {
+    const registration = this.registrations.get(pluginId);
+    if (!registration) return Promise.resolve();
+    return this.registry.activate(registration.package.manifest.id);
+  }
+
+  /** 热卸载：停止并撤销资源、命令与页面注册。 */
+  async revoke(pluginId: string): Promise<void> {
+    const registration = this.registrations.get(pluginId);
+    await this.registry.revoke(pluginId);
+    this.transport.revoke(registration?.package.manifest.id ?? pluginId);
+    this.registrations.delete(pluginId);
+    this.settings.delete(pluginId);
+    this.settingsListeners.delete(pluginId);
+  }
+
+  get(pluginId: string): PluginRegistration | undefined {
+    return this.registrations.get(pluginId);
+  }
+
+  list(): PluginRegistration[] {
+    return [...this.registrations.values()];
+  }
+
+  /** 已激活插件声明的技能目录；只返回真实存在的目录。 */
+  skillPaths(): string[] {
+    return this.skillSources().map((source) => source.path);
+  }
+
+  skillSources(): Array<{
+    pluginId: string;
+    pluginName: string;
+    path: string;
+  }> {
+    const paths: Array<{
+      pluginId: string;
+      pluginName: string;
+      path: string;
+    }> = [];
+    for (const { package: pkg } of this.registrations.values()) {
+      const pluginId = pkg.manifest.id;
+      const pluginName = pkg.manifest.label ?? pluginId;
+      for (const dir of pkg.manifest.skills ?? []) {
+        const path = join(pkg.root, dir);
+        if (!existsSync(join(path, 'SKILL.md'))) continue;
+        paths.push({ pluginId, pluginName, path });
+      }
+    }
+    return paths;
+  }
+
+  /** 技能来源 → 插件身份；用于 skills 投影归因。 */
+  skillOwner(source: string): { id: string; label: string } | null {
+    const normalized = source.replace(/\\/g, '/');
+    for (const source of this.skillSources()) {
+      const root = source.path.replace(/\\/g, '/');
+      if (normalized === root || normalized.startsWith(`${root}/`)) {
+        return { id: source.pluginId, label: source.pluginName };
+      }
+    }
+    return null;
+  }
+
+  /** 页面路由用的插件身份投影。 */
+  plugin(pluginId: string): { id: string; label: string } | null {
+    const pkg = this.registrations.get(pluginId)?.package;
+    return pkg
+      ? {
+          id: pkg.manifest.id,
+          label: pkg.manifest.label ?? pkg.manifest.id,
+        }
+      : null;
+  }
+
+  /** ref → 认领插件；冲突按 claims.priority 取最高。 */
+  pluginOfRef(ref: string): { id: string; label: string } | null {
+    let best: { pkg: PluginPackage; priority: number } | null = null;
+    for (const { package: pkg } of this.registrations.values()) {
+      for (const claim of pkg.manifest.claims ?? []) {
+        if (!matchesClaim(ref, claim)) continue;
+        const priority = claim.priority ?? 0;
+        if (!best || priority > best.priority) {
+          best = { pkg, priority };
+        }
+      }
+    }
+    return best
+      ? {
+          id: best.pkg.manifest.id,
+          label: best.pkg.manifest.label ?? best.pkg.manifest.id,
+        }
+      : null;
+  }
+
+  resolve(address: string): Target | null {
+    const parsed = parseAddress(address);
+    return parsed ? this.registry.resolve(parsed) : null;
+  }
+
+  dispatchCommand(
+    address: Address,
+    action: string,
+    input: CommandInput,
+    ctx: CommandContext,
+  ): Promise<CallResult> {
+    return this.registry.dispatchCommand(address, action, input, ctx);
+  }
+
+  changed(ref: string, type: ChangeType): void {
+    this.registry.changed(ref, type);
+  }
+
+  private applySettings(
+    pluginId: string,
+    patch: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const next = { ...this.settings.get(pluginId), ...patch };
+    delete next['ref'];
+    this.settings.set(pluginId, next);
+    this.store?.writeSettings(pluginId, next);
+    for (const listener of this.settingsListeners.get(pluginId) ?? []) {
+      listener(next);
+    }
+    return next;
+  }
+
+  settingsOf(pluginId: string): PluginSettings {
+    if (!this.settings.has(pluginId)) {
+      this.settings.set(pluginId, this.store?.readSettings(pluginId) ?? {});
+    }
+    return {
+      get: <T>() => (this.settings.get(pluginId) ?? {}) as T,
+      watch: <T>(callback: (next: T) => void) => {
+        let listeners = this.settingsListeners.get(pluginId);
+        if (!listeners) {
+          listeners = new Set();
+          this.settingsListeners.set(pluginId, listeners);
+        }
+        const target = listeners;
+        const listener = (next: unknown): void => callback(next as T);
+        target.add(listener);
+        return () => {
+          target.delete(listener);
+        };
+      },
+    };
+  }
+
+  private contextOf(pkg: PluginPackage, ctx: CommandContext): PluginContext {
+    const id = pkg.manifest.id;
+    return {
+      fs: {
+        read: (ref) => this.transport.readBytes(ref),
+        write: (ref, bytes) => this.transport.writeBytes(ref, bytes),
+      },
+      settings: this.settingsOf(id),
+      changed: (ref, type) => ctx.changed(ref, type),
+      log: createLog(`plugin:${id}`),
+    };
+  }
+}

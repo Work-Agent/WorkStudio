@@ -6,14 +6,14 @@
 
 ### 1.1 分层
 
-| 层             | 职责                                           | 不负责                  |
-| -------------- | ---------------------------------------------- | ----------------------- |
-| 渲染层         | 系统页与内容页：只消费投影、发送意图           | 权威状态、进程能力      |
-| preload bridge | 页面唯一出口：`call` / `send` / `watch`        | 业务语义、目标指定      |
-| IPC 与分发     | origin 判定、路由、日志、订阅归属              | 业务逻辑、授权、locator |
-| 三个模块       | DomainRegistry / AgentHarness / Browser        | 具体业务实现            |
-| 插件实现层     | 引擎与页面：数据接口、命令实现、内容页与设置页 | 状态、授权、分发        |
-| 数据层         | 工作区文件、网页缓存、外部来源                 | 解释、呈现、变更订阅    |
+| 层             | 职责                                             | 不负责                  |
+| -------------- | ------------------------------------------------ | ----------------------- |
+| 渲染层         | 系统页与内容页：只消费投影、发送意图             | 权威状态、进程能力      |
+| preload bridge | 页面唯一出口：`subscribe` / `command` / `notify` | 业务语义、目标指定      |
+| IPC 与分发     | origin 判定、路由、日志、订阅归属                | 业务逻辑、授权、locator |
+| 三个模块       | DomainRegistry / AgentHarness / Browser          | 具体业务实现            |
+| 插件实现层     | 引擎与页面：数据接口、命令实现、内容页与设置页   | 状态、授权、分发        |
+| 数据层         | 工作区文件、网页缓存、外部来源                   | 解释、呈现、变更订阅    |
 
 三个模块并列，边界由各自的输入决定：
 
@@ -29,7 +29,7 @@
 │ 内容页：plugin://<id>/content · plugin://<id>/settings             │
 │ 页面不持 Node / Electron，只有 window.workStudio                    │
 └───────────────────────────────┬──────────────────────────────────┘
-                                │ call / send / watch
+                                │ subscribe / command / notify
 ┌─ preload bridge ──────────────▼──────────────────────────────────┐
 │ 唯一出口；地址 = domain/resource；页面不能指定目标                  │
 └───────────────────────────────┬──────────────────────────────────┘
@@ -49,10 +49,6 @@
 │ 工作区文件 · 网页缓存 · 外部来源                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
-
-![WorkStudio 架构总览](./architecture.png)
-
-> 上图是完整架构图（八块画板：总览 / 插件实现层 / locator / 工具面 / System Domain / 通讯 / 插件 SDK / 页面地址）。可编辑版本是 `docs/architecture.excalidraw`。
 
 ### 1.3 插件与框架的边界
 
@@ -128,13 +124,13 @@
 | 阶段       | 动作                                      | 失败后果       |
 | ---------- | ----------------------------------------- | -------------- |
 | install    | 解包、校验清单、写入安装目录              | 整体回滚       |
-| resolve    | 校验路径、`apiVersion`、权限声明          | 拒绝装载       |
+| resolve    | 校验路径与清单身份                        | 拒绝装载       |
 | activate   | 载入 ESM 入口，注册资源、命令、技能、页面 | 撤销已注册部分 |
 | ready      | 域可路由、命令入表、页面可开              | —              |
 | deactivate | 撤销注册、关闭页面、清订阅                | 保持旧状态可用 |
 | uninstall  | deactivate 后删目录、清设置与缓存         | —              |
 
-`activation` 决定 `activate` 的时机：认领文件时、调用其命令时、打开其设置时。未激活的插件不执行任何代码。
+插件在安装后统一激活；当前不提供按认领 / 命令 / 设置惰性激活，避免声明了却没有执行语义。
 
 ## 三、通讯
 
@@ -142,30 +138,44 @@
 
 ```ts
 interface WorkStudioBridge {
-  call(addr: string, action: string, input?: unknown): Promise<CallResult>;
-  send(addr: string, action: string, value?: unknown): void;
-  watch(addr: string, onUpdate: (u: DomainUpdate) => void): () => void;
+  subscribe(domain: string, resource: string): Promise<unknown>;
+  unsubscribe(domain: string, resource: string): void;
+  command<T = unknown>(
+    domain: string,
+    resource: string,
+    action: string,
+    input?: unknown,
+  ): Promise<CallResult<T>>;
+  notify(
+    domain: string,
+    resource: string,
+    action: string,
+    value?: unknown,
+  ): void;
+  onUpdate(listener: (update: DomainUpdate) => void): () => void;
 }
 ```
 
-| 动词    | 用途        | 语义                                             |
-| ------- | ----------- | ------------------------------------------------ |
-| `call`  | 请求 / 响应 | 返回 `CallResult`，错误带码                      |
-| `send`  | 单向通知    | 不返回；失败只记日志                             |
-| `watch` | 订阅        | 先返回快照，后推 `patch` / `event`；返回取消函数 |
+| 动词          | 用途        | 语义                                                            |
+| ------------- | ----------- | --------------------------------------------------------------- |
+| `subscribe`   | 订阅        | 先返回快照，后续 `patch` / `event` 由 `onUpdate` 推送；返回快照 |
+| `unsubscribe` | 取消订阅    | 按 `(domain, resource)` 释放订阅                                |
+| `command`     | 请求 / 响应 | 返回 `CallResult`，错误带码                                     |
+| `notify`      | 单向通知    | 不返回；失败只记日志                                            |
+| `onUpdate`    | 推送        | 接收 snapshot / patch / event 帧                                |
 
-页面只能发地址，不能指定目标：`origin` 由主进程按发送方判定，页面无法冒充其它视图。
+页面只能发 `(domain, resource, action)`，不能指定目标：`origin` 由主进程按发送方判定，页面无法冒充其它视图。
 
 ### 3.2 地址空间
 
 | 地址                  | 谁订阅   | 载荷                                             |
 | --------------------- | -------- | ------------------------------------------------ |
-| `views/<viewId>`      | 视图自身 | 内容、主题、动作、模式；视图上报加载、脏态、导航 |
+| `shell/view/<id>`     | 视图自身 | 内容、主题、动作、模式；视图上报加载、脏态、导航 |
 | `workspace/<ref>`     | 资源面板 | 快照、增量、变更事件                             |
-| `shell/<area>`        | 壳层     | 对话框、通知、布局                               |
+| `shell/<resource>`    | 壳层     | 窗口、对话框、通知、布局                         |
 | `<domain>/<resource>` | 任意视图 | 由域决定                                         |
 
-工具面和页面共用同一地址空间：助手 `read` 一个 `ref` 与页面 `watch` 同一个 `ref`，指向同一份数据。
+工具面和页面共用同一地址空间：助手 `read` 一个 `ref` 与页面 `subscribe` 同一个 `ref`，指向同一份数据。
 
 ### 3.3 三类例外
 
@@ -195,23 +205,42 @@ interface WorkStudioBridge {
 
 ### 4.1 Domain 与 Resource
 
-- **Domain** 是一组能力与状态的边界，按地址前缀区分，例如 `shell`、`workspace`、`docx`。
-- **Resource** 是 Domain 内可订阅、可寻址的最小单位，地址为 `<domain>/<resource>`。
+- **Domain** 是服务边界，按地址前缀区分，例如 `shell`、`workspace`、`agent`、`docx`。它像微服务一样拥有自己的资源、命令与不变量，不是“一个能力一个 Domain”。
+- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `agent/<wsId>/session/<sessionId>`。
 - **Command** 是唯一的操作单位，地址为 `<domain>/<resource>/<action>`。
+
+聚合根决定一致性与事务边界：命令只修改聚合根，`snapshot` / `patch` 是它的投影；跨 Domain 只引用资源地址或注入端口，不直接拿对方的对象。这样 `agent` 不需要认识 `plugin` 的内部，`plugin` 也不需要认识会话。
 
 Resource 的三种消息：`snapshot`（首次全量）、`patch`（增量）、`event`（一次性事件）。
 
 ### 4.2 System Domain 划分
 
-| 模块      | Domain                                                   | 职责                                       |
-| --------- | -------------------------------------------------------- | ------------------------------------------ |
-| shell     | window · view · layout · page · appearance · interaction | 窗口、视图、布局、页面注册、外观、交互接管 |
-| workspace | workspace · list · plugin                                | 工作区、列表、插件安装与运行时             |
-| settings  | settings · preferences · storage · updates               | 设置、偏好、存储、更新                     |
-| browser   | browser · policy · automation · capture                  | 浏览器能力、策略、自动化、采集             |
-| harness   | sessions · models · skills · tools · prompts · themes    | 会话与工具面                               |
+先按依赖关系收服务，再在每个服务内找聚合根：
 
-System Domain 由模块持有，不读内容字节，也不出现在工具面里。
+```text
+workspace ──→ shell
+plugin ─────→ workspace
+settings ───→ shell · workspace
+browser ────→ shell · workspace
+agent ──────→ workspace · plugin · browser
+web ────────→ transport / cache（由 browser 模块承载）
+```
+
+箭头表示“依赖谁”，只表达启动顺序与调用方向；跨服务不注入对方对象，只通过资源地址、命令或端口。
+
+| Domain（服务） | 聚合根 / 主要 resource                                                                          | 读模型                                                                                                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shell`        | `windows` · `view/<id>` · `appearance` · `dialogs` · `notices`                                  | `views` · `layout` · `pages` · `menu` · `interaction` · `native`                                                                                       |
+| `workspace`    | `registry`                                                                                      | `list` · `<ref>`                                                                                                                                       |
+| `plugin`       | `installed` · `task`                                                                            | `catalog`                                                                                                                                              |
+| `settings`     | `preferences` · `updates`                                                                       | `pages` · `storage`                                                                                                                                    |
+| `browser`      | `tabs` · `policy` · `capture`                                                                   | `automation`                                                                                                                                           |
+| `web`          | `web`（快照资源）                                                                               | —                                                                                                                                                      |
+| `agent`        | `<wsId>/session/<sessionId>` · `skills` · `provider/<id>` · `model/<provider>/<id>` · `context` | `sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `providers` · `models` · `tools` · `prompts` · `themes` · `extensions` |
+
+聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管消息、轮次、队列和 thinking；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/sessions` 是当前工作区的集合投影；单会话聚合显式带 `wsId`（`agent/<wsId>/session/<sessionId>`）。如果未来需要同时订阅多个工作区，集合也改成 `agent/<wsId>/sessions`。
+
+System Domain 由模块持有，不读内容字节，也不出现在工具面里。模块只负责生命周期；Domain 才是服务边界，Resource 才是聚合根。例如 `skills` 是 `agent/skills`，不是独立的 `skills` Domain。
 
 ### 4.3 Biz Domain
 
@@ -329,6 +358,7 @@ type ArgSpec =
 | 类型化操作 | 业务 UI | `invoke(domain, ref, action, input)` |
 | 子命令     | 助手    | `ws <domain> <action> <ref> --at …`  |
 | 命令手册   | 助手    | 由摘要与参数生成的表格               |
+| 命令工具   | 助手    | `command` / `command_list`           |
 | 命令表条目 | 分发    | 地址、参数、退出码                   |
 
 ### 6.2 两条序列化
@@ -338,11 +368,11 @@ type ArgSpec =
 | 页面 | JSON 对象  | 框架   |
 | 助手 | 命令行参数 | 框架   |
 
-插件只实现 `run`，不解析命令行：参数解析、必填校验、退出码归一由框架完成。这是两条路径不漂移的根本保证。
+插件只实现 `run`，不解析命令行：参数解析、必填校验、退出码归一由框架完成。静态描述由构建工具从同一份 `definePlugin` 命令表生成，不手写、不另维护；宿主激活时校验静态描述与动态实现对齐，再把地址登记进命令表。页面 IPC 与助手 `command` 工具因此共享同一个实现。
 
 ### 6.3 手册与技能
 
-命令手册由命令描述生成，技能文档只补充工作流与判断，不重复参数说明。技能按需加载，进入目录而不进入上下文。
+命令手册由命令描述生成，技能文档只补充工作流与判断，不重复参数说明。清单只列技能目录，名称 / 描述由 `SKILL.md` frontmatter 定义；插件技能默认只进入目录，不进入上下文，选中后才按需注入。
 
 ## 七、能力层
 
@@ -352,14 +382,16 @@ type ArgSpec =
 
 ### 7.2 工具面
 
-| 工具       | 取数路径              | 约束                                  |
-| ---------- | --------------------- | ------------------------------------- |
-| `ls`       | 相邻 Biz 域的结构接口 | 只给结构与 `ref`，不给绝对路径        |
-| `find`     | 同上，按条件过滤      | 结果有界                              |
-| `read`     | 相邻 Biz 域的内容接口 | 返回条目列表，每条带 locator          |
-| `grep`     | 同上，按查询匹配      | 默认跨域，带预算                      |
-| `bash`     | 命令实现              | 写与改的唯一入口；退出码区分失败类型  |
-| 浏览器工具 | Browser 模块          | 仅在网页视图可用；产出交给 web 域缓存 |
+| 工具           | 取数路径              | 约束                                  |
+| -------------- | --------------------- | ------------------------------------- |
+| `ls`           | 相邻 Biz 域的结构接口 | 只给结构与 `ref`，不给绝对路径        |
+| `find`         | 同上，按条件过滤      | 结果有界                              |
+| `read`         | 相邻 Biz 域的内容接口 | 返回条目列表，每条带 locator          |
+| `grep`         | 同上，按查询匹配      | 默认跨域，带预算                      |
+| `bash`         | 命令实现              | 命令行方式；退出码区分失败类型        |
+| `command`      | 命令表                | 结构化输入调用同一命令地址            |
+| `command_list` | 命令表                | 发现 domain / action / args           |
+| 浏览器工具     | Browser 模块          | 仅在网页视图可用；产出交给 web 域缓存 |
 
 没有 `write` 与 `edit`：写与改都走命令，这样两条入口共享同一实现与同一授权。
 
@@ -384,36 +416,28 @@ type ArgSpec =
   "type": "module",
   "exports": { "./workstudio": "./engine.js" },
   "workstudio": {
-    "apiVersion": 2,
     "id": "docx",
     "label": "Word 文档",
     "icon": "file-text",
     "claims": [{ "extensions": ["docx"], "priority": 10 }],
-    "domain": "docx",
-    "commands": "commands.json",
     "pages": { "content": "page/index.html" },
     "settings": { "schema": "settings.schema.json" },
-    "skills": [{ "name": "docx", "dir": "skills/docx" }],
-    "permissions": { "fs": ["${workspace}/**"] },
-    "activation": ["onClaim", "onCommand:docx/*"],
+    "skills": ["skills/docx"],
   },
 }
 ```
 
-| 字段          | 语义                          | 必填       |
-| ------------- | ----------------------------- | ---------- |
-| `apiVersion`  | 契约版本，高于宿主则拒绝装载  | 是         |
-| `id`          | 域前缀与页面 host             | 是         |
-| `claims`      | 认领哪些文件；冲突按优先级    | 否         |
-| `domain`      | 命令地址前缀                  | 是         |
-| `commands`    | 命令描述文件                  | 是         |
-| `pages`       | 内容页；设置页可省            | 内容页必填 |
-| `settings`    | 设置 schema；有它则由宿主渲染 | 否         |
-| `skills`      | 技能目录                      | 否         |
-| `permissions` | 文件、网络、命令能力          | 否         |
-| `activation`  | 何时激活                      | 否         |
+| 字段       | 语义                            | 必填       |
+| ---------- | ------------------------------- | ---------- |
+| `id`       | 域前缀与页面 host               | 是         |
+| `claims`   | 认领哪些文件；冲突按优先级      | 否         |
+| `domain`   | 命令地址前缀                    | 是         |
+| `commands` | 命令描述构建产物位置            | 是         |
+| `pages`    | 内容页；设置页可省              | 内容页必填 |
+| `settings` | 设置 schema；有它则由宿主渲染   | 否         |
+| `skills`   | 技能目录列表；元数据在 SKILL.md | 否         |
 
-入口用标准 `exports` 子路径 `./workstudio` 声明，与导出的名字一致。
+入口用标准 `exports` 子路径 `./workstudio` 声明，与导出的名字一致。`commands.json` 是固定构建产物；`skills` 只列目录，技能名称、描述与工作流由 `SKILL.md` 自身的规范结构承载。
 
 ### 8.2 动态实现
 
@@ -461,12 +485,11 @@ export const workstudio = definePlugin({
 ### 8.4 页面 SDK 与类型
 
 ```ts
-const page = createPage<DocxApi>({ plugin: 'docx' });
+import '@workstudio/sdk/global';
 
-page.resource.watch((state) => render(state));
-await page.resource.save(bytes);
-page.settings.watch((settings) => apply(settings));
-await page.call('docx.insert', { at, text });
+const ref = new URLSearchParams(location.search).get('ref') ?? '';
+await window.workStudio.subscribe('workspace', ref);
+await window.workStudio.command('docx', 'docx', 'insert', { at, text });
 ```
 
 - 类型来自页面类型声明，编译期检查；
@@ -501,9 +524,11 @@ interface PluginContext {
 
 `ctx` 里没有绝对路径、没有进程对象、没有窗口。插件能拿到的就是这四项。
 
+页面侧不提供 `createPage` 封装：唯一的页面入口是 `@workstudio/sdk/global` 的 `window.workStudio`，页面自己订阅投影、发送命令。
+
 ### 8.6 兼容
 
-`apiVersion: 1` 的插件按旧入口装载：入口取 `exports['./ura']`，命令描述缺省为空，页面与技能照旧。旧包不需要修改即可安装。
+URA 与 v1 入口一起退役：`exports['./ura']` 不再装载。插件必须使用 `definePlugin` + `ResourceAdapter` + 命令；旧包不能直接安装。
 
 ## 九、页面、地址与渲染
 
@@ -579,7 +604,7 @@ interface PluginContext {
 ### 10.3 不变量
 
 1. 状态只有一个真相源：主进程。
-2. 页面只能发地址，不能指定目标。
+2. 页面只能发 `(domain, resource, action)`，不能指定目标。
 3. 写入只有一条路径：命令。
 4. locator 只编码身份，不编码版本。
 5. 读接口的条目必须带 locator。

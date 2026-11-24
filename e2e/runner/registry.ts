@@ -9,6 +9,28 @@ import settingsOpen from '../cases/settings-open.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
 import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
+import themeToggle from '../cases/theme-toggle.ts';
+import settingsStorage from '../cases/settings-storage.ts';
+import browserAutomation from '../cases/browser-automation.ts';
+import pluginSkills from '../cases/plugin-skills.ts';
+import shellCapture from '../cases/shell-capture.ts';
+import pluginSave from '../cases/plugin-save.ts';
+import pluginContent from '../cases/plugin-content.ts';
+import assistantSessions from '../cases/assistant-sessions.ts';
+import pluginInstall from '../cases/plugin-install.ts';
+import dialogSelect from '../cases/dialog-select.ts';
+import settingsPreferences from '../cases/settings-preferences.ts';
+import pluginLifecycle from '../cases/plugin-lifecycle.ts';
+import assistantFloating from '../cases/assistant-floating.ts';
+import layoutPersist from '../cases/layout-persist.ts';
+import workspaceSwitch from '../cases/workspace-switch.ts';
+import settingsCards from '../cases/settings-cards.ts';
+import workspaceRegistry from '../cases/workspace-registry.ts';
+import notices from '../cases/notices.ts';
+import dialogInput from '../cases/dialog-input.ts';
+import tabsActions from '../cases/tabs-actions.ts';
+import panelToggle from '../cases/panel-toggle.ts';
+import windowDefaults from '../cases/window-defaults.ts';
 import viewLifecycle from '../cases/view-lifecycle.ts';
 import welcome from '../cases/welcome.ts';
 import assistantBridge from '../cases/assistant-bridge.ts';
@@ -22,19 +44,32 @@ import agentResources from '../cases/agent-resources.ts';
 import settingsAppearance from '../cases/settings-appearance.ts';
 
 export const cases: readonly E2ECase[] = [
+  windowDefaults,
+  panelToggle,
   navigation,
   browserOpen,
+  browserAutomation,
   browserLinks,
   siteOpen,
   dialogOverlay,
+  dialogInput,
+  dialogSelect,
+  notices,
   settingsOpen,
   settingsSidebar,
   tabs,
+  tabsActions,
   viewLifecycle,
   pathDisplay,
   pluginEntry,
+  pluginLifecycle,
+  pluginInstall,
+  pluginContent,
+  pluginSave,
+  pluginSkills,
   welcome,
   assistantBridge,
+  assistantSessions,
   settingsModels,
   tabsBulk,
   tabsCloseOthers,
@@ -43,6 +78,15 @@ export const cases: readonly E2ECase[] = [
   assistantThinking,
   agentResources,
   settingsAppearance,
+  settingsPreferences,
+  settingsStorage,
+  settingsCards,
+  workspaceRegistry,
+  workspaceSwitch,
+  layoutPersist,
+  shellCapture,
+  themeToggle,
+  assistantFloating,
 ];
 
 export interface CaseFilter {

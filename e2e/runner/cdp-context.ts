@@ -192,7 +192,7 @@ function pageHandle(session: CdpSession): PageHandle {
   };
   return {
     url: () => session.target.url,
-    evaluate: (fn) => session.evaluateFunction(fn),
+    evaluate: (fn, arg) => session.evaluateFunction(fn, arg),
     text,
     expect: {
       text: async (selector, expected) => {
@@ -302,7 +302,7 @@ export async function createCdpContext(
         nativeVirtualKeyCode: description.keyCode,
       });
     },
-    evaluate: (fn) => shell.evaluateFunction(fn),
+    evaluate: (fn, arg) => shell.evaluateFunction(fn, arg),
     legacyBridge: {
       call: async <T>(path: string, input?: unknown): Promise<T> => {
         const result = await shell.evaluate<

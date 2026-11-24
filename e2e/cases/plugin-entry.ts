@@ -1,4 +1,5 @@
 import { defineCase } from '../runner/contract.ts';
+import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
 
 interface ViewInfo {
   title: string;
@@ -10,6 +11,7 @@ export default defineCase({
   title: '设置卡片中的插件配置入口打开插件配置页',
   tags: ['dev', 'ci'],
   async run(ctx) {
+    await ensureHtmlFixture(ctx);
     await ctx.legacyBridge.call('/plugins/open', {
       pluginId: 'html-viewer',
       surface: 'settings',

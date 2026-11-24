@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { command, useResource } from '../../../shared/api/bridge.ts';
 
 export interface ThemeState {
@@ -5,18 +6,30 @@ export interface ThemeState {
   themeSource: 'light' | 'dark' | 'system';
 }
 
+interface AppearanceState {
+  theme?: 'light' | 'dark';
+  source?: 'light' | 'dark' | 'system';
+}
+
 export function useTheme(): {
   theme: 'light' | 'dark';
   set(theme: string): void;
   toggle(): void;
 } {
-  const state = useResource<ThemeState | null>('shell', 'theme', {
+  const state = useResource<AppearanceState>('shell', 'appearance', {
     theme: 'dark',
-    themeSource: 'system',
+    source: 'system',
   });
-  const theme = state?.theme ?? 'dark';
-  const set = (theme: string): void => {
-    void command('shell', 'theme', 'set', theme).catch(() => undefined);
+  const theme = state.theme ?? 'dark';
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    root.style.colorScheme = theme;
+  }, [theme]);
+  const set = (next: string): void => {
+    void command('shell', 'appearance', 'set', {
+      source: next,
+    }).catch(() => undefined);
   };
   return {
     theme,

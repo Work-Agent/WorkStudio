@@ -5,7 +5,9 @@
  * 常量与夹取规则算出。interaction 只是 layout 的 preview 状态，不单独设 controller。
  */
 
-import type { LayoutSnapshot, NativeScene } from '../../runtime/shared.ts';
+import type { LayoutSnapshot } from '../../../shared/types.ts';
+
+export type NativeScene = Record<string, unknown>;
 import {
   clampFloating,
   commitPaneResize,
@@ -73,7 +75,7 @@ export function computeLayout(
     floating: floatingOf(scene),
     preview,
   });
-  return { ...layout, capture: layout.overlay };
+  return layout;
 }
 
 /** 交互开始：冻结起始 scene + 屏幕光标；后续只产 preview，不写 scene。 */

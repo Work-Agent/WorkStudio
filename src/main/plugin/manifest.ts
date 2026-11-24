@@ -1,0 +1,21 @@
+/**
+ * 插件静态声明：唯一事实源在 @workstudio/sdk。
+ *
+ * 宿主只保留支持版本常量与解析后的 PluginPackage（绝对路径）。
+ */
+
+import type { WorkStudioManifest } from '@workstudio/sdk';
+
+export type { WorkStudioManifest } from '@workstudio/sdk';
+
+/** 解析后的插件包：路径均为绝对路径。 */
+export interface PluginPackage {
+  manifest: WorkStudioManifest;
+  /** package.json 的 version；清单字段只描述框架需要知道的身份。 */
+  version: string;
+  root: string;
+  /** 动态入口：exports['./workstudio'] 指向的 ESM 文件。 */
+  entry: string;
+  contentPage: string;
+  settingsPage?: string;
+}

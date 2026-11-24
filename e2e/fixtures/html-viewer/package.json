@@ -1,0 +1,31 @@
+{
+  "name": "@workstudio/plugin-html-viewer",
+  "version": "2.0.0",
+  "description": "HTML 文件查看与编辑：源码 / 分屏预览",
+  "author": "work-studio",
+  "type": "module",
+  "workstudio": {
+    "id": "html-viewer",
+    "label": "HTML 阅读器",
+    "icon": "code",
+    "pages": {
+      "content": "index.html",
+      "settings": "settings.html"
+    },
+    "claims": [
+      {
+        "extensions": [
+          "html",
+          "htm"
+        ],
+        "priority": 10
+      }
+    ],
+    "skills": [
+      "skills/html-viewer"
+    ]
+  },
+  "exports": {
+    "./workstudio": "./engine.js"
+  }
+}

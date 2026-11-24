@@ -23,7 +23,7 @@ export interface PageExpect {
 /** 由设置页 / 资源页等独立 BrowserWindow 承载的页面。 */
 export interface PageHandle {
   url(): string;
-  evaluate<T>(fn: () => T | Promise<T>): Promise<T>;
+  evaluate<T>(fn: (arg: unknown) => T | Promise<T>, arg?: unknown): Promise<T>;
   text(selector: string): Promise<string>;
   expect: PageExpect;
 }
@@ -46,7 +46,7 @@ export interface E2EContext {
   fillTestId(testId: string, value: string): Promise<void>;
   press(key: string): Promise<void>;
 
-  evaluate<T>(fn: () => T | Promise<T>): Promise<T>;
+  evaluate<T>(fn: (arg: unknown) => T | Promise<T>, arg?: unknown): Promise<T>;
   legacyBridge: {
     call<T = unknown>(path: string, input?: unknown): Promise<T>;
     peek<T = unknown>(path: string): Promise<T | null>;

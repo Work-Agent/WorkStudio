@@ -363,12 +363,13 @@ presenter   page / settings / sidecar 都由插件注册；未注册时回退 ra
 
 #### 插件包、zip 与可安装清单
 
-插件是一个自包含目录：`package.json` 的 `workstudio` 字段声明 id / label / icon / page / settings / apiVersion，`exports["./ura"]` 指向 ESM 注册入口；装载时 import 该入口，模块求值即注册。插件以 zip 分发，一个 zip 只装一个插件。
+插件是一个自包含目录：`package.json` 的 `workstudio` 字段声明 id / label / pages / skills / claims；`exports["./workstudio"]` 指向 `definePlugin` 的 ESM 入口，`commands.json` 由构建生成。插件以 zip 分发，一个 zip 只装一个插件。
 
 ```text
 plugin-docx.zip
 ├── package.json
-├── dist/ura.js
+├── dist/engine.js
+├── commands.json
 ├── dist/page/...
 └── node_modules/        # 可选；依赖由插件自己 bundle
 ```
@@ -394,10 +395,10 @@ plugin-docx.zip
 - **安装与加载分别报告**：安装完成表示文件和安装记录已提交；加载完成表示插件能力注册成功。加载失败保留安装记录，可单独重新加载；卸载保留可安装清单条目。
 - **临时安装只记状态**：手动 URL / 拖入 zip 或文件夹 / 社区目录安装记在本机安装索引，不进清单。
 - **插件目录统一**：`<appData>/plugins/` 下放 `installed/`、`staging/`、`installed.json`；与工作区无关，和 `agent/` 下的 pi 资源分开。
-- **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `apiVersion` → 原子替换 `installed/<id>`；本地 zip 走同一套解压流程（无远程哈希可比对，仅记录内容哈希）。
+- **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `commands.json` → 原子替换 `installed/<id>`；本地 zip 走同一套解压流程（无远程哈希可比对，仅记录内容哈希）。
 - **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm。
 - **无自动更新**：改清单 URL / hash 后重新构建并重装；不静默更新。
-- **启动装配，运行期热装卸**：启动时扫描本地路径与 `installed/` → import `./ura` → 注册 → 建页面；安装 / 卸载即时生效——卸载按归属撤销注册面并关闭插件页面；ESM 模块本体留在进程内存，属已知限制。
+- **启动装配，运行期热装卸**：启动时扫描本地路径与 `installed/` → import `./engine.js` → 注册 → 建页面；安装 / 卸载即时生效——卸载按归属撤销注册面并关闭插件页面；ESM 模块本体留在进程内存，属已知限制。
 - **本地来源不复制**：开发时原地加载，改完重新安装即生效（无需重启）。
 
 ### 5.4 设置：只占页面出口

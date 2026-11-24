@@ -1,16 +1,12 @@
 import { useResource } from '../../../shared/api/bridge.ts';
 
-export interface WindowState {
-  activeWsId: string | null;
-  count: number;
-  list: Array<{ wsId: string; windowId: number }>;
+interface WorkspaceRegistry {
+  current?: { id?: string } | null;
 }
 
-const EMPTY: WindowState = { activeWsId: null, count: 0, list: [] };
-
 export function useActiveWorkspaceId(): string | null {
-  return (
-    useResource<WindowState | null>('shell', 'windows', EMPTY)?.activeWsId ??
-    null
-  );
+  const registry = useResource<WorkspaceRegistry>('workspace', 'registry', {
+    current: null,
+  });
+  return registry.current?.id ?? null;
 }

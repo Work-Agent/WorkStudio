@@ -22,7 +22,7 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
-import type { DomainUpdate } from '../../../main/runtime/shared.ts';
+import type { DomainUpdate } from '@workstudio/sdk';
 import '../../shared/styles/index.css';
 
 interface SettingsPage {
@@ -67,8 +67,10 @@ interface SkillView {
 
 interface PluginView {
   id: string;
-  name: string;
+  label: string;
+  name?: string;
   version: string;
+  stage?: string;
   hasConfig: boolean;
 }
 
@@ -199,7 +201,6 @@ interface CatalogPackage {
 
 interface UpdateView {
   phase: string;
-  silent: boolean;
   current: string;
   latest: string | null;
   received: number;
@@ -228,14 +229,29 @@ function useResource<T>(domain: string, resource: string, initial: T): T {
   useEffect(() => {
     const bridge = window.workStudio;
     if (!bridge) return;
+    const apply = (current: T, data: unknown): T => {
+      if (data === null || data === undefined) return current;
+      if (Array.isArray(data)) return data as T;
+      if (
+        typeof data === 'object' &&
+        typeof current === 'object' &&
+        current !== null
+      ) {
+        return { ...current, ...(data as Record<string, unknown>) } as T;
+      }
+      return data as T;
+    };
     const off = bridge.onUpdate((update: DomainUpdate) => {
       if (update.domain !== domain || update.resource !== resource) return;
-      if (update.type === 'snapshot') setValue(update.data as T);
-      else if (update.type === 'patch') {
-        setValue((current) => ({ ...current, ...update.data }) as T);
+      if (update.type === 'snapshot') {
+        setValue((current) => apply(current, update.data));
+      } else if (update.type === 'patch') {
+        setValue((current) => apply(current, update.data));
       }
     });
-    void bridge.subscribe(domain, resource).then((data) => setValue(data as T));
+    void bridge
+      .subscribe(domain, resource)
+      .then((data) => setValue((current) => apply(current, data)));
     return () => {
       off();
       bridge.unsubscribe(domain, resource);
@@ -328,13 +344,22 @@ function Button({
 }
 
 function AppearanceCard() {
-  const appearance = useResource<AppearanceSnapshot>('settings', 'appearance', {
-    theme: 'system',
-    zoom: 100,
-    effectiveTheme: 'light',
+  const state = useResource<{
+    theme: 'light' | 'dark';
+    source: 'light' | 'dark' | 'system';
+    zoom: number;
+  }>('shell', 'appearance', {
+    theme: 'light',
+    source: 'system',
+    zoom: 1,
   });
-  const update = (patch: Partial<AppearanceSnapshot>): void => {
-    void run('settings', 'appearance', 'set', patch);
+  const appearance: AppearanceSnapshot = {
+    theme: state.source,
+    zoom: Math.round(state.zoom * 100),
+    effectiveTheme: state.theme,
+  };
+  const update = (patch: { source?: string; zoom?: number }): void => {
+    void run('shell', 'appearance', 'set', patch);
   };
   const themes = [
     { id: 'light', label: '浅色' },
@@ -349,7 +374,7 @@ function AppearanceCard() {
             <Button
               key={item.id}
               active={appearance.theme === item.id}
-              onClick={() => update({ theme: item.id })}
+              onClick={() => update({ source: item.id })}
             >
               {item.label}
             </Button>
@@ -363,7 +388,9 @@ function AppearanceCard() {
         <div className="flex items-center gap-3">
           <select
             value={appearance.zoom}
-            onChange={(event) => update({ zoom: Number(event.target.value) })}
+            onChange={(event) =>
+              update({ zoom: Number(event.target.value) / 100 })
+            }
             className="rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
           >
             {[75, 80, 90, 100, 110, 125, 150].map((zoom) => (
@@ -382,14 +409,24 @@ function AppearanceCard() {
 }
 
 function StorageCard() {
-  const storage = useResource<StorageView>('settings', 'storage', {
+  const storage = useResource<{
+    dataRoot: string;
+    workspacesRoot: string;
+    workspacePath: string;
+    workspaceId: string;
+    sessionsDir: string;
+    versions?: {
+      app: string;
+      electron: string;
+      chrome: string;
+      node: string;
+    };
+  }>('settings', 'storage', {
     dataRoot: '',
-    appPath: '',
+    workspacesRoot: '',
     workspacePath: '',
     workspaceId: '',
-    sceneFile: '',
     sessionsDir: '',
-    versions: { app: '', electron: '', chrome: '', node: '' },
   });
   return (
     <Panel>
@@ -398,7 +435,7 @@ function StorageCard() {
         <div className="flex justify-end gap-2 px-1 pb-2">
           <Button
             onClick={() =>
-              void run('settings', 'storage', 'open', {
+              void run('shell', 'native', 'openPath', {
                 path: storage.dataRoot,
               })
             }
@@ -407,7 +444,7 @@ function StorageCard() {
           </Button>
           <Button
             onClick={() =>
-              void run('settings', 'storage', 'open', {
+              void run('shell', 'native', 'openPath', {
                 path: storage.sessionsDir,
               })
             }
@@ -416,24 +453,30 @@ function StorageCard() {
           </Button>
           <Button
             onClick={() => {
-              void run<string | null>('settings', 'storage', 'changeRoot').then(
-                (path) => {
-                  if (path) {
-                    window.alert('数据根已更新，重启应用后生效。');
-                  }
-                },
-              );
+              void run<string | null>('settings', 'storage', 'changeDataRoot')
+                .then((path) => {
+                  if (path) window.alert('数据根已更新，重启应用后生效。');
+                })
+                .catch((error: unknown) =>
+                  window.alert(
+                    error instanceof Error ? error.message : String(error),
+                  ),
+                );
             }}
           >
             更改数据根…
           </Button>
           <Button
             onClick={() => {
-              void run<string | null>(
-                'settings',
-                'storage',
-                'changeSessionDir',
-              );
+              void run<string | null>('settings', 'storage', 'changeSessionDir')
+                .then((path) => {
+                  if (path) window.alert('会话目录已更新，新会话生效。');
+                })
+                .catch((error: unknown) =>
+                  window.alert(
+                    error instanceof Error ? error.message : String(error),
+                  ),
+                );
             }}
           >
             更改会话目录…
@@ -443,7 +486,7 @@ function StorageCard() {
         <div className="flex justify-end px-1 pb-2">
           <Button
             onClick={() =>
-              void run('settings', 'storage', 'open', {
+              void run('shell', 'native', 'openPath', {
                 path: storage.workspacePath,
               })
             }
@@ -452,27 +495,25 @@ function StorageCard() {
           </Button>
         </div>
         <Row label="工作区 ID" value={storage.workspaceId} monospace />
-        <Row label="场景文件" value={storage.sceneFile} monospace />
         <Row label="会话目录" value={storage.sessionsDir} monospace />
-        <Row label="应用目录" value={storage.appPath} monospace />
       </Section>
       <Section title="版本">
-        <Row label="WorkStudio" value={storage.versions.app} />
-        <Row label="Electron" value={storage.versions.electron} />
-        <Row label="Chromium" value={storage.versions.chrome} />
-        <Row label="Node" value={storage.versions.node} />
+        <Row label="WorkStudio" value={storage.versions?.app ?? ''} />
+        <Row label="Electron" value={storage.versions?.electron ?? ''} />
+        <Row label="Chromium" value={storage.versions?.chrome ?? ''} />
+        <Row label="Node" value={storage.versions?.node ?? ''} />
       </Section>
     </Panel>
   );
 }
 
 function WorkspacesCard() {
-  const list = useResource<WorkspaceMeta[]>('workspaces', 'list', []);
-  const current = useResource<WorkspaceMeta | null>(
-    'workspaces',
-    'current',
-    null,
-  );
+  const registry = useResource<{
+    current?: WorkspaceMeta | null;
+    workspaces?: WorkspaceMeta[];
+  }>('workspace', 'registry', {});
+  const list = registry.workspaces ?? [];
+  const current = registry.current ?? null;
   const openDirectory = async (): Promise<void> => {
     const path = await run<string | null>(
       'shell',
@@ -480,7 +521,7 @@ function WorkspacesCard() {
       'pickDirectory',
       {},
     );
-    if (path) await run('workspaces', 'list', 'open', { path });
+    if (path) await run('workspace', 'registry', 'open', { path });
   };
   return (
     <Panel>
@@ -512,7 +553,9 @@ function WorkspacesCard() {
             <Button
               disabled={workspace.id === current?.id}
               onClick={() =>
-                void run('workspaces', 'list', 'open', { path: workspace.path })
+                void run('workspace', 'registry', 'open', {
+                  path: workspace.path,
+                })
               }
             >
               切换
@@ -530,7 +573,7 @@ function WorkspacesCard() {
               onClick={() => {
                 const name = window.prompt('重命名工作区', workspace.name);
                 if (name?.trim()) {
-                  void run('workspaces', 'list', 'rename', {
+                  void run('workspace', 'registry', 'rename', {
                     id: workspace.id,
                     name: name.trim(),
                   });
@@ -544,7 +587,9 @@ function WorkspacesCard() {
               onClick={() => {
                 if (!window.confirm(`移除工作区「${workspace.name}」？`))
                   return;
-                void run('workspaces', 'list', 'remove', { id: workspace.id });
+                void run('workspace', 'registry', 'remove', {
+                  id: workspace.id,
+                });
               }}
             >
               移除
@@ -560,9 +605,9 @@ function WorkspacesCard() {
 }
 
 function PluginsCard() {
-  const plugins = useResource<PluginView[]>('plugins', 'list', []);
-  const installed = useResource<InstalledPlugin[]>('plugins', 'installed', []);
-  const task = useResource<PluginTask | null>('plugins', 'task', null);
+  const installed = useResource<PluginView[]>('plugin', 'installed', []);
+  const plugins = installed;
+  const task = useResource<PluginTask | null>('plugin', 'task', null);
   const [source, setSource] = useState('');
   const [catalog, setCatalog] = useState<
     Array<{ id?: string; name?: string; source?: string; description?: string }>
@@ -595,17 +640,17 @@ function PluginsCard() {
               <div className="mt-1 text-[11px] text-red-500">{task.error}</div>
             )}
             <div className="mt-2 flex justify-end gap-2">
-              {task.status === 'running' && (
+              {task.status === 'installing' && (
                 <Button
                   onClick={() =>
-                    void run('plugins', 'task', 'cancel').then(() => undefined)
+                    void run('plugin', 'task', 'cancel').then(() => undefined)
                   }
                 >
                   取消
                 </Button>
               )}
-              {(task.status === 'failed' || task.status === 'cancelled') && (
-                <Button onClick={() => void run('plugins', 'task', 'retry')}>
+              {task.status === 'error' && (
+                <Button onClick={() => void run('plugin', 'task', 'cancel')}>
                   重试
                 </Button>
               )}
@@ -695,15 +740,13 @@ function PluginsCard() {
         <div className="space-y-1">
           {installed.map((item) => (
             <div
-              key={item.source}
+              key={item.id}
               className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
             >
               <div className="min-w-0 flex-1">
-                <div className="truncate">
-                  {item.label ?? item.name ?? item.source}
-                </div>
+                <div className="truncate">{item.label}</div>
                 <div className="truncate font-mono text-[10px] text-zinc-400">
-                  {item.source}
+                  v{item.version}
                 </div>
               </div>
               <Button
@@ -711,7 +754,7 @@ function PluginsCard() {
                 onClick={() =>
                   void act(() =>
                     run('plugins', 'list', 'reload', {
-                      source: item.source,
+                      id: item.id,
                     }),
                   )
                 }
@@ -723,7 +766,7 @@ function PluginsCard() {
                 onClick={() =>
                   void act(() =>
                     run('plugins', 'list', 'remove', {
-                      source: item.source,
+                      id: item.id,
                     }),
                   )
                 }
@@ -745,17 +788,17 @@ function PluginsCard() {
               className="flex items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 dark:border-[#2c3039]"
             >
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-medium">{plugin.name}</div>
+                <div className="text-[12px] font-medium">{plugin.label}</div>
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  v{plugin.version} · {plugin.hasConfig ? '可配置' : '仅查看器'}
+                  v{plugin.version} · {plugin.stage} ·{' '}
+                  {plugin.hasConfig ? '可配置' : '仅查看器'}
                 </div>
               </div>
               <Button
                 disabled={!plugin.hasConfig}
                 onClick={() =>
-                  void run('plugins', 'list', 'open', {
-                    pluginId: plugin.id,
-                    surface: 'settings',
+                  void run('plugin', 'installed', 'open', {
+                    id: plugin.id,
                   })
                 }
               >
@@ -770,21 +813,21 @@ function PluginsCard() {
 }
 
 function SessionsCard() {
-  const sessions = useResource<SessionItem[]>('sessions', 'list', []);
-  const current = useResource<AgentSnapshot | null>(
-    'sessions',
-    'current',
-    null,
-  );
+  const aggregate = useResource<{
+    items?: SessionItem[];
+    current?: AgentSnapshot | null;
+  }>('agent', 'sessions', { items: [], current: null });
+  const sessions = aggregate.items ?? [];
+  const current = aggregate.current ?? null;
   return (
     <Panel>
       <div className="flex justify-end gap-2">
         {current?.isStreaming && (
-          <Button onClick={() => void run('sessions', 'current', 'abort')}>
+          <Button onClick={() => void run('agent', 'sessions', 'abort')}>
             停止当前任务
           </Button>
         )}
-        <Button onClick={() => void run('sessions', 'current', 'new')}>
+        <Button onClick={() => void run('agent', 'sessions', 'new')}>
           新建会话
         </Button>
       </div>
@@ -805,9 +848,7 @@ function SessionsCard() {
             <Button
               disabled={current?.sessionFile === session.path}
               onClick={() =>
-                void run('sessions', 'current', 'open', {
-                  sessionId: encodeURIComponent(session.path),
-                })
+                void run('agent', 'sessions', 'open', { id: session.path })
               }
             >
               打开
@@ -816,7 +857,7 @@ function SessionsCard() {
               onClick={() => {
                 const name = window.prompt('重命名会话', session.name);
                 if (name?.trim()) {
-                  void run('sessions', 'current', 'rename', {
+                  void run('agent', 'sessions', 'rename', {
                     name: name.trim(),
                     path: session.path,
                   });
@@ -829,7 +870,7 @@ function SessionsCard() {
               disabled={current?.isStreaming}
               onClick={() => {
                 if (!window.confirm(`删除会话「${session.name}」？`)) return;
-                void run('sessions', 'current', 'delete', {
+                void run('agent', 'sessions', 'delete', {
                   path: session.path,
                 });
               }}
@@ -847,33 +888,38 @@ function SessionsCard() {
 }
 
 function ModelsCard() {
-  const models = useResource<ModelsView>('models', 'config', {
-    providers: [],
-    catalog: [],
+  const providerList = useResource<ProviderView[]>('agent', 'providers', []);
+  const catalog = useResource<ModelView[]>('agent', 'models', []);
+  const models: ModelsView = {
+    providers: providerList,
+    catalog,
     config: { providers: {} },
-  });
+  };
+  const providerAddress = (id: string): string =>
+    `provider/${encodeURIComponent(id)}`;
+  const modelAddress = (provider: string, id: string): string =>
+    `model/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`;
   const [providerId, setProviderId] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelProvider, setModelProvider] = useState('');
   const [modelId, setModelId] = useState('');
   const [modelName, setModelName] = useState('');
-  const current = useResource<AgentSnapshot | null>(
+  const session = useResource<{ current?: AgentSnapshot | null }>(
+    'agent',
     'sessions',
-    'current',
-    null,
+    { current: null },
   );
+  const current = session.current ?? null;
   const login = async (provider: ProviderView): Promise<void> => {
     if (provider.canApiKeyLogin) {
       const apiKey = window.prompt(`输入 ${provider.name} 的 API Key`);
       if (!apiKey) return;
-      await run('models', 'config', 'login', {
-        providerId: provider.id,
+      await run('agent', providerAddress(provider.id), 'login', {
         type: 'api_key',
         apiKey,
       });
     } else if (provider.canOAuthLogin) {
-      await run('models', 'config', 'login', {
-        providerId: provider.id,
+      await run('agent', providerAddress(provider.id), 'login', {
         type: 'oauth',
       });
     }
@@ -897,8 +943,7 @@ function ModelsCard() {
           <Button
             disabled={!providerId.trim() || !baseUrl.trim()}
             onClick={() =>
-              void run('models', 'config', 'saveProvider', {
-                providerId: providerId.trim(),
+              void run('agent', providerAddress(providerId.trim()), 'save', {
                 config: { baseUrl: baseUrl.trim() },
               }).then(() => {
                 setProviderId('');
@@ -933,13 +978,16 @@ function ModelsCard() {
           <Button
             disabled={!modelProvider.trim() || !modelId.trim()}
             onClick={() =>
-              void run('models', 'config', 'saveModel', {
-                providerId: modelProvider.trim(),
-                model: {
-                  id: modelId.trim(),
-                  name: modelName.trim() || undefined,
+              void run(
+                'agent',
+                modelAddress(modelProvider.trim(), modelId.trim()),
+                'save',
+                {
+                  config: {
+                    name: modelName.trim() || undefined,
+                  },
                 },
-              }).then(() => {
+              ).then(() => {
                 setModelId('');
                 setModelName('');
               })
@@ -961,10 +1009,11 @@ function ModelsCard() {
                   </span>
                   <Button
                     onClick={() =>
-                      void run('models', 'config', 'deleteModel', {
-                        providerId: provider,
-                        modelId: model.id,
-                      })
+                      void run(
+                        'agent',
+                        modelAddress(provider, model.id),
+                        'delete',
+                      )
                     }
                   >
                     删除
@@ -994,9 +1043,7 @@ function ModelsCard() {
               {!provider.builtin && (
                 <Button
                   onClick={() =>
-                    void run('models', 'config', 'deleteProvider', {
-                      providerId: provider.id,
-                    })
+                    void run('agent', providerAddress(provider.id), 'delete')
                   }
                 >
                   删除
@@ -1005,9 +1052,7 @@ function ModelsCard() {
               {provider.configured ? (
                 <Button
                   onClick={() =>
-                    void run('models', 'config', 'logout', {
-                      providerId: provider.id,
-                    })
+                    void run('agent', providerAddress(provider.id), 'logout')
                   }
                 >
                   退出
@@ -1050,9 +1095,9 @@ function ModelsCard() {
                     active={active}
                     disabled={active}
                     onClick={() =>
-                      void run('sessions', 'current', 'setModel', {
+                      void run('agent', 'sessions', 'setModel', {
                         provider: model.provider,
-                        modelId: model.modelId,
+                        model: model.modelId,
                       })
                     }
                   >
@@ -1071,7 +1116,24 @@ function ModelsCard() {
 }
 
 function SkillsCard() {
-  const skills = useResource<SkillView[]>('skills', 'catalog', []);
+  const state = useResource<{
+    catalog?: Array<{
+      name: string;
+      description: string;
+      pluginId?: string;
+      path?: string;
+    }>;
+    disabled?: string[];
+  }>('agent', 'skills', { catalog: [], disabled: [] });
+  const disabled = new Set(state.disabled ?? []);
+  const skills: SkillView[] = (state.catalog ?? []).map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    pluginName: skill.pluginId ?? '内置',
+    ...(skill.pluginId ? { pluginId: skill.pluginId } : {}),
+    scope: '应用',
+    enabled: !disabled.has(skill.name),
+  }));
   const [diagnostics, setDiagnostics] = useState<
     Array<{ type: string; message: string; path?: string }>
   >([]);
@@ -1081,15 +1143,15 @@ function SkillsCard() {
         <Button
           onClick={() =>
             void run<Array<{ type: string; message: string; path?: string }>>(
+              'agent',
               'skills',
-              'catalog',
               'diagnostics',
             ).then(setDiagnostics)
           }
         >
           诊断
         </Button>
-        <Button onClick={() => void run('skills', 'catalog', 'reload')}>
+        <Button onClick={() => void run('agent', 'skills', 'reload')}>
           重新装载
         </Button>
       </div>
@@ -1125,7 +1187,7 @@ function SkillsCard() {
                 {skill.pluginId && skill.pluginId !== 'builtin' && (
                   <Button
                     onClick={() =>
-                      void run('skills', 'catalog', 'openPlugin', {
+                      void run('agent', 'skills', 'openPlugin', {
                         pluginId: skill.pluginId,
                       })
                     }
@@ -1135,7 +1197,7 @@ function SkillsCard() {
                 )}
                 <Button
                   onClick={() =>
-                    void run('skills', 'catalog', 'setEnabled', {
+                    void run('agent', 'skills', 'setEnabled', {
                       name: skill.name,
                       enabled: skill.enabled === false,
                     })
@@ -1156,14 +1218,14 @@ function SkillsCard() {
 }
 
 function BrowserCard() {
-  const policy = useResource<{ allowlist: string[] }>('settings', 'browser', {
+  const policy = useResource<{ allowlist: string[] }>('browser', 'policy', {
     allowlist: [],
   });
   const lists = useLists();
   const sites = lists.filter((group) => group.definitionId === 'web');
   const [domain, setDomain] = useState('');
   const save = async (allowlist: string[]): Promise<void> => {
-    await run('settings', 'browser', 'set', { allowlist });
+    await run('browser', 'policy', 'set', { allowlist });
   };
   return (
     <Panel>
@@ -1318,37 +1380,18 @@ function PreferencesCard() {
     proxy: null,
     githubToken: null,
   });
-  const advanced = useResource<AdvancedView>('settings', 'advanced', {
-    settings: null,
-    bindings: [],
-  });
   const [locale, setLocale] = useState('');
   const [proxy, setProxy] = useState('');
-  const [globalText, setGlobalText] = useState('');
-  const [projectText, setProjectText] = useState('');
-  const [bindingTransport, setBindingTransport] = useState('file');
-  const [bindingMime, setBindingMime] = useState('');
-  const [bindingCodec, setBindingCodec] = useState('');
-  const [bindingPresenter, setBindingPresenter] = useState('');
-  useEffect(() => {
-    if (!advanced.settings) return;
-    setGlobalText(JSON.stringify(advanced.settings.global, null, 2));
-    setProjectText(JSON.stringify(advanced.settings.project, null, 2));
-  }, [advanced.settings]);
-  const saveAdvanced = async (scope: 'global' | 'project'): Promise<void> => {
-    try {
-      const value = JSON.parse(
-        scope === 'global' ? globalText : projectText,
-      ) as Record<string, unknown>;
-      await run('settings', 'advanced', 'replace', { scope, value });
-    } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : String(cause));
-    }
-  };
   useEffect(() => {
     setLocale(preferences.locale ?? '');
     setProxy(preferences.proxy ?? '');
   }, [preferences]);
+  const save = (): void => {
+    void run('settings', 'preferences', 'set', {
+      ...(locale.trim() ? { locale: locale.trim() } : {}),
+      ...(proxy.trim() ? { proxy: proxy.trim() } : {}),
+    });
+  };
   return (
     <Panel>
       <Section title="应用默认">
@@ -1371,167 +1414,45 @@ function PreferencesCard() {
           />
         </div>
         <div className="mt-3 flex justify-end">
-          <Button
-            onClick={() =>
-              void run('settings', 'preferences', 'set', {
-                locale: locale.trim() || null,
-                proxy: proxy.trim() || null,
-              })
-            }
-          >
-            保存
-          </Button>
+          <Button onClick={save}>保存 App 默认</Button>
         </div>
       </Section>
       <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
-        技能开关请使用「技能」卡片。
+        技能开关请使用「技能」卡片；浏览器白名单在「网站采集」。
       </p>
-      <Section title="URA 绑定">
-        <div className="grid gap-2 sm:grid-cols-4">
-          <input
-            value={bindingTransport}
-            onChange={(event) => setBindingTransport(event.target.value)}
-            placeholder="transport"
-            className="rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={bindingMime}
-            onChange={(event) => setBindingMime(event.target.value)}
-            placeholder="mime"
-            className="rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={bindingCodec}
-            onChange={(event) => setBindingCodec(event.target.value)}
-            placeholder="codec（可选）"
-            className="rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={bindingPresenter}
-            onChange={(event) => setBindingPresenter(event.target.value)}
-            placeholder="presenter（可选）"
-            className="rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-        </div>
-        <div className="mt-2 flex justify-end">
-          <Button
-            disabled={!bindingTransport.trim() || !bindingMime.trim()}
-            onClick={() =>
-              void run('settings', 'advanced', 'setBinding', {
-                binding: {
-                  transport: bindingTransport.trim(),
-                  mime: bindingMime.trim(),
-                  ...(bindingCodec.trim()
-                    ? { codec: bindingCodec.trim() }
-                    : {}),
-                  ...(bindingPresenter.trim()
-                    ? { presenter: bindingPresenter.trim() }
-                    : {}),
-                },
-              }).then(() => setBindingMime(''))
-            }
-          >
-            写入绑定
-          </Button>
-        </div>
-        <div className="mt-2 space-y-1">
-          {advanced.bindings.map((binding) => (
-            <div
-              key={`${binding.transport}:${binding.mime}`}
-              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
-            >
-              <span className="min-w-0 flex-1 font-mono">
-                {binding.transport} × {binding.mime}
-                {binding.codec ? ` → ${binding.codec}` : ''}
-                {binding.presenter ? ` → ${binding.presenter}` : ''}
-              </span>
-              <Button
-                onClick={() =>
-                  void run('settings', 'advanced', 'removeBinding', {
-                    transport: binding.transport,
-                    mime: binding.mime,
-                  })
-                }
-              >
-                删除
-              </Button>
-            </div>
-          ))}
-          {advanced.bindings.length === 0 && (
-            <p className="text-[11px] text-zinc-500">暂无用户绑定</p>
-          )}
-        </div>
-      </Section>
-      <Section title="高级设置（piconf）">
-        <p className="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-          App 默认与工作区覆盖直接编辑 JSON；未知字段原样保留。
-        </p>
-        <label className="text-[11px] text-zinc-500">App 默认</label>
-        <textarea
-          value={globalText}
-          onChange={(event) => setGlobalText(event.target.value)}
-          spellCheck={false}
-          className="mt-1 h-32 w-full resize-y rounded-md border border-zinc-200 bg-white p-2 font-mono text-[11px] outline-none dark:border-[#303436] dark:bg-[#1c1e1f]"
-        />
-        <div className="mt-1 flex justify-end">
-          <Button onClick={() => void saveAdvanced('global')}>
-            保存 App 默认
-          </Button>
-        </div>
-        <label className="mt-3 block text-[11px] text-zinc-500">
-          本工作区覆盖
-        </label>
-        <textarea
-          value={projectText}
-          onChange={(event) => setProjectText(event.target.value)}
-          spellCheck={false}
-          className="mt-1 h-32 w-full resize-y rounded-md border border-zinc-200 bg-white p-2 font-mono text-[11px] outline-none dark:border-[#303436] dark:bg-[#1c1e1f]"
-        />
-        <div className="mt-1 flex justify-end">
-          <Button onClick={() => void saveAdvanced('project')}>
-            保存本工作区
-          </Button>
-        </div>
-        {advanced.settings && (
-          <p className="mt-2 break-all font-mono text-[10px] text-zinc-400">
-            {advanced.settings.paths.global}
-            {' / '}
-            {advanced.settings.paths.project}
-          </p>
-        )}
-      </Section>
     </Panel>
   );
 }
 
 function ExtensionsCard() {
-  const extensions = useResource<ExtensionView[]>('settings', 'extensions', []);
-  const [name, setName] = useState('');
+  const state = useResource<{
+    list?: Array<{ id: string; source: string }>;
+    errors?: string[];
+    configured?: Array<{ source: string; scope: string }>;
+    catalog?: Array<{
+      name: string;
+      description: string;
+      types: string[];
+      installSource: string;
+    }>;
+  }>('agent', 'extensions', {
+    list: [],
+    errors: [],
+    configured: [],
+    catalog: [],
+  });
+  const extensions = state.list ?? [];
+  const configured = state.configured ?? [];
+  const catalog = state.catalog ?? [];
   const [query, setQuery] = useState('');
-  const [catalog, setCatalog] = useState<CatalogPackage[]>([]);
-  const [error, setError] = useState('');
-  const install = async (target = name): Promise<void> => {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const act = async (action: () => Promise<unknown>): Promise<void> => {
     try {
-      setError('');
-      await run('settings', 'extensions', 'install', { name: target });
-      setName('');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  };
-  const search = async (): Promise<void> => {
-    try {
-      setError('');
-      const result =
-        (await run<{ packages?: CatalogPackage[] }>(
-          'settings',
-          'extensions',
-          'catalog',
-          { query, page: 1 },
-        )) ?? {};
-      setCatalog(result.packages ?? []);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setBusy(true);
+      await action();
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -1544,26 +1465,47 @@ function ExtensionsCard() {
             placeholder="搜索扩展"
             className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
           />
-          <Button onClick={() => void search()}>搜索</Button>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void act(() =>
+                run('agent', 'extensions', 'catalog', {
+                  ...(query.trim() ? { query: query.trim() } : {}),
+                  page: 1,
+                }),
+              )
+            }
+          >
+            搜索
+          </Button>
         </div>
-        {catalog.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {catalog.slice(0, 20).map((item) => (
-              <div
-                key={item.name}
-                className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{item.name}</div>
-                  <div className="truncate text-zinc-400">
-                    {item.description ?? ''}
-                  </div>
+        <div className="mt-2 space-y-1">
+          {catalog.map((item) => (
+            <div
+              key={item.name}
+              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{item.name}</div>
+                <div className="truncate text-zinc-400">
+                  {item.description} · {item.types.join(' / ')}
                 </div>
-                <Button onClick={() => void install(item.name)}>安装</Button>
               </div>
-            ))}
-          </div>
-        )}
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  void act(() =>
+                    run('agent', 'extensions', 'install', {
+                      name: item.name,
+                    }),
+                  )
+                }
+              >
+                安装
+              </Button>
+            </div>
+          ))}
+        </div>
       </Section>
       <Section title="安装 npm 包">
         <div className="flex gap-2">
@@ -1573,30 +1515,50 @@ function ExtensionsCard() {
             placeholder="npm 包名"
             className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
           />
-          <Button disabled={!name.trim()} onClick={() => void install()}>
+          <Button
+            disabled={busy || !name.trim()}
+            onClick={() =>
+              void act(async () => {
+                await run('agent', 'extensions', 'install', {
+                  name: name.trim(),
+                });
+                setName('');
+              })
+            }
+          >
             安装
           </Button>
         </div>
-        {error && <p className="mt-2 text-[11px] text-red-500">{error}</p>}
       </Section>
-      <Section title="已安装">
+      <div className="mb-2 flex justify-end">
+        <Button onClick={() => void run('agent', 'extensions', 'reload')}>
+          重新加载
+        </Button>
+      </div>
+      {(state.errors ?? []).length > 0 && (
+        <Section title="加载错误">
+          {(state.errors ?? []).map((error, index) => (
+            <div key={index} className="text-[11px] text-amber-600">
+              {error}
+            </div>
+          ))}
+        </Section>
+      )}
+      <Section title="已安装包">
         <div className="space-y-1">
-          {extensions.map((extension) => (
+          {configured.map((item) => (
             <div
-              key={`${extension.source}:${extension.scope}`}
-              className="flex items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 text-[12px] dark:border-[#2c3039]"
+              key={`${item.scope}:${item.source}`}
+              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
             >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono">{extension.source}</div>
-                <div className="text-[11px] text-zinc-500">
-                  {extension.scope}
-                </div>
-              </div>
+              <span className="min-w-0 flex-1 truncate font-mono">
+                {item.source}
+              </span>
               <Button
                 onClick={() =>
-                  void run('settings', 'extensions', 'remove', {
-                    source: extension.source,
-                    scope: extension.scope,
+                  void run('agent', 'extensions', 'remove', {
+                    source: item.source,
+                    scope: item.scope,
                   })
                 }
               >
@@ -1604,8 +1566,23 @@ function ExtensionsCard() {
               </Button>
             </div>
           ))}
+          {configured.length === 0 && (
+            <p className="text-[12px] text-zinc-500">暂无已安装包</p>
+          )}
+        </div>
+      </Section>
+      <Section title="已加载扩展">
+        <div className="space-y-1">
+          {extensions.map((extension) => (
+            <div
+              key={extension.id}
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-[12px] dark:border-[#2c3039]"
+            >
+              <div className="truncate font-mono">{extension.source}</div>
+            </div>
+          ))}
           {extensions.length === 0 && (
-            <p className="text-[12px] text-zinc-500">暂无已安装扩展</p>
+            <p className="text-[12px] text-zinc-500">暂无已加载扩展</p>
           )}
         </div>
       </Section>
@@ -1613,35 +1590,31 @@ function ExtensionsCard() {
   );
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  idle: '未检查',
-  checking: '检查中',
-  current: '当前已是最新版本',
-  available: '有新版本可用',
-  downloading: '下载中',
-  ready: '更新已就绪',
-};
-
 function UpdatesCard() {
-  const status = useResource<UpdateView>('settings', 'updates', {
-    phase: 'idle',
-    silent: navigator.userAgent.includes('Macintosh'),
+  const update = useResource<{
+    status: string;
+    version: string | null;
+    progress: number;
+  }>('settings', 'updates', {
+    status: 'idle',
+    version: null,
+    progress: 0,
+  });
+  const status: UpdateView = {
+    phase: update.status,
     current: '',
-    latest: null,
-    received: 0,
-    total: 0,
+    latest: update.version,
+    received: update.progress,
+    total: 100,
     file: null,
     message: null,
-  });
+  };
   const preferences = useResource<PreferencesView>('settings', 'preferences', {
     theme: 'dark',
     locale: null,
     proxy: null,
     githubToken: null,
   });
-  // macOS 安装版走静默更新（electron-updater / Squirrel）：就绪后重启即替换。
-  // 是否静默由主进程判定（silent 字段），避免 dev 模式与主进程行为不一致。
-  const silentUpdate = status.silent;
   const [token, setToken] = useState('');
   useEffect(() => setToken(preferences.githubToken ?? ''), [preferences]);
   const progress =
@@ -1654,9 +1627,7 @@ function UpdatesCard() {
       <Row label="最新版本" value={status.latest ?? ''} />
       <Row
         label="状态"
-        value={`${PHASE_LABELS[status.phase] ?? status.phase}${
-          status.phase === 'downloading' && progress ? ` · ${progress}` : ''
-        }`}
+        value={`${status.phase}${progress ? ` · ${progress}` : ''}`}
       />
       {status.message && (
         <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
@@ -1682,57 +1653,31 @@ function UpdatesCard() {
           保存 Token
         </Button>
       </div>
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex justify-end gap-2">
+        <Button
+          disabled={status.phase === 'checking'}
+          onClick={() => void run('settings', 'updates', 'check')}
+        >
+          检查更新
+        </Button>
+        <Button
+          disabled={status.phase === 'downloading' || !status.latest}
+          onClick={() => void run('settings', 'updates', 'download')}
+        >
+          下载安装包
+        </Button>
+        <Button
+          disabled={!status.file}
+          onClick={() => void run('settings', 'updates', 'open')}
+        >
+          打开安装包
+        </Button>
         {status.phase === 'downloading' && (
-          <button
-            type="button"
-            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-            onClick={() => void run('settings', 'updates', 'cancel')}
-          >
+          <Button onClick={() => void run('settings', 'updates', 'cancel')}>
             取消下载
-          </button>
-        )}
-        {(status.phase === 'current' || status.phase === 'available') && (
-          <button
-            type="button"
-            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-            onClick={() => void run('settings', 'updates', 'check')}
-          >
-            重新检查
-          </button>
-        )}
-        {status.phase === 'checking' ? (
-          <Button disabled>检查中…</Button>
-        ) : status.phase === 'downloading' ? (
-          <Button disabled>{`下载中 ${progress}`.trim()}</Button>
-        ) : status.phase === 'ready' ? (
-          silentUpdate ? (
-            <Button onClick={() => void run('settings', 'updates', 'install')}>
-              重启并安装
-            </Button>
-          ) : (
-            <Button
-              disabled={!status.file}
-              onClick={() => void run('settings', 'updates', 'open')}
-            >
-              打开安装包
-            </Button>
-          )
-        ) : status.phase === 'available' ? (
-          <Button onClick={() => void run('settings', 'updates', 'download')}>
-            下载更新
-          </Button>
-        ) : (
-          <Button onClick={() => void run('settings', 'updates', 'check')}>
-            检查更新
           </Button>
         )}
       </div>
-      {status.phase === 'ready' && silentUpdate && (
-        <p className="text-right text-[12px] text-zinc-500 dark:text-zinc-400">
-          退出应用时也会自动安装
-        </p>
-      )}
     </Panel>
   );
 }
@@ -1850,7 +1795,6 @@ function applyCard(card: string): void {
   } catch {
     /* 非标准 scheme 时忽略，地址仍由主进程记录 */
   }
-  void window.workStudio?.command('shell', 'session', 'locate', { card });
 }
 
 function SettingsHome() {

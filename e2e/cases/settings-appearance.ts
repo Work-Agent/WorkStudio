@@ -9,67 +9,35 @@ export default defineCase({
     const page = await ctx.waitForPage(
       /^(work:\/\/studio\/settings|.*pages\/settings\/index\.html)/,
     );
-    await page.evaluate(() => {
-      const card = document.querySelector('[data-page="appearance"]');
-      (card?.querySelector('button') as HTMLButtonElement | undefined)?.click();
-    });
-    const setTheme = async (
-      theme: 'light' | 'dark' | 'system',
-    ): Promise<void> => {
-      if (theme === 'dark') {
-        await page.evaluate(async () => {
-          await window.workStudio.command('settings', 'appearance', 'set', {
-            theme: 'dark',
-          });
-        });
-      } else if (theme === 'light') {
-        await page.evaluate(async () => {
-          await window.workStudio.command('settings', 'appearance', 'set', {
-            theme: 'light',
-          });
-        });
-      } else {
-        await page.evaluate(async () => {
-          await window.workStudio.command('settings', 'appearance', 'set', {
-            theme: 'system',
-          });
-        });
-      }
+    const set = async (input: Record<string, unknown>): Promise<void> => {
+      await page.evaluate(async (patch) => {
+        await window.workStudio.command('shell', 'appearance', 'set', patch);
+      }, input);
     };
     try {
-      await setTheme('dark');
+      await set({ source: 'dark' });
       await ctx.expect.poll(async () => {
         const value = (await page.evaluate(() =>
-          window.workStudio.subscribe('settings', 'appearance'),
-        )) as { theme?: string };
-        return value.theme === 'dark';
+          window.workStudio.subscribe('shell', 'appearance'),
+        )) as { theme?: string; source?: string };
+        return value.theme === 'dark' && value.source === 'dark';
       }, '深色主题没有写入');
-      await setTheme('light');
+      await set({ source: 'light' });
       await ctx.expect.poll(async () => {
         const value = (await page.evaluate(() =>
-          window.workStudio.subscribe('settings', 'appearance'),
-        )) as { theme?: string };
-        return value.theme === 'light';
+          window.workStudio.subscribe('shell', 'appearance'),
+        )) as { theme?: string; source?: string };
+        return value.theme === 'light' && value.source === 'light';
       }, '浅色主题没有写入');
-      await setTheme('system');
-      await page.evaluate(async () => {
-        await window.workStudio.command('settings', 'appearance', 'set', {
-          zoom: 125,
-        });
-      });
+      await set({ source: 'system', zoom: 1.25 });
       await ctx.expect.poll(async () => {
         const value = (await page.evaluate(() =>
-          window.workStudio.subscribe('settings', 'appearance'),
-        )) as { zoom?: number };
-        return value.zoom === 125;
+          window.workStudio.subscribe('shell', 'appearance'),
+        )) as { source?: string; zoom?: number };
+        return value.source === 'system' && value.zoom === 1.25;
       }, '缩放百分比没有写入');
     } finally {
-      await page.evaluate(async () => {
-        await window.workStudio.command('settings', 'appearance', 'set', {
-          theme: 'system',
-          zoom: 100,
-        });
-      });
+      await set({ source: 'system', zoom: 1 });
     }
   },
 });

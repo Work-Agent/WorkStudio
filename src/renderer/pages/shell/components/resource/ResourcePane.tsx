@@ -5,6 +5,7 @@
  * 矩形全部取主进程 layout（`tabbar` / `resourceContent`）；本组件不渲染内容、不丈量容器、
  * 不做分栏——文档与网页内容由主进程的原生视图承载（`layout.resourceContent`）。
  */
+import { useEffect, useRef } from 'react';
 import { FileText } from 'lucide-react';
 import { command } from '../../../../shared/api/bridge.ts';
 import { useViewCommands, useViews } from '../../domains/views.ts';
@@ -14,6 +15,18 @@ import { TabsBar } from './TabsBar.tsx';
 export function ResourcePane() {
   const views = useViews();
   const runViewCommand = useViewCommands();
+  const restoring = useRef(false);
+
+  // 工作区入口：没有任何内容视图时恢复唯一欢迎页。
+  useEffect(() => {
+    if (views.length > 0 || restoring.current) return;
+    restoring.current = true;
+    void command('settings', 'pages', 'open', { pageId: 'welcome' })
+      .catch(() => undefined)
+      .finally(() => {
+        restoring.current = false;
+      });
+  }, [views.length]);
 
   const active = views.find((v) => v.active) ?? null;
 

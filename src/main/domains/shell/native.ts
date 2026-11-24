@@ -1,728 +1,622 @@
 /**
- * native 组件：窗口、主题、现场、系统动作。
+ * Electron shell 宿主：窗口与 WebContentsView 的唯一具体实现。
  *
- * 四个 App 内置组件都直接绑定 Electron / 文件系统；它们共享 native
- * 这一角色，所以放在同一个模块。规模变大再拆。
+ * 不定义 Host interface；domain 直接依赖这个具体类。它只做平台动作，
+ * 不持有业务状态，窗口/视图投影仍由 shell 聚合状态维护。
  */
 
 import {
-  app,
   BrowserWindow,
-  dialog,
   Menu,
+  WebContentsView,
+  dialog,
   nativeTheme,
   screen,
   shell,
 } from 'electron';
-import type {
-  BaseWindow,
-  BrowserWindowConstructorOptions,
-  MenuItemConstructorOptions,
-  OpenDialogOptions,
-  Point,
-  Rectangle,
-  SaveDialogOptions,
-  TitleBarOverlay,
-  WebContents,
-  WebPreferences,
-} from 'electron';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import type { BrowserWindowConstructorOptions, WebContents } from 'electron';
+import type { Origins } from '../../ipc/origins.ts';
+import type { ViewType } from '../../contract.ts';
+import type { LayoutSnapshot } from '../../../shared/types.ts';
+import { defaultLayout } from './layout.ts';
 import {
   TITLEBAR_HEIGHT,
   TITLEBAR_OVERLAY_COLORS,
 } from '../../../shared/titlebar.ts';
-import { hardenWebContents } from '../../runtime/policy.ts';
-import { GlobalViews, Tabs } from './views.ts';
-import type {
-  LayoutSnapshot,
-  NativeScene,
-  Theme,
-  ThemeSource,
-} from '../../runtime/shared.ts';
+import { hardenWebContents } from '../../platform/policy.ts';
+import type { ViewRecord, WindowRecord } from './domains.ts';
 
-export interface WindowOptions {
+export interface ShellWindowOptions {
   width?: number;
   height?: number;
-  /** 默认 true；false 表示保持隐藏，不由 load 自动显示。 */
   show?: boolean;
-  webPreferences?: WebPreferences;
   browserWindow?: BrowserWindowConstructorOptions;
-  /** 窗口底色与原生三键配色的依据；由 WindowManager 按当前主题传入。 */
-  theme?: Theme;
+  theme?: 'light' | 'dark';
 }
 
-/** 壳层首帧底色：与工作台皮肤一致，避免深色主题下先闪白。 */
-const WINDOW_BACKGROUND: Record<Theme, string> = {
-  light: '#f4f4f5',
-  dark: '#1a1c1d',
-};
-
-/** WCO 覆盖层：配色与渲染层标题栏同源，高度与 DOM 标题栏一致。 */
-function titleBarOverlay(theme: Theme): TitleBarOverlay {
-  return {
-    ...(theme === 'light'
-      ? TITLEBAR_OVERLAY_COLORS.light
-      : TITLEBAR_OVERLAY_COLORS.dark),
-    height: TITLEBAR_HEIGHT,
-  };
+export interface ShellHostOptions {
+  origins: Origins;
+  preload?: string;
+  capturePreload?: string;
+  shellUrl?: string;
+  assistantUrl?: string;
+  overlayUrl?: string;
+  welcomeUrl?: string;
+  captureUrl?: string;
+  window?: ShellWindowOptions;
 }
 
-/** 所有 webContents 共用的导航 / 权限策略（与 main 的 ElectronCapability.attach 一致）。 */
+export interface ViewOpenInput {
+  id?: string;
+  type: ViewType;
+  title: string;
+  url?: string;
+}
 
-export class AppWindow {
-  private readonly options: WindowOptions;
-  protected theme: Theme;
-  private win: BrowserWindow | null = null;
-  private readonly loadedListeners = new Set<() => void>();
-  private readonly closedListeners = new Set<() => void>();
-  private readonly resizeListeners = new Set<() => void>();
+interface WindowEntry {
+  record: WindowRecord;
+  window: BrowserWindow;
+  senderId: string;
+}
 
-  constructor(options: WindowOptions = {}) {
-    this.options = options;
-    this.theme =
-      options.theme ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+interface ViewEntry {
+  record: ViewRecord;
+  view: WebContentsView;
+  window: BrowserWindow;
+  senderId: string;
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+export class ShellHost {
+  private readonly windows = new Map<string, WindowEntry>();
+  private readonly views = new Map<string, ViewEntry>();
+  private readonly byWorkspace = new Map<string, string>();
+  private readonly windowClosedListeners = new Set<(id: string) => void>();
+  private readonly viewClosedListeners = new Set<(id: string) => void>();
+  private readonly windowActivatedListeners = new Set<(id: string) => void>();
+  private readonly layouts = new Map<string, LayoutSnapshot>();
+  private seq = 0;
+
+  constructor(private readonly options: ShellHostOptions) {}
+
+  onWindowClosed(listener: (id: string) => void): () => void {
+    this.windowClosedListeners.add(listener);
+    return () => this.windowClosedListeners.delete(listener);
   }
 
-  close(): void {
-    const win = this.alive();
-    this.win = null;
-    win?.close();
+  onViewClosed(listener: (id: string) => void): () => void {
+    this.viewClosedListeners.add(listener);
+    return () => this.viewClosedListeners.delete(listener);
   }
 
-  /** 调用方需保证 Electron 已 ready。 */
-  open(): BrowserWindow {
-    const current = this.alive();
-    if (current) return current;
+  onWindowActivated(listener: (id: string) => void): () => void {
+    this.windowActivatedListeners.add(listener);
+    return () => this.windowActivatedListeners.delete(listener);
+  }
 
+  openWindow(workspaceId: string): WindowRecord {
+    const existingId = this.byWorkspace.get(workspaceId);
+    const existing = existingId ? this.windows.get(existingId) : null;
+    if (existing) {
+      existing.window.focus();
+      return existing.record;
+    }
     const isMac = process.platform === 'darwin';
-    const theme = this.theme;
-    const { webPreferences: overridePreferences, ...windowOptions } =
-      this.options.browserWindow ?? {};
-    const created = new BrowserWindow({
-      width: this.options.width ?? 1440,
-      height: this.options.height ?? 900,
+    const dev = Boolean(process.env['ELECTRON_RENDERER_URL']);
+    const theme =
+      this.options.window?.theme ??
+      (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+    const background = theme === 'dark' ? '#1a1c1d' : '#f4f4f5';
+    const window = new BrowserWindow({
+      width: this.options.window?.width ?? 1440,
+      height: this.options.window?.height ?? 900,
       minWidth: 960,
       minHeight: 600,
       show: false,
-      backgroundColor: WINDOW_BACKGROUND[theme],
-      // 三键 / 红绿灯由系统绘制：macOS 走 hiddenInset + 位置微调；
-      // Windows / Linux 隐藏标题栏后必须挂 WCO 覆盖层，否则没有最小化 / 最大化 / 关闭。
+      title: 'WorkStudio',
+      backgroundColor: background,
       titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
       ...(isMac
         ? { trafficLightPosition: { x: 16, y: 12 } }
-        : { titleBarOverlay: titleBarOverlay(theme) }),
-      ...windowOptions,
+        : {
+            titleBarOverlay: {
+              ...(theme === 'light'
+                ? TITLEBAR_OVERLAY_COLORS.light
+                : TITLEBAR_OVERLAY_COLORS.dark),
+              height: TITLEBAR_HEIGHT,
+            },
+          }),
+      ...this.options.window?.browserWindow,
       webPreferences: {
+        ...(this.options.preload ? { preload: this.options.preload } : {}),
         contextIsolation: true,
         sandbox: true,
-        ...this.options.webPreferences,
-        ...overridePreferences,
+        ...this.options.window?.browserWindow?.webPreferences,
       },
     });
-    hardenWebContents(created.webContents);
-
-    created.webContents.on('did-finish-load', () => {
-      for (const listener of Array.from(this.loadedListeners)) listener();
-    });
-    created.on('resize', () => {
-      for (const listener of Array.from(this.resizeListeners)) listener();
-    });
-    created.on('closed', () => {
-      if (this.win === created) this.win = null;
-      for (const listener of Array.from(this.closedListeners)) listener();
-    });
-
-    this.win = created;
-    return created;
-  }
-
-  current(): BrowserWindow | null {
-    return this.alive();
-  }
-
-  load(url: string): void {
-    const current = this.alive();
-    if (!current) return;
-    if (this.options.show !== false) {
-      current.once('ready-to-show', () => {
-        if (!current.isDestroyed()) current.show();
+    hardenWebContents(window.webContents);
+    if (this.options.window?.show !== false) {
+      window.once('ready-to-show', () => {
+        if (!window.isDestroyed()) window.show();
       });
     }
-    void current.loadURL(url);
+    const id = workspaceId;
+    const record: WindowRecord = { id, workspaceId, active: true };
+    const senderId = String(window.webContents.id);
+    this.windows.set(id, { record, window, senderId });
+    this.byWorkspace.set(workspaceId, id);
+    this.registerShellOrigin(senderId, id);
+    window.on('focus', () => this.activateWindow(id));
+    window.on('resize', () => this.resizeWindow(id));
+    window.on('closed', () => this.forgetWindow(id));
+    if (this.options.shellUrl) void window.loadURL(this.options.shellUrl);
+    if (this.options.assistantUrl) {
+      this.mountView(
+        this.windows.get(id)!,
+        {
+          id: `assistant:${workspaceId}`,
+          type: 'assistant',
+          title: 'AI 助手',
+          url: this.options.assistantUrl,
+        },
+        false,
+      );
+    }
+    if (this.options.overlayUrl) {
+      this.mountView(
+        this.windows.get(id)!,
+        {
+          id: `overlay:${workspaceId}`,
+          type: 'overlay',
+          title: '对话框',
+          url: this.options.overlayUrl,
+        },
+        false,
+      );
+    }
+    if (this.options.captureUrl) {
+      this.mountView(
+        this.windows.get(id)!,
+        {
+          id: `capture:${workspaceId}`,
+          type: 'capture',
+          title: '捕获层',
+          url: this.options.captureUrl,
+        },
+        false,
+      );
+    }
+    return record;
   }
 
-  show(): void {
-    this.alive()?.show();
+  openWelcome(): ViewRecord | null {
+    if (!this.options.welcomeUrl) return null;
+    const windowEntry = this.activeWindowEntry();
+    if (!windowEntry) return null;
+    const existing = this.views.get('welcome');
+    if (existing) {
+      this.activateView('welcome');
+      return existing.record;
+    }
+    return this.mountView(
+      windowEntry,
+      {
+        id: 'welcome',
+        type: 'page',
+        title: '欢迎',
+        url: this.options.welcomeUrl,
+      },
+      true,
+    );
   }
 
-  focus(): void {
-    this.alive()?.focus();
+  focusWindow(id: string): void {
+    this.windows.get(id)?.window.focus();
   }
 
-  bounds(): Rectangle | null {
-    return this.alive()?.getContentBounds() ?? null;
+  windowSize(id: string): { width: number; height: number } | null {
+    const entry = this.windows.get(id);
+    if (!entry || entry.window.isDestroyed()) return null;
+    const [width = 0, height = 0] = entry.window.getContentSize();
+    return { width, height };
   }
 
-  cursor(): { x: number; y: number } | null {
-    const current = this.alive();
-    if (!current) return null;
-    const bounds = current.getContentBounds();
+  async pickDirectory(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+
+  async openPath(path: string): Promise<void> {
+    await shell.openPath(path);
+  }
+
+  popupMenu(
+    items: Array<{ id: string; label: string; disabled?: boolean }>,
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      const menu = Menu.buildFromTemplate(
+        items.map((item) => ({
+          label: item.label,
+          enabled: item.disabled !== true,
+          click: () => resolve(item.id),
+        })),
+      );
+      menu.popup({ callback: () => resolve(null) });
+    });
+  }
+
+  windowCursor(id: string): { x: number; y: number } | null {
+    const entry = this.windows.get(id);
+    if (!entry || entry.window.isDestroyed()) return null;
+    const bounds = entry.window.getContentBounds();
     const point = screen.getCursorScreenPoint();
     return { x: point.x - bounds.x, y: point.y - bounds.y };
   }
 
-  webContentsId(): number | null {
-    return this.alive()?.webContents.id ?? null;
+  closeWindow(id: string): void {
+    this.windows.get(id)?.window.close();
   }
 
-  send(channel: string, payload: unknown): void {
-    this.alive()?.webContents.send(channel, payload);
+  listWindows(): WindowRecord[] {
+    return [...this.windows.values()].map((entry) => entry.record);
   }
 
-  onLoaded(listener: () => void): () => void {
-    this.loadedListeners.add(listener);
-    return () => {
-      this.loadedListeners.delete(listener);
-    };
-  }
-
-  onResize(listener: () => void): () => void {
-    this.resizeListeners.add(listener);
-    return () => {
-      this.resizeListeners.delete(listener);
-    };
-  }
-
-  onClosed(listener: () => void): () => void {
-    this.closedListeners.add(listener);
-    return () => {
-      this.closedListeners.delete(listener);
-    };
-  }
-
-  /** 直接设置窗口内容区（平台级几何入口；布局由 WorkspaceWindow 负责）。 */
-  setContentBounds(bounds: Rectangle): void {
-    this.alive()?.setContentBounds(bounds);
-  }
-
-  /** 主题切换：同步窗口底色与 WCO 覆盖层（macOS 红绿灯由 nativeTheme 跟随）。 */
-  applyTheme(theme: Theme): void {
-    this.theme = theme;
-    const win = this.alive();
-    if (!win) return;
-    win.setBackgroundColor(WINDOW_BACKGROUND[theme]);
-    if (process.platform === 'darwin') return;
-    try {
-      win.setTitleBarOverlay(titleBarOverlay(theme));
-    } catch {
-      /* 平台 / 桌面环境不支持 WCO */
+  activeWindow(): string | null {
+    for (const [id, entry] of this.windows) {
+      if (entry.window.isFocused()) return id;
     }
+    return this.windows.keys().next().value ?? null;
   }
 
-  protected alive(): BrowserWindow | null {
-    return this.win && !this.win.isDestroyed() ? this.win : null;
-  }
-}
-
-export class WorkspaceWindow extends AppWindow {
-  readonly wsId: string;
-  /** 窗口级系统视图：shell / assistant / overlay / capture。 */
-  readonly global: GlobalViews;
-  /** 资源面板标签：page / web。 */
-  readonly tabs: Tabs;
-  windowId = 0;
-  private layout: LayoutSnapshot | null = null;
-  private stackKey = '';
-  private chromeKey = '';
-
-  constructor(wsId: string, options: WindowOptions = {}) {
-    super(options);
-    this.wsId = wsId;
-    this.global = new GlobalViews(this);
-    this.tabs = new Tabs(this);
+  openView(input: ViewOpenInput): ViewRecord {
+    const windowEntry = this.activeWindowEntry();
+    if (!windowEntry) throw new Error('没有可用的工作区窗口');
+    return this.mountView(windowEntry, input, true);
   }
 
-  /** 窗口创建即注册 shell；shell 只是 GlobalViews 里的一条记录。 */
-  override open(): BrowserWindow {
-    const window = super.open();
-    this.global.attachShell();
-    this.attachShortcuts(window.webContents);
-    return window;
-  }
-
-  /** 新 tab 创建后补写当前内容区几何（不等待下一次 layout 发布）。 */
-  applyTabLayout(): void {
-    if (this.layout) this.tabs.setUniformBounds(this.layout.resourceContent);
-  }
-
-  /** 把布局快照落实到原生视图：内容区 / 助手 / 浮层 / 捕获层。 */
-  applyLayout(layout: LayoutSnapshot): void {
-    this.layout = layout;
-    this.tabs.setUniformBounds(layout.resourceContent);
-    for (const record of this.global.list()) {
-      const rect =
-        record.type === 'assistant'
-          ? layout.assistantMode === 'floating'
-            ? layout.assistantFloating
-            : layout.assistantDock
-          : record.type === 'overlay'
-            ? layout.overlay
-            : record.type === 'capture'
-              ? layout.capture
-              : null;
-      if (rect) this.global.setBounds(record.id, rect);
-      if (record.type === 'assistant')
-        this.global.show(record.id, layout.assistantVisible);
-    }
-    this.applyAssistantChrome(layout);
-    this.applyStack();
-  }
-
-  override applyTheme(theme: Theme): void {
-    super.applyTheme(theme);
-    if (this.layout) this.applyAssistantChrome(this.layout);
-  }
-
-  /** 助手外观：浮动态透明底 + 原生圆角；停靠态主题底色。 */
-  private applyAssistantChrome(layout: LayoutSnapshot): void {
-    const assistants = this.global
-      .list()
-      .filter((record) => record.type === 'assistant');
-    if (assistants.length === 0) return;
-    const floating = layout.assistantMode === 'floating';
-    const key = `${layout.assistantMode}:${this.theme}`;
-    if (key === this.chromeKey) return;
-    this.chromeKey = key;
-    for (const record of assistants) {
-      const view = this.global.nativeView(record.id);
-      if (!view) continue;
-      try {
-        view.setBorderRadius(floating ? 12 : 0);
-      } catch {
-        /* 平台不支持原生圆角 */
-      }
-      try {
-        view.setBackgroundColor(
-          floating ? '#00000000' : WINDOW_BACKGROUND[this.theme],
-        );
-      } catch {
-        /* 平台不支持透明底 */
-      }
-    }
-  }
-
-  /** 原生视图栈序：内容 → 助手 → overlay → capture。 */
-  private applyStack(): void {
-    const win = this.alive();
-    if (!win) return;
-    const rank = (type: string): number =>
-      type === 'assistant'
-        ? 1
-        : type === 'overlay'
-          ? 2
-          : type === 'capture'
-            ? 3
-            : 0;
-    const views = [...this.tabs.all(), ...this.global.list()]
-      .filter((record) => record.type !== 'shell')
-      .sort((a, b) => rank(a.type) - rank(b.type));
-    const key = views.map((record) => record.id).join('|');
-    if (key === this.stackKey) return;
-    this.stackKey = key;
-    for (const record of views) {
-      const view =
-        this.tabs.get(record.id) !== null
-          ? this.tabs.nativeView(record.id)
-          : this.global.nativeView(record.id);
-      if (!view) continue;
-      try {
-        win.contentView.addChildView(view);
-      } catch {
-        /* 视图已销毁 */
-      }
-    }
-  }
-
-  /** 基本标签快捷键：Cmd/Ctrl+W 关闭激活视图，Cmd/Ctrl+1..9 激活第 N 个。 */
-  private attachShortcuts(wc: WebContents): void {
-    wc.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown') return;
-      if (!(input.meta || input.control) || input.alt) return;
-      const key = input.key.toLowerCase();
-      if (key === 'w') {
-        const active = this.tabs.activeViewId();
-        if (!active) return;
-        event.preventDefault();
-        this.tabs.remove(active);
-        return;
-      }
-      const digit = Number.parseInt(key, 10);
-      if (Number.isNaN(digit) || digit < 1 || digit > 9) return;
-      const target = this.tabs.all()[digit - 1];
-      if (!target) return;
-      event.preventDefault();
-      this.tabs.activate(target.id);
-    });
-  }
-}
-
-/** 一个工作区最多一个窗口：wsId → WorkspaceWindow。 */
-export class WindowManager {
-  private readonly byWorkspace = new Map<string, WorkspaceWindow>();
-  private readonly byWindow = new Map<number, WorkspaceWindow>();
-  private readonly openListeners = new Set<(window: WorkspaceWindow) => void>();
-  private readonly closeListeners = new Set<
-    (window: WorkspaceWindow) => void
-  >();
-  private last: WorkspaceWindow | null = null;
-  private lastWsId: string | null = null;
-
-  constructor(private readonly theme: () => Theme = () => 'dark') {}
-
-  closeAll(): void {
-    for (const window of this.byWorkspace.values()) {
-      window.close();
-      this.forget(window);
-    }
-    this.byWorkspace.clear();
-    this.byWindow.clear();
-    this.last = null;
-    this.lastWsId = null;
-  }
-
-  open(wsId: string, options: WindowOptions = {}): WorkspaceWindow {
-    const existing = this.byWorkspace.get(wsId);
+  private mountView(
+    windowEntry: WindowEntry,
+    input: ViewOpenInput,
+    activate: boolean,
+  ): ViewRecord {
+    const existing = input.id ? this.views.get(input.id) : null;
     if (existing) {
-      existing.focus();
-      this.last = existing;
-      this.lastWsId = wsId;
-      return existing;
+      if (activate) this.activateView(existing.record.id);
+      return existing.record;
     }
-
-    const window = new WorkspaceWindow(wsId, {
-      ...options,
-      theme: this.theme(),
+    const id = input.id ?? `view-${++this.seq}`;
+    const dev = Boolean(process.env['ELECTRON_RENDERER_URL']);
+    const view = new WebContentsView({
+      webPreferences: {
+        ...(input.type === 'capture'
+          ? this.options.capturePreload
+            ? { preload: this.options.capturePreload }
+            : {}
+          : input.type !== 'web' && this.options.preload
+            ? { preload: this.options.preload }
+            : {}),
+        contextIsolation: true,
+        sandbox: true,
+        ...(dev ? { webSecurity: false } : {}),
+      },
     });
-    try {
-      const win = window.open();
-      window.windowId = win.id;
-    } catch (error) {
-      window.close();
-      throw error;
+    const record: ViewRecord = {
+      id,
+      type: input.type,
+      title: input.title,
+      ...(input.url ? { url: input.url } : {}),
+      active: activate,
+      dirty: false,
+      pinned: false,
+    };
+    if (activate) {
+      for (const [otherId, entry] of this.views) {
+        if (entry.window !== windowEntry.window) continue;
+        if (entry.record.type !== 'page' && entry.record.type !== 'web') {
+          continue;
+        }
+        entry.view.setVisible(false);
+        this.views.set(otherId, entry);
+      }
     }
-    this.byWorkspace.set(wsId, window);
-    this.byWindow.set(window.windowId, window);
-    this.last = window;
-    this.lastWsId = wsId;
-    window.onClosed(() => this.forget(window));
-    for (const listener of Array.from(this.openListeners)) listener(window);
-    return window;
+    if (input.type === 'overlay') {
+      view.setBackgroundColor('#00000000');
+      view.setVisible(false);
+    }
+    if (input.type === 'capture') view.setVisible(false);
+    windowEntry.window.contentView.addChildView(view);
+    const senderId = String(view.webContents.id);
+    this.views.set(id, {
+      record,
+      view,
+      window: windowEntry.window,
+      senderId,
+    });
+    this.resizeWindow(windowEntry.record.id);
+    this.options.origins.register(senderId, {
+      type: 'view',
+      viewId: id,
+      viewType: input.type,
+    });
+    view.webContents.on('destroyed', () => {
+      this.options.origins.remove(senderId);
+      this.views.delete(id);
+      for (const listener of this.viewClosedListeners) listener(id);
+    });
+    if (input.type === 'web') {
+      const onNavigate = (
+        event: { preventDefault(): void },
+        url: string,
+      ): void => {
+        if (!url.startsWith('work://studio/oauth')) return;
+        event.preventDefault();
+        this.closeView(id);
+        this.openView({ type: 'page', title: 'OAuth 回调', url });
+      };
+      view.webContents.on('will-navigate', onNavigate);
+      view.webContents.on('will-redirect', onNavigate);
+    }
+    if (input.url) void view.webContents.loadURL(input.url);
+    return record;
   }
 
-  get(wsId: string): WorkspaceWindow | null {
-    return this.byWorkspace.get(wsId) ?? null;
-  }
-
-  byWindowId(windowId: number): WorkspaceWindow | null {
-    return this.byWindow.get(windowId) ?? null;
-  }
-
-  list(): WorkspaceWindow[] {
-    return [...this.byWorkspace.values()];
-  }
-
-  active(): WorkspaceWindow | null {
-    return this.last && this.byWindow.has(this.last.windowId)
-      ? this.last
+  activeContentWebContents(): WebContents | null {
+    for (const entry of this.views.values()) {
+      if (
+        (entry.record.type === 'page' || entry.record.type === 'web') &&
+        entry.record.active &&
+        !entry.view.webContents.isDestroyed()
+      ) {
+        return entry.view.webContents;
+      }
+    }
+    const id = this.activeWindow();
+    const window = id ? this.windows.get(id) : null;
+    return window && !window.window.isDestroyed()
+      ? window.window.webContents
       : null;
   }
 
-  get lastWorkspaceId(): string | null {
-    return this.active()?.wsId ?? this.lastWsId;
-  }
-
-  focus(wsId: string): void {
-    const window = this.byWorkspace.get(wsId);
-    if (!window) return;
-    window.focus();
-    this.last = window;
-    this.lastWsId = wsId;
-  }
-
-  close(wsId: string): void {
-    const window = this.byWorkspace.get(wsId);
-    if (!window) return;
-    window.close();
-    this.forget(window);
-  }
-
-  onOpen(listener: (window: WorkspaceWindow) => void): () => void {
-    this.openListeners.add(listener);
-    return () => {
-      this.openListeners.delete(listener);
-    };
-  }
-
-  onClose(listener: (window: WorkspaceWindow) => void): () => void {
-    this.closeListeners.add(listener);
-    return () => {
-      this.closeListeners.delete(listener);
-    };
-  }
-
-  private forget(window: WorkspaceWindow): void {
-    if (!this.byWindow.has(window.windowId)) return;
-    if (this.byWorkspace.get(window.wsId) === window) {
-      this.byWorkspace.delete(window.wsId);
-    }
-    this.byWindow.delete(window.windowId);
-    if (this.last === window) {
-      this.last = this.byWorkspace.values().next().value ?? null;
-    }
-    for (const listener of Array.from(this.closeListeners)) listener(window);
-  }
-}
-
-const systemTheme = (): Theme =>
-  nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-
-export class ThemeManager {
-  /** 持久化的主题来源；现状由 nativeTheme.themeSource 承载。 */
-  private source: ThemeSource = 'system';
-  /** 当前有效主题；system 模式下随操作系统变化。 */
-  private current: Theme = systemTheme();
-  private offUpdated: (() => void) | null = null;
-  private readonly listeners = new Set<(theme: Theme) => void>();
-
-  bind(): void {
-    this.sync();
-    nativeTheme.themeSource = this.source;
-    nativeTheme.on('updated', this.onUpdated);
-    this.offUpdated = () =>
-      nativeTheme.removeListener('updated', this.onUpdated);
-  }
-
-  unbind(): void {
-    this.offUpdated?.();
-    this.offUpdated = null;
-  }
-
-  readSource(): ThemeSource {
-    return this.source;
-  }
-
-  read(): Theme {
-    return this.current;
-  }
-
-  subscribe(listener: (theme: Theme) => void): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  apply(source: ThemeSource): void {
-    if (source !== 'light' && source !== 'dark' && source !== 'system') {
-      throw new Error('theme source must be light, dark or system');
-    }
-    const sourceChanged = source !== this.source;
-    this.source = source;
-    nativeTheme.themeSource = source;
-    const themeChanged = this.sync();
-    // 来源改变但有效主题不变时，system domain 仍需拿到 themeSource。
-    if (sourceChanged && !themeChanged) this.notify();
-  }
-
-  private readonly onUpdated = (): void => {
-    this.sync();
-  };
-
-  /** 有效主题变化时通知；返回是否发生变化。 */
-  private sync(): boolean {
-    const next = systemTheme();
-    if (next === this.current) return false;
-    this.current = next;
-    this.notify();
-    return true;
-  }
-
-  private notify(): void {
-    for (const listener of Array.from(this.listeners)) listener(this.current);
-  }
-}
-
-export interface SceneOptions {
-  root?: string;
-}
-
-function safeId(wsId: string): string {
-  return wsId.replace(/[^a-zA-Z0-9._-]/g, '_') || 'default';
-}
-
-export class Scene {
-  private readonly options: SceneOptions;
-
-  constructor(options: SceneOptions = {}) {
-    this.options = options;
-  }
-
-  read(wsId: string): NativeScene | null {
-    try {
-      const parsed: unknown = JSON.parse(
-        readFileSync(this.fileOf(wsId), 'utf8'),
-      );
-      return parsed && typeof parsed === 'object'
-        ? (parsed as NativeScene)
-        : null;
-    } catch {
-      return null;
-    }
-  }
-
-  write(wsId: string, scene: NativeScene): void {
-    const file = this.fileOf(wsId);
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify(scene, null, 2), 'utf8');
-  }
-
-  private fileOf(wsId: string): string {
-    const root = this.options.root ?? join(app.getPath('userData'), 'scenes');
-    return join(root, safeId(wsId), 'scene.json');
-  }
-}
-
-export interface SaveFileOptions {
-  title?: string;
-  defaultPath?: string;
-  filters?: Array<{ name: string; extensions: string[] }>;
-}
-
-export interface MenuItem {
-  id: string;
-  label: string;
-  disabled?: boolean;
-}
-
-export class SystemActions {
-  private readonly windows: WindowManager;
-  private move: {
-    win: BrowserWindow;
-    bounds: Rectangle;
-    point: Point;
-    restoreSingleSpace: boolean;
-  } | null = null;
-
-  constructor(windows: WindowManager) {
-    this.windows = windows;
-  }
-
-  /** 窗口位移使用全局屏幕 DIP，不受视图边界或当前显示器约束。 */
-  beginWindowMove(wsId: string): boolean {
-    const win = this.windows.get(wsId)?.current();
-    if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized())
-      return false;
-    this.endWindowMove();
-    const restoreSingleSpace =
-      process.platform === 'darwin' && !win.isVisibleOnAllWorkspaces();
-    // 拖动期间跨越当前桌面空间；松手后重新归属目标屏幕。
-    if (restoreSingleSpace)
-      win.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-        skipTransformProcessType: true,
-      });
-    this.move = {
-      win,
-      bounds: win.getBounds(),
-      point: screen.getCursorScreenPoint(),
-      restoreSingleSpace,
-    };
-    return true;
-  }
-
-  updateWindowMove(): boolean {
-    const move = this.move;
-    if (!move || move.win.isDestroyed()) return false;
-    const point = screen.getCursorScreenPoint();
-    move.win.setBounds(
-      {
-        ...move.bounds,
-        x: Math.round(move.bounds.x + point.x - move.point.x),
-        y: Math.round(move.bounds.y + point.y - move.point.y),
-      },
-      false,
+  showCapture(windowId: string, cursor: string): void {
+    const entry = [...this.views.values()].find(
+      (item) =>
+        item.record.type === 'capture' &&
+        item.window === this.windows.get(windowId)?.window,
     );
-    return true;
-  }
-
-  endWindowMove(): void {
-    const move = this.move;
-    if (!move) return;
-    this.updateWindowMove();
-    this.move = null;
-    if (move.restoreSingleSpace && !move.win.isDestroyed()) {
-      move.win.setVisibleOnAllWorkspaces(false, {
-        skipTransformProcessType: true,
-      });
-      move.win.focus();
-    }
-  }
-
-  openExternal(url: string): void {
-    void shell.openExternal(url);
-  }
-
-  openPath(path: string): void {
-    void shell.openPath(path);
-  }
-
-  async pickDirectory(wsId?: string): Promise<string | null> {
-    const options: OpenDialogOptions = { properties: ['openDirectory'] };
-    const win = this.parent(wsId);
-    const result = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options);
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  }
-
-  async pickSaveFile(
-    wsId: string | null,
-    input: SaveFileOptions,
-  ): Promise<string | null> {
-    const options: SaveDialogOptions = {
-      ...(input.title ? { title: input.title } : {}),
-      ...(input.defaultPath ? { defaultPath: input.defaultPath } : {}),
-      ...(input.filters ? { filters: input.filters } : {}),
-    };
-    const win = this.parent(wsId);
-    const result = win
-      ? await dialog.showSaveDialog(win, options)
-      : await dialog.showSaveDialog(options);
-    return result.canceled ? null : (result.filePath ?? null);
-  }
-
-  popupMenu(wsId: string | null, items: MenuItem[]): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-      let selected: string | null = null;
-      const template: MenuItemConstructorOptions[] = items.map((item) => ({
-        label: item.label,
-        enabled: !item.disabled,
-        click: () => {
-          selected = item.id;
-        },
-      }));
-      const menu = Menu.buildFromTemplate(template);
-      const win = this.parent(wsId);
-      menu.popup({
-        ...(win ? { window: win } : {}),
-        callback: () => resolve(selected),
-      });
+    if (!entry || entry.view.webContents.isDestroyed()) return;
+    entry.view.setVisible(true);
+    entry.view.webContents.focus();
+    entry.view.webContents.send('workstudio:capture', {
+      type: 'cursor',
+      cursor,
     });
   }
 
-  private parent(wsId?: string | null): BaseWindow | null {
-    const window = wsId ? this.windows.get(wsId) : this.windows.active();
-    return window?.current() ?? null;
+  hideCapture(windowId: string): void {
+    const window = this.windows.get(windowId)?.window;
+    if (!window) return;
+    for (const entry of this.views.values()) {
+      if (entry.record.type === 'capture' && entry.window === window) {
+        entry.view.setVisible(false);
+      }
+    }
+    if (!window.isDestroyed()) window.webContents.focus();
+  }
+
+  setSystemViewVisible(type: 'assistant' | 'overlay', visible: boolean): void {
+    for (const entry of this.views.values()) {
+      if (entry.record.type !== type) continue;
+      if (!entry.view.webContents.isDestroyed()) entry.view.setVisible(visible);
+    }
+  }
+
+  activateView(id: string): void {
+    const entry = this.views.get(id);
+    if (!entry) return;
+    for (const [otherId, other] of this.views) {
+      if (other.window !== entry.window) continue;
+      if (other.record.type !== 'page' && other.record.type !== 'web') {
+        continue;
+      }
+      other.view.setVisible(otherId === id);
+    }
+    entry.window.contentView.addChildView(entry.view);
+    this.resizeWindow(this.windowIdOf(entry.window));
+    entry.view.webContents.focus();
+  }
+
+  closeView(id: string): void {
+    const entry = this.views.get(id);
+    if (!entry) return;
+    // 先从映射移除，避免关闭事件异步到达时覆盖紧随其后的同 id 新视图。
+    this.views.delete(id);
+    this.options.origins.remove(entry.senderId);
+    entry.window.contentView.removeChildView(entry.view);
+    entry.view.webContents.close();
+  }
+
+  /** 主题与内容缩放应用到所有窗口/视图。 */
+  applyAppearance(
+    theme: 'light' | 'dark',
+    zoom: number,
+    source?: 'light' | 'dark' | 'system',
+  ): void {
+    nativeTheme.themeSource = source ?? theme;
+    const effective = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+    const background = effective === 'dark' ? '#1a1c1d' : '#f4f4f5';
+    for (const entry of this.windows.values()) {
+      if (!entry.window.isDestroyed()) {
+        entry.window.setBackgroundColor(background);
+        if (process.platform !== 'darwin') {
+          try {
+            entry.window.setTitleBarOverlay({
+              ...(effective === 'light'
+                ? TITLEBAR_OVERLAY_COLORS.light
+                : TITLEBAR_OVERLAY_COLORS.dark),
+              height: TITLEBAR_HEIGHT,
+            });
+          } catch {
+            /* 平台不支持 */
+          }
+        }
+      }
+    }
+    for (const entry of this.views.values()) {
+      if (!entry.view.webContents.isDestroyed()) {
+        entry.view.webContents.setZoomFactor(zoom);
+      }
+    }
+  }
+
+  /** 应用布局快照到当前窗口的原生视图。 */
+  applyLayout(windowId: string, layout: LayoutSnapshot): void {
+    this.layouts.set(windowId, layout);
+    this.resizeWindow(windowId);
+  }
+
+  navigateView(id: string, url: string): void {
+    const entry = this.views.get(id);
+    if (!entry) return;
+    entry.record.url = url;
+    void entry.view.webContents.loadURL(url);
+  }
+
+  reloadView(id: string): void {
+    this.views.get(id)?.view.webContents.reload();
+  }
+
+  async evaluateView<T>(id: string, script: string): Promise<T> {
+    const entry = this.views.get(id);
+    if (!entry) throw new Error(`视图不存在：${id}`);
+    return entry.view.webContents.executeJavaScript(script, true) as Promise<T>;
+  }
+
+  async captureView(id: string): Promise<{
+    url: string;
+    title: string;
+    html: string;
+    text: string;
+  }> {
+    return this.evaluateView(
+      id,
+      `(() => ({
+      url: location.href,
+      title: document.title,
+      html: document.documentElement?.outerHTML ?? '',
+      text: document.body?.innerText ?? '',
+    }))()`,
+    );
+  }
+
+  async screenshotView(id: string): Promise<Uint8Array> {
+    const entry = this.views.get(id);
+    if (!entry) throw new Error(`视图不存在：${id}`);
+    const image = await entry.view.webContents.capturePage();
+    return new Uint8Array(image.toPNG());
+  }
+
+  setViewDirty(_id: string, _dirty: boolean): void {}
+
+  dispose(): void {
+    this.layouts.clear();
+    for (const entry of this.views.values()) {
+      entry.view.webContents.close();
+    }
+    this.views.clear();
+    for (const entry of this.windows.values()) entry.window.close();
+    this.windows.clear();
+    this.byWorkspace.clear();
+  }
+
+  private activeWindowEntry(): WindowEntry | null {
+    const id = this.activeWindow();
+    return id ? (this.windows.get(id) ?? null) : null;
+  }
+
+  private activateWindow(id: string): void {
+    for (const [key, entry] of this.windows) {
+      entry.record.active = key === id;
+    }
+    for (const listener of this.windowActivatedListeners) listener(id);
+  }
+
+  private forgetWindow(id: string): void {
+    const entry = this.windows.get(id);
+    if (!entry) return;
+    this.options.origins.remove(entry.senderId);
+    this.windows.delete(id);
+    this.byWorkspace.delete(entry.record.workspaceId);
+    this.layouts.delete(id);
+    for (const listener of this.windowClosedListeners) listener(id);
+  }
+
+  private registerShellOrigin(senderId: string, workspaceId: string): void {
+    this.options.origins.register(senderId, {
+      type: 'view',
+      viewId: `shell:${workspaceId}`,
+      viewType: 'shell',
+    });
+  }
+
+  private resizeWindow(windowId: string): void {
+    const windowEntry = this.windows.get(windowId);
+    if (!windowEntry || windowEntry.window.isDestroyed()) return;
+    const [width = 0, height = 0] = windowEntry.window.getContentSize();
+    const layout = this.layouts.get(windowId) ?? defaultLayout(width, height);
+    for (const entry of this.views.values()) {
+      if (entry.window !== windowEntry.window) continue;
+      const bounds = this.boundsOf(entry, layout, windowEntry.window);
+      entry.view.setBounds(bounds);
+      if (entry.record.type === 'page' || entry.record.type === 'web') {
+        entry.view.setVisible(entry.record.active);
+      } else if (entry.record.type === 'assistant') {
+        entry.view.setVisible(layout.assistantVisible);
+      }
+    }
+  }
+
+  private boundsOf(
+    entry: ViewEntry,
+    layout: LayoutSnapshot | undefined,
+    window: BrowserWindow,
+  ): Rect {
+    if (layout) {
+      switch (entry.record.type) {
+        case 'assistant':
+          return layout.assistantMode === 'floating'
+            ? layout.assistantFloating
+            : layout.assistantDock;
+        case 'overlay':
+          return layout.overlay;
+        case 'capture':
+          return layout.overlay;
+        default:
+          return layout.resourceContent;
+      }
+    }
+    const [width = 0, height = 0] = window.getContentSize();
+    const fallback = defaultLayout(width, height);
+    switch (entry.record.type) {
+      case 'assistant':
+        return fallback.assistantMode === 'floating'
+          ? fallback.assistantFloating
+          : fallback.assistantDock;
+      case 'overlay':
+        return fallback.overlay;
+      case 'capture':
+        return fallback.overlay;
+      default:
+        return fallback.resourceContent;
+    }
+  }
+
+  private windowIdOf(window: BrowserWindow): string {
+    for (const [id, entry] of this.windows) {
+      if (entry.window === window) return id;
+    }
+    return '';
   }
 }

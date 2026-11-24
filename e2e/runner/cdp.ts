@@ -189,8 +189,13 @@ export class CdpSession {
     return result?.result?.value as T;
   }
 
-  async evaluateFunction<T = unknown>(fn: () => T | Promise<T>): Promise<T> {
-    return this.evaluate<T>(`(${fn.toString()})()`);
+  async evaluateFunction<T = unknown>(
+    fn: (arg: unknown) => T | Promise<T>,
+    arg?: unknown,
+  ): Promise<T> {
+    return this.evaluate<T>(
+      `(${fn.toString()})(${JSON.stringify(arg ?? null)})`,
+    );
   }
 
   async screenshot(path: string): Promise<string> {

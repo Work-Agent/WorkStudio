@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   _electron as electron,
   type ElectronApplication,
@@ -17,6 +17,7 @@ export interface AppFixture {
 export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
   const dataDir =
     existingDataDir ?? mkdtempSync(join(tmpdir(), 'work-studio-e2e-'));
+  seedTestPlugin(dataDir);
   const app = await electron.launch({
     args: [
       '.',
@@ -34,6 +35,28 @@ export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
     },
   });
   return { app, dataDir };
+}
+
+function seedTestPlugin(dataDir: string): void {
+  const source = resolve('e2e/fixtures/html-viewer');
+  const target = join(dataDir, 'plugins', 'installed', 'html-viewer');
+  mkdirSync(join(dataDir, 'plugins', 'installed'), { recursive: true });
+  cpSync(source, target, { recursive: true });
+  writeFileSync(
+    join(dataDir, 'plugins', 'installed.json'),
+    `${JSON.stringify(
+      {
+        'html-viewer': {
+          id: 'html-viewer',
+          version: '2.0.0',
+          source: 'local',
+          installedAt: Date.now(),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 export async function windowByUrl(

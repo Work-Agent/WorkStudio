@@ -1,42 +1,23 @@
 /**
- * Electron 入口：进程生命周期在 App.run()，这里只组装窗口参数。
+ * 目标架构入口。
+ *
+ * 当前不接入 package.json；等 next 实现完整后一次性切换 out/main。
  */
 
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { App } from './app.ts';
-import { workUrl } from '../shared/pages.ts';
+import { app as electronApp } from 'electron';
+import { bootstrapNext, type BootstrapOptions } from './bootstrap.ts';
 
-const here = dirname(fileURLToPath(import.meta.url));
+export { NextApp, type NextAppOptions } from './app.ts';
+export { bootstrapNext, type BootstrapOptions };
 
-function rendererPage(
-  page: 'index' | 'assistant' | 'overlay' | 'settings' | 'welcome',
-): string {
-  return workUrl(page === 'index' ? 'shell' : page);
+/** 直接启动；失败时退出进程，避免 Electron 悬挂。 */
+export function runNext(options: BootstrapOptions = {}): void {
+  void bootstrapNext(options)
+    .then((result) => {
+      if (!result) electronApp.quit();
+    })
+    .catch((error: unknown) => {
+      console.error('[next] failed to start', error);
+      electronApp.quit();
+    });
 }
-
-function shellUrl(): string {
-  return workUrl('shell');
-}
-
-function shellPreload(): string {
-  return join(here, '../preload/work-studio.cjs');
-}
-
-void App.run({
-  url: shellUrl(),
-  window: {
-    webPreferences: { preload: shellPreload() },
-  },
-  capturePreload: join(here, '../preload/capture.cjs'),
-  rendererRoot: join(here, '../renderer'),
-  ...(process.env['ELECTRON_RENDERER_URL']
-    ? { devBase: process.env['ELECTRON_RENDERER_URL'].replace(/\/+$/, '') }
-    : {}),
-  preloads: {
-    workStudio: join(here, '../preload/work-studio.cjs'),
-  },
-  rendererPage,
-}).catch((error: unknown) => {
-  console.error('[app] failed to start', error);
-});

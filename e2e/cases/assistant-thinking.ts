@@ -2,7 +2,7 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'assistant.thinking',
-  title: '助手 thinking levels 来自 thinking domain',
+  title: '助手 thinking levels 来自 agent/sessions',
   tags: ['dev', 'ci'],
   async run(ctx) {
     const assistant = await ctx.waitForPage(
@@ -11,10 +11,10 @@ export default defineCase({
     await ctx.expect.poll(async () => {
       const levels = (await assistant.evaluate(async () => {
         const state = (await window.workStudio.subscribe(
-          'thinking',
-          'current',
-        )) as { levels?: string[] } | null;
-        return state?.levels ?? [];
+          'agent',
+          'sessions',
+        )) as { thinking?: { levels?: string[] } } | null;
+        return state?.thinking?.levels ?? [];
       })) as string[];
       return Array.isArray(levels) && levels.length > 0;
     }, 'thinking levels 为空');

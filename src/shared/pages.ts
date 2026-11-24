@@ -13,7 +13,8 @@ export type SystemPage =
   | 'overlay'
   | 'capture'
   | 'welcome'
-  | 'settings';
+  | 'settings'
+  | 'oauth';
 
 /** 系统页 → URL；设置卡片作为路径段。 */
 export function workUrl(page: SystemPage, card?: string): string {
