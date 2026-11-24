@@ -325,6 +325,9 @@ export class ShellHost {
     if (input.type === 'overlay') {
       view.setBackgroundColor('#00000000');
       view.setVisible(false);
+    } else if (input.type !== 'capture') {
+      // WebContentsView 默认白底；深色模式下新页面首帧会先露出白色。
+      view.setBackgroundColor(this.backgroundColor());
     }
     if (input.type === 'capture') view.setVisible(false);
     windowEntry.window.contentView.addChildView(view);
@@ -465,10 +468,16 @@ export class ShellHost {
       }
     }
     for (const entry of this.views.values()) {
-      if (!entry.view.webContents.isDestroyed()) {
-        entry.view.webContents.setZoomFactor(zoom);
+      if (entry.view.webContents.isDestroyed()) continue;
+      entry.view.webContents.setZoomFactor(zoom);
+      if (entry.record.type !== 'overlay' && entry.record.type !== 'capture') {
+        entry.view.setBackgroundColor(background);
       }
     }
+  }
+
+  private backgroundColor(): string {
+    return nativeTheme.shouldUseDarkColors ? '#1a1c1d' : '#f4f4f5';
   }
 
   /** 应用布局快照到当前窗口的原生视图。 */

@@ -56,6 +56,25 @@ function renamePiNodeGlobals(): Plugin {
   };
 }
 
+/**
+ * 首帧底色：页面 CSS 尚未加载时先按系统深浅铺底，避免深色模式出现白闪。
+ * 页面自己的样式表随后覆盖；透明页（capture / overlay）在内联样式中显式透明。
+ */
+function initialThemeBackground(): Plugin {
+  return {
+    name: 'ws-initial-theme-background',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html: string) {
+        return html.replace(
+          '<head>',
+          '<head><style>html{background:#f4f4f5;color-scheme:light}@media (prefers-color-scheme:dark){html{background:#1a1c1d;color-scheme:dark}}</style>',
+        );
+      },
+    },
+  };
+}
+
 /** work:// 系统页从 Vite 加载开发模块，并使用同一服务的热更新连接。 */
 function workPageDevAssets(): Plugin {
   return {
@@ -127,7 +146,12 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react(), tailwindcss(), workPageDevAssets()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      workPageDevAssets(),
+      initialThemeBackground(),
+    ],
     build: {
       outDir: resolve(__dirname, 'out/renderer'),
       rolldownOptions: {
