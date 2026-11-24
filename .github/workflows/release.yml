@@ -177,16 +177,21 @@ jobs:
           fi
           for app in "${apps[@]}"; do
             echo "==> $app"
-            codesign --verify --deep --strict "$app"
-            if ! codesign -dv "$app" 2>&1 | grep -q "Developer ID Application"; then
+            codesign --verify --deep --strict --verbose=2 "$app"
+            # 先落变量再匹配：`codesign ... | grep -q` 在 pipefail 下可能因
+            # SIGPIPE 误判，失败时也看不到真实签名信息。
+            signature="$(codesign -dv --verbose=4 "$app" 2>&1 || true)"
+            printf '%s\n' "$signature"
+            grep -q "Developer ID Application" <<<"$signature" || {
               echo "::error::$app is not signed with Developer ID Application"
               exit 1
-            fi
-            if ! spctl -a -vvv "$app" 2>&1 | grep -q "accepted"; then
+            }
+            gatekeeper="$(spctl -a -vvv "$app" 2>&1 || true)"
+            printf '%s\n' "$gatekeeper"
+            grep -q "accepted" <<<"$gatekeeper" || {
               echo "::error::$app was rejected by Gatekeeper (not notarized?)"
-              spctl -a -vvv "$app" || true
               exit 1
-            fi
+            }
           done
 
       - name: Upload installers to release
