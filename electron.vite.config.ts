@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
-import type { Plugin } from 'vite';
+import { defaultAllowedOrigins, type Plugin } from 'vite';
 import * as CHANNELS from './src/shared/channels';
 import { parsePluginRegistry } from './src/shared/plugin-registry';
 
@@ -108,6 +108,33 @@ function renamePiNodeGlobals(): Plugin {
   };
 }
 
+/** work:// 系统页从 Vite 加载开发模块，并使用同一服务的热更新连接。 */
+function workPageDevAssets(): Plugin {
+  return {
+    name: 'ws-work-page-dev-assets',
+    apply: 'serve',
+    config() {
+      return {
+        server: { cors: { origin: ['work://studio', defaultAllowedOrigins] } },
+      };
+    },
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, { path, server }) {
+        const devUrl = server?.resolvedUrls?.local[0];
+        if (!devUrl) return;
+        return [
+          {
+            tag: 'base',
+            attrs: { href: new URL(path, devUrl).href },
+            injectTo: 'head-prepend',
+          },
+        ];
+      },
+    },
+  };
+}
+
 /**
  * electron-vite 构建配置（三段：main / preload / renderer）。
  *
@@ -152,7 +179,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), workPageDevAssets()],
     build: {
       outDir: resolve(__dirname, 'out/renderer'),
       rolldownOptions: {
