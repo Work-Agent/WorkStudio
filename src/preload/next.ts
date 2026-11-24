@@ -48,3 +48,24 @@ const bridge: WorkStudioBridge = {
 };
 
 contextBridge.exposeInMainWorld('workStudio', bridge);
+
+/** 所有系统视图共享同一主题投影；CSS 用 .dark / prefers-color-scheme 统一消费。 */
+function applyTheme(state: unknown): void {
+  const theme =
+    typeof state === 'object' &&
+    state !== null &&
+    (state as { theme?: unknown }).theme === 'dark'
+      ? 'dark'
+      : 'light';
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.documentElement.style.colorScheme = theme;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  void bridge.subscribe('shell', 'appearance').then(applyTheme);
+  bridge.onUpdate((update) => {
+    if (update.domain === 'shell' && update.resource === 'appearance') {
+      applyTheme(update.data);
+    }
+  });
+});
