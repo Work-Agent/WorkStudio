@@ -10,7 +10,7 @@ import { CallFailure } from '../../contract.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import { AgentContext } from './context.ts';
 import type { ToolSurface } from './tools.ts';
-import type { WorkspaceAgent } from './runtime/workspace-agent.ts';
+import type { SessionAgent } from './runtime/session-agent.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
 import type {
   ModelCatalogItem,
@@ -39,49 +39,66 @@ export interface SessionStreamState {
   tools: SessionToolState[];
 }
 
-/** 每个工作区一份：投影与任务状态都属于该工作区的 agent runtime。 */
-export interface SessionsState {
-  readonly workspaceId: string;
-  items: SessionMeta[];
+/** 一个打开会话的增量状态（消息、流式、任务）。 */
+export interface SessionEntryState {
+  key: string;
   messages: ParsedMessage[];
   stream: SessionStreamState;
   task: SessionTask | null;
+}
+
+/** 工作区的会话集合：多个会话可以同时打开并各自执行。 */
+export interface SessionsState {
+  readonly workspaceId: string;
+  items: SessionMeta[];
   opened: string[];
+  current: string | null;
+  readonly sessions: Map<string, SessionEntryState>;
   commands: Array<{ name: string; description?: string; source?: string }>;
   taskSeq: number;
+  draftSeq: number;
 }
 
 export function createSessionsState(workspaceId: string): SessionsState {
   return {
     workspaceId,
     items: [],
-    messages: [],
-    stream: { streaming: false, text: '', thinking: '', tools: [] },
-    task: null,
     opened: [],
+    current: null,
+    sessions: new Map(),
     commands: [],
     taskSeq: 0,
+    draftSeq: 0,
   };
 }
 
-function rememberOpened(state: SessionsState, file: string | null): void {
-  if (!file) return;
-  if (!state.opened.includes(file)) state.opened = [...state.opened, file];
+export function sessionEntryOf(
+  state: SessionsState,
+  key: string,
+): SessionEntryState {
+  let entry = state.sessions.get(key);
+  if (!entry) {
+    entry = {
+      key,
+      messages: [],
+      stream: { streaming: false, text: '', thinking: '', tools: [] },
+      task: null,
+    };
+    state.sessions.set(key, entry);
+  }
+  return entry;
 }
 
-/** 把 pi 事件归约成当前会话消息与流式投影；状态是权威，事件只是增量。 */
+/** 把 pi 事件归约成该会话的消息与流式投影。 */
 export function reduceSessionFrame(
-  state: SessionsState,
+  entry: SessionEntryState,
   frame: PiEventFrame,
-  host?: WorkspaceAgent | null,
+  host?: SessionAgent | null,
   onSync?: () => void,
 ): boolean {
   const snapshot = host?.getSnapshot();
-  const file = snapshot?.sessionFile ?? null;
-  rememberOpened(state, file);
   if (frame.event.type === 'agent_status_changed') return true;
-  if (!file) return false;
-  const prev = state.stream;
+  const prev = entry.stream;
   let next: SessionStreamState | null = null;
   let sync = false;
 
@@ -159,33 +176,48 @@ export function reduceSessionFrame(
     default:
       break;
   }
-  if (next) state.stream = next;
+  if (next) entry.stream = next;
   if (sync && host) {
     void host
       .getMessages()
       .then((messages) => {
-        state.messages = messages;
+        entry.messages = messages;
         onSync?.();
       })
       .catch(() => undefined);
   }
-  return true;
+  return Boolean(snapshot) || sync;
 }
 
-/** 会话投影按工作区资源化：`agent/<wsId>/sessions`（agent 只服务当前工作区）。 */
+export interface SessionsPort {
+  workspacePath(workspaceId: string): string | null;
+  listItems(workspaceId: string): Promise<SessionMeta[]>;
+  agentOf(workspaceId: string, key: string): SessionAgent | null;
+  ensureAgent(
+    workspaceId: string,
+    input: { sessionFile?: string; draftKey?: string },
+  ): Promise<SessionAgent>;
+  disposeAgent(workspaceId: string, key: string): Promise<void>;
+}
+
 export function defineSessionsResources(
   registry: DomainRegistry,
   states: Map<string, SessionsState>,
+  port: SessionsPort,
   thinking: ThinkingState | undefined,
-  runtimeOf: (workspaceId: string) => WorkspaceAgent | null,
-  ensureRuntime: (workspaceId: string) => Promise<WorkspaceAgent>,
-  idleItems: (workspaceId: string) => SessionMeta[],
+  resolveAgent: (workspaceId: string, key: string) => SessionAgent | null,
 ): {
   ensure: (workspaceId: string) => void;
   remove: (workspaceId: string) => void;
-  publish: (workspaceId?: string) => void;
-  event: (workspaceId: string, name: string, data: unknown) => void;
+  publish: (workspaceId: string, key?: string) => void;
+  event: (
+    workspaceId: string,
+    key: string,
+    name: string,
+    data: unknown,
+  ) => void;
   stateOf: (workspaceId: string) => SessionsState;
+  rekey: (workspaceId: string, from: string, to: string) => void;
 } {
   const domain = registry.define('agent');
   const registered = new Set<string>();
@@ -199,128 +231,277 @@ export function defineSessionsResources(
     return state;
   };
 
-  const publish = (workspaceId?: string): void => {
-    if (workspaceId) {
-      domain.resourceOf(`${workspaceId}/sessions`)?.publish();
-      return;
-    }
-    for (const id of registered) {
-      domain.resourceOf(`${id}/sessions`)?.publish();
+  const publish = (workspaceId: string, key?: string): void => {
+    domain.resourceOf(`${workspaceId}/sessions`)?.publish();
+    if (key) {
+      domain.resourceOf(`${workspaceId}/session/${key}`)?.publish();
     }
   };
 
-  const liveSnapshot = (workspaceId: string): unknown => {
-    const runtime = runtimeOf(workspaceId);
+  const entrySnapshot = (state: SessionsState, key: string): unknown => {
+    const agent = resolveAgent(state.workspaceId, key);
+    if (!agent) return null;
+    const entry = state.sessions.get(key) ?? null;
+    return {
+      sessionId: key,
+      workspaceId: state.workspaceId,
+      snapshot: agent.getSnapshot(),
+      messages: entry?.messages ?? [],
+      stream: entry?.stream ?? {
+        streaming: false,
+        text: '',
+        thinking: '',
+        tools: [],
+      },
+      task: entry?.task ?? null,
+    };
+  };
+
+  const aggregateSnapshot = (workspaceId: string): unknown => {
     const state = stateOf(workspaceId);
-    if (!runtime) {
-      return {
-        workspaceId,
-        current: null,
-        active: null,
-        items: idleItems(workspaceId),
-        commands: [],
-        task: null,
-        opened: [],
-        thinking: { level: null, levels: thinking?.levels ?? [] },
-      };
-    }
-    const snapshot = runtime.getSnapshot();
-    rememberOpened(state, snapshot.sessionFile);
+    const key = state.current;
+    const agent = key ? resolveAgent(workspaceId, key) : null;
+    const entry = key ? (state.sessions.get(key) ?? null) : null;
+    const file = agent?.getSnapshot().sessionFile ?? null;
     return {
       workspaceId,
-      current: snapshot,
-      active: {
-        sessionId: snapshot.sessionFile
-          ? encodeURIComponent(snapshot.sessionFile)
+      current: agent?.getSnapshot() ?? null,
+      active:
+        agent && key
+          ? {
+              sessionId: file ? encodeURIComponent(file) : null,
+              messages: entry?.messages ?? [],
+              stream: entry?.stream ?? {
+                streaming: false,
+                text: '',
+                thinking: '',
+                tools: [],
+              },
+            }
           : null,
-        messages: state.messages,
-        stream: state.stream,
-      },
       items: state.items,
-      commands: state.commands,
-      task: state.task,
       opened: state.opened,
+      commands: agent?.getCommands() ?? [],
+      task: entry?.task ?? null,
       thinking: {
-        level: snapshot.thinkingLevel,
+        level: (agent?.getSnapshot().thinkingLevel ?? null) as string | null,
         levels:
-          runtime.session.getAvailableThinkingLevels?.() ??
-          (['off', 'low', 'medium', 'high'] as string[]),
+          agent?.session.getAvailableThinkingLevels?.() ??
+          thinking?.levels ??
+          [],
       },
     };
   };
 
-  /** 每条命令都路由到该工作区自己的 runtime；没有就按需创建。 */
-  const define = (workspaceId: string): void => {
+  const defineSession = (workspaceId: string, key: string): void => {
+    const name = `${workspaceId}/session/${key}`;
+    if (domain.resourceOf(name)) return;
+    const resource = domain.resource(name);
     const state = stateOf(workspaceId);
-    const resource = domain.resource(`${workspaceId}/sessions`);
-    const agent = (): Promise<WorkspaceAgent> => ensureRuntime(workspaceId);
-    resource.snapshot(() => liveSnapshot(workspaceId));
+    resource.snapshot(() => entrySnapshot(state, key));
 
-    const guarded: (
-      action: string,
-      spec: {
-        summary: string;
-        args?: Parameters<typeof resource.command>[1]['args'];
-        run: (
-          input: Record<string, any>,
-          ctx: unknown,
-          runtime: WorkspaceAgent,
-        ) => unknown;
-      },
-    ) => void = (action, spec) => {
-      resource.command(action, {
-        summary: spec.summary,
-        ...(spec.args ? { args: spec.args } : {}),
-        run: async (input, ctx) => {
-          const runtime = await agent();
-          return spec.run(input as never, ctx, runtime);
-        },
-      });
+    const guard = (): SessionAgent => {
+      const agent = resolveAgent(workspaceId, key);
+      if (!agent) throw new CallFailure('not_found', `会话未运行：${key}`);
+      return agent;
     };
-
-    guarded('new', {
-      summary: '新建会话',
-      args: {},
-      run: async (_input, _ctx, runtime) => {
-        state.task = null;
-        await runtime.newSession();
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+    resource.command('prompt', {
+      summary: '向该会话发送消息',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        const agent = guard();
+        await agent.prompt({ text: String(input.text) });
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
       },
     });
-    guarded('open', {
+    resource.command('abort', {
+      summary: '中止该会话当前回合',
+      args: {},
+      run: async () => {
+        await guard().abort();
+        publish(workspaceId, key);
+        return null;
+      },
+    });
+    resource.command('steer', {
+      summary: '插入该会话当前回合',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        await guard().steer(String(input.text));
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('followUp', {
+      summary: '追加该会话下一回合',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        await guard().followUp(String(input.text));
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('compact', {
+      summary: '压缩该会话',
+      args: { instructions: { type: 'string' } },
+      run: async (input) => {
+        const instructions = input.instructions;
+        await guard().compact(
+          typeof instructions === 'string' ? instructions : undefined,
+        );
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('fork', {
+      summary: '从该会话消息分叉',
+      args: {
+        entryId: { type: 'string', required: true },
+        position: { enum: ['before', 'after'] },
+      },
+      run: async (input) => {
+        await guard().fork(
+          String(input.entryId),
+          input.position === 'before' ? 'before' : 'at',
+        );
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('rename', {
+      summary: '重命名该会话',
+      args: { name: { type: 'string', required: true } },
+      run: (input) => {
+        const agent = guard();
+        const id = agent.getSnapshot().sessionFile ?? '';
+        if (id) agent.renameSession(id, String(input.name));
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('delete', {
+      summary: '删除该会话',
+      args: {},
+      run: async () => {
+        const agent = guard();
+        const file = agent.getSnapshot().sessionFile;
+        if (file) await agent.deleteSession(file);
+        await port.disposeAgent(workspaceId, key);
+        state.opened = state.opened.filter((item) => item !== key);
+        if (state.current === key) state.current = state.opened[0] ?? null;
+        domain.remove(name);
+        state.items = await port
+          .listItems(workspaceId)
+          .catch(() => state.items);
+        publish(workspaceId);
+        return null;
+      },
+    });
+    resource.command('setModel', {
+      summary: '切换该会话模型',
+      args: {
+        provider: { type: 'string', required: true },
+        model: { type: 'string', required: true },
+      },
+      run: (input) => {
+        const agent = guard();
+        void agent.setModel(String(input.provider), String(input.model));
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+    resource.command('setThinking', {
+      summary: '切换该会话思考等级',
+      args: { level: { type: 'string', required: true } },
+      run: (input) => {
+        const agent = guard();
+        agent.setThinkingLevel(String(input.level));
+        publish(workspaceId, key);
+        return entrySnapshot(state, key);
+      },
+    });
+  };
+
+  const define = (workspaceId: string): void => {
+    const name = `${workspaceId}/sessions`;
+    if (domain.resourceOf(name)) return;
+    const state = stateOf(workspaceId);
+    const resource = domain.resource(name);
+    resource.snapshot(() => aggregateSnapshot(workspaceId));
+
+    const agentFor = (key: string | null): SessionAgent => {
+      const agent = key ? resolveAgent(workspaceId, key) : null;
+      if (!agent) throw new CallFailure('failed', '没有运行中的会话');
+      return agent;
+    };
+    const currentKey = (): string => {
+      if (!state.current) throw new CallFailure('failed', '没有当前会话');
+      return state.current;
+    };
+
+    resource.command('new', {
+      summary: '新建会话',
+      args: {},
+      run: async () => {
+        const draftKey = `draft-${++state.draftSeq}`;
+        const agent = await port.ensureAgent(workspaceId, { draftKey });
+        const key = agent.sessionKey;
+        sessionEntryOf(state, key);
+        state.current = key;
+        defineSession(workspaceId, key);
+        state.items = await port
+          .listItems(workspaceId)
+          .catch(() => state.items);
+        publish(workspaceId, key);
+        return aggregateSnapshot(workspaceId);
+      },
+    });
+    resource.command('open', {
       summary: '打开会话',
       args: {
         id: { type: 'string' },
         sessionId: { type: 'string' },
       },
-      run: async (input, _ctx, runtime) => {
-        const id = String(
-          (input as Record<string, unknown>)['id'] ??
-            (input as Record<string, unknown>)['sessionId'] ??
-            '',
-        );
-        await runtime.switchSession(id);
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+      run: async (input) => {
+        const file = String(input.id ?? input.sessionId ?? '');
+        if (!file) throw new CallFailure('invalid', '缺少会话文件');
+        const agent = await port.ensureAgent(workspaceId, {
+          sessionFile: file,
+        });
+        const key = agent.sessionKey;
+        sessionEntryOf(state, key);
+        state.opened = [...new Set([...state.opened, file])];
+        state.current = key;
+        defineSession(workspaceId, key);
+        state.items = await port
+          .listItems(workspaceId)
+          .catch(() => state.items);
+        publish(workspaceId, key);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('refresh', {
+    resource.command('refresh', {
       summary: '刷新会话投影',
       args: {},
-      run: (_input, _ctx, runtime) => {
+      run: async () => {
+        state.items = await port
+          .listItems(workspaceId)
+          .catch(() => state.items);
         publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('prompt', {
+    resource.command('prompt', {
       summary: '发送消息',
       args: { text: { type: 'string', required: true } },
-      run: async (input, _ctx, runtime) => {
-        const text = String((input as Record<string, unknown>)['text']);
+      run: async (input) => {
+        const agent = agentFor(currentKey());
+        const entry = sessionEntryOf(state, state.current!);
+        const text = String(input.text);
         const task: SessionTask = {
           id: ++state.taskSeq,
-          sessionFile: runtime.getSnapshot().sessionFile,
+          sessionFile: agent.getSnapshot().sessionFile,
           status: 'running',
           request: text,
           attempt: 1,
@@ -330,11 +511,11 @@ export function defineSessionsResources(
           artifacts: [],
           tools: [],
         };
-        state.task = task;
-        publish(workspaceId);
+        entry.task = task;
+        publish(workspaceId, state.current ?? undefined);
         try {
-          await runtime.prompt({ text });
-          task.status = runtime.getSnapshot().isStreaming
+          await agent.prompt({ text });
+          task.status = agent.getSnapshot().isStreaming
             ? 'unconfirmed'
             : 'done';
           task.stage = task.status === 'done' ? '本轮结束' : '等待执行结果';
@@ -344,166 +525,210 @@ export function defineSessionsResources(
           task.stage = '本轮失败';
           throw error;
         } finally {
-          publish(workspaceId);
+          publish(workspaceId, state.current ?? undefined);
         }
-        return runtimeSession(runtime.getSnapshot());
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('abort', {
+    resource.command('abort', {
       summary: '中止当前回合',
       args: {},
-      run: async (_input, _ctx, runtime) => {
-        if (state.task) {
-          state.task.status = 'stopping';
-          state.task.stage = '正在停止';
-          publish(workspaceId);
+      run: async () => {
+        const agent = agentFor(currentKey());
+        const entry = sessionEntryOf(state, state.current!);
+        if (entry.task) {
+          entry.task.status = 'stopping';
+          entry.task.stage = '正在停止';
+          publish(workspaceId, state.current ?? undefined);
         }
-        await runtime.abort();
-        if (state.task) {
-          state.task.status = runtime.getSnapshot().isStreaming
+        await agent.abort();
+        if (entry.task) {
+          entry.task.status = agent.getSnapshot().isStreaming
             ? 'unconfirmed'
             : 'stopped';
-          state.task.stage = '已请求停止';
+          entry.task.stage = '已请求停止';
         }
-        publish(workspaceId);
+        publish(workspaceId, state.current ?? undefined);
         return null;
       },
     });
-    guarded('setModel', {
+    resource.command('setModel', {
       summary: '切换当前会话模型',
       args: {
         provider: { type: 'string', required: true },
         model: { type: 'string', required: true },
       },
-      run: async (input, _ctx, runtime) => {
-        const value = input as Record<string, unknown>;
-        await runtime.setModel(
-          String(value['provider']),
-          String(value['model']),
+      run: async (input) => {
+        await agentFor(currentKey()).setModel(
+          String(input.provider),
+          String(input.model),
         );
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+        publish(workspaceId, state.current ?? undefined);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('steer', {
+    resource.command('steer', {
       summary: '插入当前回合',
       args: { text: { type: 'string', required: true } },
-      run: async (input, _ctx, runtime) => {
-        await runtime.steer(String((input as Record<string, unknown>)['text']));
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+      run: async (input) => {
+        await agentFor(currentKey()).steer(String(input.text));
+        publish(workspaceId, state.current ?? undefined);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('followUp', {
+    resource.command('followUp', {
       summary: '追加下一回合',
       args: { text: { type: 'string', required: true } },
-      run: async (input, _ctx, runtime) => {
-        await runtime.followUp(
-          String((input as Record<string, unknown>)['text']),
-        );
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+      run: async (input) => {
+        await agentFor(currentKey()).followUp(String(input.text));
+        publish(workspaceId, state.current ?? undefined);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('compact', {
+    resource.command('compact', {
       summary: '压缩当前会话',
       args: { instructions: { type: 'string' } },
-      run: async (input, _ctx, runtime) => {
-        const instructions = (input as Record<string, unknown>)['instructions'];
-        await runtime.compact(
+      run: async (input) => {
+        const instructions = input.instructions;
+        await agentFor(currentKey()).compact(
           typeof instructions === 'string' ? instructions : undefined,
         );
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+        publish(workspaceId, state.current ?? undefined);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('retry', {
+    resource.command('retry', {
       summary: '重试上一回合',
       args: { confirmed: { type: 'boolean' } },
       run: async () => {
         throw new CallFailure('failed', '当前 runtime 不支持 retry');
       },
     });
-    guarded('fork', {
+    resource.command('fork', {
       summary: '从消息分叉会话',
       args: {
         entryId: { type: 'string', required: true },
         position: { enum: ['before', 'after'] },
       },
-      run: async (input, _ctx, runtime) => {
-        const value = input as Record<string, unknown>;
-        await runtime.fork(
-          String(value['entryId']),
-          value['position'] === 'before' ? 'before' : 'at',
+      run: async (input) => {
+        await agentFor(currentKey()).fork(
+          String(input.entryId),
+          input.position === 'before' ? 'before' : 'at',
         );
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+        publish(workspaceId, state.current ?? undefined);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('rename', {
+    resource.command('rename', {
       summary: '重命名会话',
       args: {
         name: { type: 'string', required: true },
         id: { type: 'string' },
         path: { type: 'string' },
       },
-      run: async (input, _ctx, runtime) => {
-        const value = input as Record<string, unknown>;
-        const id = String(
-          value['id'] ??
-            value['path'] ??
-            runtime.getSnapshot().sessionFile ??
-            '',
+      run: (input) => {
+        const file = String(input.id ?? input.path ?? '');
+        const key = file ? encodeURIComponent(file) : currentKey();
+        const agent = agentFor(key);
+        agent.renameSession(
+          file || (agent.getSnapshot().sessionFile ?? ''),
+          String(input.name),
         );
-        runtime.renameSession(id, String(value['name']));
-        publish(workspaceId);
-        return runtimeSession(runtime.getSnapshot());
+        publish(workspaceId, key);
+        return aggregateSnapshot(workspaceId);
       },
     });
-    guarded('delete', {
+    resource.command('delete', {
       summary: '删除会话',
       args: {
         id: { type: 'string' },
         path: { type: 'string' },
       },
-      run: async (input, _ctx, runtime) => {
-        const value = input as Record<string, unknown>;
-        const id = String(
-          value['id'] ??
-            value['path'] ??
-            runtime.getSnapshot().sessionFile ??
-            '',
-        );
-        if (!id) throw new CallFailure('not_found', '没有当前会话');
-        await runtime.deleteSession(id);
-        state.items = state.items.filter(
-          (item) => (item as { path?: string }).path !== id,
-        );
+      run: async (input) => {
+        const file = String(input.id ?? input.path ?? '');
+        const key = file ? encodeURIComponent(file) : currentKey();
+        const agent = resolveAgent(workspaceId, key);
+        if (agent) {
+          await agent.deleteSession(
+            file || (agent.getSnapshot().sessionFile ?? ''),
+          );
+          await port.disposeAgent(workspaceId, key);
+        }
+        state.opened = state.opened.filter((item) => item !== file);
+        state.sessions.delete(key);
+        if (state.current === key) {
+          state.current = state.opened[0]
+            ? encodeURIComponent(state.opened[0])
+            : null;
+        }
+        domain.remove(`${workspaceId}/session/${key}`);
+        state.items = await port
+          .listItems(workspaceId)
+          .catch(() => state.items);
         publish(workspaceId);
         return null;
       },
     });
-    guarded('setThinking', {
+    resource.command('setThinking', {
       summary: '切换当前思考等级',
       args: { level: { type: 'string', required: true } },
-      run: async (input, _ctx, runtime) => {
-        const level = String((input as Record<string, unknown>)['level']);
-        runtime.setThinkingLevel(level);
-        publish(workspaceId);
+      run: (input) => {
+        const agent = agentFor(currentKey());
+        agent.setThinkingLevel(String(input.level));
+        publish(workspaceId, state.current ?? undefined);
         return {
-          level,
-          levels: runtime.session.getAvailableThinkingLevels?.() ?? [],
+          level: String(input.level),
+          levels: agent.session.getAvailableThinkingLevels?.() ?? [],
         };
       },
     });
-    guarded('closeOpened', {
+    resource.command('closeOpened', {
       summary: '关闭已打开的会话标签',
       args: {},
-      run: () => null,
+      run: async (input) => {
+        const paths = Array.isArray(input.paths)
+          ? input.paths.filter(
+              (item): item is string => typeof item === 'string',
+            )
+          : [];
+        for (const file of paths) {
+          const key = encodeURIComponent(file);
+          await port.disposeAgent(workspaceId, key);
+          state.opened = state.opened.filter((item) => item !== file);
+          if (state.current === key) {
+            state.current = state.opened[0]
+              ? encodeURIComponent(state.opened[0])
+              : null;
+          }
+          state.sessions.delete(key);
+          domain.remove(`${workspaceId}/session/${key}`);
+        }
+        publish(workspaceId);
+        return aggregateSnapshot(workspaceId);
+      },
     });
   };
 
+  const rekey = (workspaceId: string, from: string, to: string): void => {
+    const state = stateOf(workspaceId);
+    const entry = state.sessions.get(from);
+    if (entry) {
+      state.sessions.delete(from);
+      entry.key = to;
+      state.sessions.set(to, entry);
+    }
+    if (state.current === from) state.current = to;
+    const file = resolveAgent(workspaceId, to)?.getSnapshot().sessionFile;
+    if (file && !state.opened.includes(file)) {
+      state.opened = [...state.opened, file];
+    }
+    domain.remove(`${workspaceId}/session/${from}`);
+    defineSession(workspaceId, to);
+    publish(workspaceId, to);
+  };
+
   return {
+    rekey,
     ensure: (workspaceId: string) => {
       const created = !registered.has(workspaceId);
       registered.add(workspaceId);
@@ -513,21 +738,21 @@ export function defineSessionsResources(
     },
     remove: (workspaceId: string) => {
       registered.delete(workspaceId);
+      const state = states.get(workspaceId);
+      if (state) {
+        for (const key of state.opened) {
+          domain.remove(`${workspaceId}/session/${key}`);
+        }
+      }
       states.delete(workspaceId);
       domain.remove(`${workspaceId}/sessions`);
     },
     publish,
-    event: (workspaceId: string, name: string, data: unknown) => {
-      domain.resourceOf(`${workspaceId}/sessions`)?.event(name, data);
+    event: (workspaceId: string, key: string, name: string, data: unknown) => {
+      domain.resourceOf(`${workspaceId}/session/${key}`)?.event(name, data);
     },
     stateOf,
   };
-}
-
-function runtimeSession(
-  snapshot: ReturnType<WorkspaceAgent['getSnapshot']>,
-): ReturnType<WorkspaceAgent['getSnapshot']> {
-  return snapshot;
 }
 
 // ─── providers / models ─────────────────────────────────────
@@ -548,7 +773,7 @@ export function createModelsState(): ModelsState {
 export function defineModelsResources(
   registry: DomainRegistry,
   state: ModelsState,
-  host?: () => WorkspaceAgent | null,
+  host?: () => SessionAgent | null,
   browser?: BrowserCapability,
 ): ModelResources {
   const domain = registry.define('agent');
@@ -765,7 +990,7 @@ export function createSkillsState(): SkillsState {
 export function defineSkillsResource(
   registry: DomainRegistry,
   state: SkillsState,
-  host?: () => WorkspaceAgent | null,
+  host?: () => SessionAgent | null,
 ): void {
   const domain = registry.define('agent');
   const resource = domain.resource('skills');
@@ -885,7 +1110,7 @@ export function createPromptsState(): PromptsState {
 export function definePromptsResource(
   registry: DomainRegistry,
   state: PromptsState,
-  host?: () => WorkspaceAgent | null,
+  host?: () => SessionAgent | null,
 ): void {
   const resource = registry.define('agent').resource('prompts');
   resource.snapshot(() => state.prompts);
@@ -928,7 +1153,7 @@ export function createThemesState(): ThemesState {
 export function defineThemesResource(
   registry: DomainRegistry,
   state: ThemesState,
-  host?: () => WorkspaceAgent | null,
+  host?: () => SessionAgent | null,
 ): void {
   const resource = registry.define('agent').resource('themes');
   resource.snapshot(() => state.themes);
@@ -1015,7 +1240,7 @@ export interface PackageController {
 export function defineExtensionsResource(
   registry: DomainRegistry,
   state: ExtensionsState,
-  host?: () => WorkspaceAgent | null,
+  host?: () => SessionAgent | null,
   packages?: () => PackageController | null,
 ): void {
   const domain = registry.define('agent');

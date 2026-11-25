@@ -39,7 +39,7 @@ import { AgentSession as WorkAgentSession } from './session.ts';
 import { DialogHost, makeUiContext } from './ui-context.ts';
 import type { AgentApp } from './agent-app.ts';
 
-export interface WorkspaceAgentOptions {
+export interface SessionAgentOptions {
   /** App 级共享服务（模型、凭证、设置、技能、扩展工厂）。 */
   app: AgentApp;
   storage: StorageLayout;
@@ -47,6 +47,10 @@ export interface WorkspaceAgentOptions {
   workspacePath: string;
   /** 注册表里的工作区 id；缺省按 path 派生（仅兼容旧调用）。 */
   workspaceId?: string;
+  /** 打开的会话文件；缺省新建会话。 */
+  sessionFile?: string;
+  /** 草稿会话的稳定标识（还没有会话文件时用作地址键）。 */
+  draftKey?: string;
   sendEvent?: (frame: PiEventFrame) => void;
   onTurnFinished?: () => void;
   onSessionCreated?: (path: string) => void;
@@ -63,7 +67,7 @@ export interface WorkspaceAgentOptions {
   };
 }
 
-export class WorkspaceAgent {
+export class SessionAgent {
   readonly bridge: EventBridge;
   private runtime!: AgentSessionRuntime;
   private workspacePath: string;
@@ -73,28 +77,31 @@ export class WorkspaceAgent {
   private dialogHost: DialogHost | null = null;
   private editorText = '';
 
-  private constructor(private readonly options: WorkspaceAgentOptions) {
+  private constructor(private readonly options: SessionAgentOptions) {
     this.workspacePath = options.workspacePath;
     this.app = options.app;
     this.bridge = new EventBridge((frame) => options.sendEvent?.(frame));
   }
 
-  static async bootstrap(
-    options: WorkspaceAgentOptions,
-  ): Promise<WorkspaceAgent> {
+  static async bootstrap(options: SessionAgentOptions): Promise<SessionAgent> {
     process.env['PI_SKIP_VERSION_CHECK'] = '1';
     mkdirSync(options.storage.dataRoot, { recursive: true });
-    const host = new WorkspaceAgent(options);
+    const host = new SessionAgent(options);
     const workspaceId =
       options.workspaceId ?? workspaceIdOf(options.workspacePath);
     host.settingsStorage = new AppSpaceSettingsStorage(
       join(options.storage.dataRoot, 'settings.json'),
       join(options.storage.workspaceBase(workspaceId), 'settings.json'),
     );
-    const sessionManager = SessionManager.create(
-      options.workspacePath,
-      options.storage.sessionsDir(workspaceId),
-    );
+    const sessionsDir = options.storage.sessionsDir(workspaceId);
+    const sessionManager =
+      options.sessionFile && existsSync(options.sessionFile)
+        ? SessionManager.open(
+            options.sessionFile,
+            sessionsDir,
+            options.workspacePath,
+          )
+        : SessionManager.create(options.workspacePath, sessionsDir);
     host.runtime = await createAgentSessionRuntime(host.createFactory(), {
       cwd: options.workspacePath,
       agentDir: options.app.agentDir,
@@ -128,6 +135,13 @@ export class WorkspaceAgent {
 
   get workspaceId(): string {
     return this.options.workspaceId ?? workspaceIdOf(this.workspacePath);
+  }
+
+  /** 会话地址键：URL 编码的会话文件路径，或草稿 id。 */
+  get sessionKey(): string {
+    const file = this.session.sessionFile;
+    if (file) return encodeURIComponent(file);
+    return this.options.draftKey ?? `draft-${this.session.sessionId}`;
   }
 
   skillsRef() {
