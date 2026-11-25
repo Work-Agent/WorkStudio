@@ -45,6 +45,7 @@ import settingsAppearance from '../cases/settings-appearance.ts';
 import newPageTheme from '../cases/new-page-theme.ts';
 import settingsAddress from '../cases/settings-address.ts';
 import listSidebar from '../cases/list-sidebar.ts';
+import agentWorkspace from '../cases/agent-workspace.ts';
 
 export const cases: readonly E2ECase[] = [
   windowDefaults,
@@ -86,6 +87,7 @@ export const cases: readonly E2ECase[] = [
   settingsCards,
   workspaceRegistry,
   listSidebar,
+  agentWorkspace,
   workspaceSwitch,
   layoutPersist,
   shellCapture,
