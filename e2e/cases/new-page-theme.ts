@@ -41,11 +41,11 @@ export default defineCase({
         const state = await page.evaluate(() => ({
           background: getComputedStyle(document.documentElement)
             .backgroundColor,
-          gate: [...document.querySelectorAll('head style')].some((style) =>
-            style.textContent?.includes('prefers-color-scheme:dark'),
-          ),
+          colorScheme: getComputedStyle(document.documentElement).colorScheme,
         }));
-        return state.background === 'rgb(26, 28, 29)' && state.gate;
+        return (
+          state.background === 'rgb(26, 28, 29)' && state.colorScheme === 'dark'
+        );
       }, '新页面没有使用深色首帧底色');
     } finally {
       if (viewId) {

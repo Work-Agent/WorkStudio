@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OAuth 回调</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f4f4f5;
+        color: #18181b;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        font:
+          13px/1.6 ui-sans-serif,
+          system-ui;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #1a1c1d;
+          color: #f4f4f5;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app">正在提交授权结果…</div>

@@ -19,6 +19,9 @@ export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
     existingDataDir ?? mkdtempSync(join(tmpdir(), 'work-studio-e2e-'));
   seedTestPlugin(dataDir);
   const app = await electron.launch({
+    // 主题断言必须跟随 Electron nativeTheme，不能让 Playwright 默认的
+    // colorScheme=light 覆盖 prefers-color-scheme。
+    colorScheme: null,
     args: [
       '.',
       `--data-dir=${dataDir}`,

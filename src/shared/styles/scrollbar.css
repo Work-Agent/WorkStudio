@@ -21,9 +21,14 @@
   scrollbar-color: var(--biz-scrollbar-thumb) var(--biz-scrollbar-track);
 }
 
-/* 亮暗切换的两种标记：主窗口 = .dark class；插件页 = html[data-theme]。
+/* 主窗口跟随 prefers-color-scheme；插件页仍可用 html[data-theme]。
    挂在 <html> 上即可：变量沿树继承，子元素上的 scrollbar-color 会重新解析到新值。 */
-.dark,
+@media (prefers-color-scheme: dark) {
+  :root {
+    --biz-scrollbar-thumb: rgb(255 255 255 / 0.4);
+  }
+}
+
 html[data-theme='dark'] {
   --biz-scrollbar-thumb: rgb(255 255 255 / 0.4);
 }

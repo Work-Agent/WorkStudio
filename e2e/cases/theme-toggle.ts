@@ -1,4 +1,4 @@
-import { defineCase } from '../runner/contract.ts';
+import { defineCase, type PageHandle } from '../runner/contract.ts';
 
 interface Appearance {
   source?: 'light' | 'dark' | 'system';
@@ -26,23 +26,22 @@ export default defineCase({
       )) as Appearance;
       return next.source !== before.source;
     }, '主题 source 没有切换');
-    const expectedDark = before.source !== 'dark';
+    const next = (await ctx.evaluate(() =>
+      window.workStudio.subscribe('shell', 'appearance'),
+    )) as Appearance;
+    const expectedDark = next.theme === 'dark';
     const welcome = await ctx.waitForPage(/^work:\/\/studio\/welcome$/);
     const assistant = await ctx.waitForPage(/^work:\/\/studio\/assistant$/);
     await ctx.expect.poll(async () => {
-      const welcomeDark = await welcome.evaluate(
-        (theme) =>
-          document.documentElement.classList.contains('dark') ===
-          Boolean(theme),
-        expectedDark,
-      );
-      const assistantDark = await assistant.evaluate(
-        (theme) =>
-          document.documentElement.classList.contains('dark') ===
-          Boolean(theme),
-        expectedDark,
-      );
-      return welcomeDark && assistantDark;
+      const matches = (page: PageHandle) =>
+        page.evaluate((dark) => {
+          const root = getComputedStyle(document.documentElement);
+          return (
+            matchMedia('(prefers-color-scheme: dark)').matches === dark &&
+            root.colorScheme === (dark ? 'dark' : 'light')
+          );
+        }, expectedDark);
+      return (await matches(welcome)) && (await matches(assistant));
     }, '系统视图主题没有同步');
     await ctx.evaluate(async () => {
       await window.workStudio.command('shell', 'appearance', 'set', {

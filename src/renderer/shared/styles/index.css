@@ -2,14 +2,14 @@
 /* 全域滚动条规范（与插件扩展视图共用同一份；改它即改两处） */
 @import '../../../shared/styles/scrollbar.css';
 
-@custom-variant dark (&:where(.dark, .dark *));
-
-/* dark: variant 绑定 .dark class；主题切换同时写 nativeTheme.themeSource，
-   并在 titlebar 资源订阅后同步 documentElement.classList。 */
+/* Tailwind 默认 dark: 变体 = prefers-color-scheme；主题唯一来源是
+   nativeTheme.themeSource，不再用 .dark class 并行维护第二套状态。 */
 
 /* ─── 统一主题 Token（主应用 + 扩展视图共用） ─────────── */
 @layer base {
   :root {
+    color-scheme: light;
+    background-color: var(--biz-bg);
     --biz-bg: #f4f4f5;
     --biz-surface: #ffffff;
     --biz-surface-2: #e4e4e7;
@@ -30,6 +30,7 @@
 
   @media (prefers-color-scheme: dark) {
     :root {
+      color-scheme: dark;
       --biz-bg: #1a1c1d;
       --biz-surface: #1a1c1d;
       --biz-surface-2: #252829;
@@ -48,25 +49,6 @@
       --biz-warning: #f59e0b;
     }
   }
-}
-
-.dark {
-  --biz-bg: #1a1c1d;
-  --biz-surface: #1a1c1d;
-  --biz-surface-2: #252829;
-  --biz-surface-hover: #2a2d2e;
-  --biz-surface-input: #1c1e1f;
-  --biz-border: #333536;
-  --biz-border-subtle: rgba(63, 63, 70, 0.5);
-  --biz-text: #f4f4f5;
-  --biz-text-secondary: #d4d4d8;
-  --biz-text-muted: #71717a;
-  --biz-text-subtle: #52525b;
-  --biz-accent: #4f6bed;
-  --biz-accent-hover: #3d56e0;
-  --biz-accent-dim: #1e2a52;
-  --biz-danger: #ef4444;
-  --biz-warning: #f59e0b;
 }
 
 /* 集成式标题栏：保留系统原生控制按钮（macOS:'hiddenInset' 红绿灯 / Windows·Linux:
