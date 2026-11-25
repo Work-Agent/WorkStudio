@@ -38,7 +38,6 @@ import {
   defineThemesResource,
   defineContextResources,
   defineToolsResource,
-  defineRuntimeResource,
   reduceSessionFrame,
   type ExtensionsState,
   type ModelsState,
@@ -157,7 +156,6 @@ export class AgentModule implements DomainModule {
       () => this.packages,
     );
     this.contextResources = defineContextResources(registry, this.contexts);
-    defineRuntimeResource(registry, () => this.host());
   }
 
   async start(): Promise<void> {
@@ -256,7 +254,6 @@ export class AgentModule implements DomainModule {
       sendEvent: (frame) => {
         const registry = this.registry;
         if (!registry) return;
-        registry.define('agent').resource('runtime').event('event', frame);
         this.sessionResources?.event(workspaceId, 'event', frame);
         const state = this.sessionsByWorkspace.get(workspaceId);
         if (!state) return;
@@ -293,9 +290,6 @@ export class AgentModule implements DomainModule {
             source,
           });
         },
-      },
-      onTurnFinished: () => {
-        this.registry?.define('agent').resource('runtime').publish();
       },
     });
   }

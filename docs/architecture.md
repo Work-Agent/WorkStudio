@@ -206,7 +206,7 @@ interface WorkStudioBridge {
 ### 4.1 Domain 与 Resource
 
 - **Domain** 是服务边界，按地址前缀区分，例如 `shell`、`workspace`、`agent`、`docx`。它像微服务一样拥有自己的资源、命令与不变量，不是“一个能力一个 Domain”。
-- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/<wsId>/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `workspace/<wsId>/list`、`agent/<wsId>/session/<sessionId>`。
+- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/<wsId>/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `workspace/<wsId>/list`、`agent/<wsId>/sessions`。
 - **Command** 是唯一的操作单位，地址为 `<domain>/<resource>/<action>`。
 
 聚合根决定一致性与事务边界：命令只修改聚合根，`snapshot` / `patch` 是它的投影；跨 Domain 只引用资源地址或注入端口，不直接拿对方的对象。这样 `agent` 不需要认识 `plugin` 的内部，`plugin` 也不需要认识会话。
@@ -232,17 +232,17 @@ web ────────→ transport / cache（由 browser 模块承载）
 
 箭头表示“依赖谁”，只表达启动顺序与调用方向；跨服务不注入对方对象，只通过资源地址、命令或端口。
 
-| Domain（服务） | 聚合根 / 主要 resource                                                              | 读模型                                                                                                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shell`        | `windows` · `appearance`                                                            | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                                        |
-| `workspace`    | `registry`                                                                          | `<wsId>/list` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                                 |
-| `plugin`       | `installed` · `task`                                                                | `catalog`                                                                                                                                                                        |
-| `settings`     | `preferences` · `updates`                                                           | `pages` · `storage`                                                                                                                                                              |
-| `browser`      | `policy`                                                                            | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                                           |
-| `web`          | `web`（快照资源）                                                                   | —                                                                                                                                                                                |
-| `agent`        | `<wsId>/session/<sessionId>` · `skills` · `provider/<id>` · `model/<provider>/<id>` | `<wsId>/sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `<wsId>/context` · `providers` · `models` · `tools` · `prompts` · `themes` · `extensions` |
+| Domain（服务） | 聚合根 / 主要 resource                               | 读模型                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shell`        | `windows` · `appearance`                             | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                                        |
+| `workspace`    | `registry`                                           | `<wsId>/list` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                                 |
+| `plugin`       | `installed` · `task`                                 | `catalog`                                                                                                                                                                        |
+| `settings`     | `preferences` · `updates`                            | `pages` · `storage`                                                                                                                                                              |
+| `browser`      | `policy`                                             | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                                           |
+| `web`          | `web`（快照资源）                                    | —                                                                                                                                                                                |
+| `agent`        | `skills` · `provider/<id>` · `model/<provider>/<id>` | `<wsId>/sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `<wsId>/context` · `providers` · `models` · `tools` · `prompts` · `themes` · `extensions` |
 
-聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管消息、轮次、队列和 thinking；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/<wsId>/sessions` 每个工作区一份：首次使用时按需创建该工作区的 pi runtime，未创建时给只读投影。模型、凭证、设置与技能是 App 级共享（AgentApp），会话与扩展上下文按工作区绑定。
+聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/sessions` 承载该工作区会话的命令与活跃会话投影（消息、轮次、队列、thinking）；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/<wsId>/sessions` 每个工作区一份：首次使用时按需创建该工作区的 pi runtime，未创建时给只读投影。模型、凭证、设置与技能是 App 级共享（AgentApp），会话与扩展上下文按工作区绑定。
 
 System Domain 由模块持有，不读内容字节，也不出现在工具面里。模块只负责生命周期；Domain 才是服务边界，Resource 才是聚合根。例如 `skills` 是 `agent/skills`，不是独立的 `skills` Domain。
 
