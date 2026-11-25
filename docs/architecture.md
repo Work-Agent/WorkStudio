@@ -213,7 +213,7 @@ interface WorkStudioBridge {
 
 聚合根决定一致性与事务边界：命令只修改聚合根，`snapshot` / `patch` 是它的投影；跨 Domain 只引用资源地址或注入端口，不直接拿对方的对象。这样 `agent` 不需要认识 `plugin` 的内部，`plugin` 也不需要认识会话。
 
-Agent 运行时分三层：**AgentApp** 是 App 级共享服务（模型运行时、凭证、设置存储、技能、扩展工厂）；**SessionAgents** 按 `(wsId, sessionKey)` 管理会话级 **SessionAgent**；每个 `SessionAgent` 持有一个按 cwd 绑定的 pi `AgentSessionRuntime`。同一工作区的多个会话各自持有 runtime，可以并行执行；`agent/<wsId>/sessions` 是集合投影（当前会话、打开列表、任务），单个会话在 `agent/<wsId>/session/<sessionId>` 上寻址与命令。模型或凭证变更由 AgentApp 通知，统一重建所有会话。
+Agent 运行时分三层：**AgentApp** 是 App 级共享服务（模型运行时、凭证、设置存储、技能、扩展工厂）；**SessionAgents** 按 `(wsId, sessionKey)` 管理会话级 **SessionAgent**；每个 `SessionAgent` 持有一个按 cwd 绑定的 pi `AgentSessionRuntime`。同一工作区的多个会话各自持有 runtime，可以并行执行；不同工作区窗口的会话互不阻塞，`agent/<wsId>/sessions` 是集合投影（当前会话、打开列表、任务），单个会话在 `agent/<wsId>/session/<sessionId>` 上寻址与命令。模型或凭证变更由 AgentApp 通知，统一重建所有会话。
 
 `agent/prompts`、`agent/themes`、`agent/extensions` 是由 cwd 发现决定的 App 级投影，跟随当前工作区 runtime 的加载结果；工作区切换后由同一套资源重新投影，不单独按 wsId 拆分。
 
