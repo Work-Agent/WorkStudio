@@ -385,7 +385,7 @@ plugin-docx.zip
 
 - 一个插件一个条目 JSON，CI 校验字段、id、版本与 sha256，合并后生成 `index.json`；
 - 条目字段：`id` / `name` / `description` / `version` / `source` / `sha256` / `repo` / `tags` / `category`；`source` 必须是自包含 zip，`sha256` 固定具体产物；
-- 应用启动只读缓存；打开插件设置页或手动刷新时才拉取 `index.json`；请求带条件头，失败回退缓存并标记 `stale`；
+- 应用启动只读缓存；打开插件设置页或手动刷新时才拉取 `index.json`；默认走 jsDelivr CDN，显式刷新会穿透 CDN 缓存；请求带条件头，失败回退缓存并标记 `stale`；
 - 清单只负责发现：安装仍以 zip 内的 manifest 为准，清单 id 与 manifest id 必须一致；
 - 内置插件随应用分发，不进注册表，其 id 保留，外部包不可覆盖；
 - 无自动更新：目录版本高于已安装版本时显示「可更新」，用户点击后才安装。

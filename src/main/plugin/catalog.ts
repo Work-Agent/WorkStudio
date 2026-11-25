@@ -10,11 +10,18 @@ import { dirname, join } from 'node:path';
 import { createLog } from '../log.ts';
 import { isReservedPluginId } from './manifest.ts';
 import type { StorageLayout } from '../platform/paths.ts';
+import type { PluginFetcher } from './network.ts';
 
 const log = createLog('plugin-catalog');
 
 export const DEFAULT_CATALOG_URL =
-  'https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json';
+  'https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@main/index.json';
+
+/** 旧默认地址：启动时迁移到 CDN，避免国内网络下 raw.githubusercontent 不可达。 */
+const LEGACY_DEFAULT_URLS = new Set([
+  'https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json',
+  'https://api.github.com/repos/Work-Agent/PluginRegistry/contents/index.json',
+]);
 
 const ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -62,12 +69,28 @@ export class PluginCatalogService {
     stale: false,
   };
 
-  constructor(private readonly layout: StorageLayout) {}
+  constructor(
+    private readonly layout: StorageLayout,
+    private readonly fetcher: PluginFetcher = (url, init) => fetch(url, init),
+  ) {}
 
   /** 只读缓存，不联网。 */
   async start(): Promise<void> {
     const meta = await this.readMeta();
-    const target = process.env['WS_PLUGIN_CATALOG_URL']?.trim() || meta?.url;
+    const env = process.env['WS_PLUGIN_CATALOG_URL']?.trim();
+    const target = env || meta?.url;
+    if (!env && target && LEGACY_DEFAULT_URLS.has(target)) {
+      this.url = DEFAULT_CATALOG_URL;
+      this.last = {
+        entries: [],
+        url: this.url,
+        fetchedAt: null,
+        stale: false,
+      };
+      await this.clearCache();
+      await this.writeMeta(null);
+      return;
+    }
     if (target) this.url = target;
     if (!meta || meta.url !== this.url || meta.fetchedAt === null) {
       this.last = {
@@ -136,23 +159,28 @@ export class PluginCatalogService {
     await this.writeMeta(null);
   }
 
-  /** 拉取 index.json；失败时保留上一份并标记 stale。 */
-  async load(url?: string): Promise<CatalogResult> {
+  /** 拉取 index.json；fresh 时用查询参数绕过 jsDelivr 的分支缓存。 */
+  async load(
+    url?: string,
+    options: { fresh?: boolean } = {},
+  ): Promise<CatalogResult> {
     if (url !== undefined) await this.setUrl(url);
     const target = this.url;
+    const requestUrl =
+      options.fresh && isJsDelivr(target) ? withCacheBust(target) : target;
     const previous = this.last;
     const meta = await this.readMeta();
     const headers: Record<string, string> = {
       'User-Agent': 'work-studio',
-      Accept: 'application/json',
+      Accept: 'application/vnd.github.raw, application/json',
     };
-    if (meta && meta.url === target) {
+    if (!options.fresh && meta && meta.url === target) {
       if (meta.etag) headers['If-None-Match'] = meta.etag;
       if (meta.lastModified) headers['If-Modified-Since'] = meta.lastModified;
     }
 
     try {
-      const response = await fetch(target, {
+      const response = await this.fetcher(requestUrl, {
         headers,
         signal: AbortSignal.timeout(FETCH_TIMEOUT),
         redirect: 'follow',
@@ -251,6 +279,18 @@ export class PluginCatalogService {
   private async clearCache(): Promise<void> {
     await rm(this.cacheFile(), { force: true });
   }
+}
+
+function isJsDelivr(url: string): boolean {
+  return url.startsWith(
+    'https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@',
+  );
+}
+
+function withCacheBust(url: string): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set('v', String(Date.now()));
+  return parsed.href;
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {

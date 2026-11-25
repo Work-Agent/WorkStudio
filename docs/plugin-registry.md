@@ -1,6 +1,6 @@
 # 插件注册表
 
-官方注册表是 [Work-Agent/PluginRegistry](https://github.com/Work-Agent/PluginRegistry)。它是一个独立仓库：插件作者在自己的仓库发布自包含 zip，注册表只保存发现信息与完整性校验值。应用启动不联网，打开插件设置页或手动刷新时才读取注册表生成的 `index.json`。
+官方注册表是 [Work-Agent/PluginRegistry](https://github.com/Work-Agent/PluginRegistry)。它是一个独立仓库：插件作者在自己的仓库发布自包含 zip，注册表只保存发现信息与完整性校验值。应用启动不联网，打开插件设置页或手动刷新时才读取注册表生成的 `index.json`。默认从 `https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@main/index.json` 读取；显式刷新会带缓存穿透参数，避免 CDN 分支缓存导致列表滞后。网络请求使用偏好设置里的代理（支持 socks5）。
 
 ## 契约
 

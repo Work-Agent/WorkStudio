@@ -386,7 +386,7 @@ plugin-docx.zip
 
 - One JSON entry per plugin; CI validates fields, id, version and sha256, then generates `index.json` on merge;
 - Entry fields: `id` / `name` / `description` / `version` / `source` / `sha256` / `repo` / `tags` / `category`; `source` must be a self-contained zip and `sha256` pins the exact artifact;
-- The app reads only its cache at startup; it fetches `index.json` when the plugin settings page opens or on manual refresh, with conditional requests and a stale-cache fallback;
+- The app reads only its cache at startup; it fetches `index.json` when the plugin settings page opens or on manual refresh. It uses the jsDelivr CDN by default, busts the CDN cache on explicit refresh, sends conditional requests, and falls back to the stale cache;
 - The catalog is for discovery only: installation always trusts the zip manifest, and the catalog id must match the manifest id;
 - Built-in plugins ship with the app, stay out of the registry, and reserve their ids; external packages cannot replace them;
 - No auto-update: when the catalog version is newer than the installed version the UI shows "update"; installation only happens when the user clicks.

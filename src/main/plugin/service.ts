@@ -14,6 +14,7 @@ import { CallFailure } from '../contract.ts';
 import type { CatalogResult } from './catalog.ts';
 import { mergeStaticCommands } from './commands.ts';
 import type { PluginFiles } from './files.ts';
+import type { PluginFetcher } from './network.ts';
 import type { PluginLifecycle } from './lifecycle.ts';
 import type { PluginPackage } from './manifest.ts';
 import type { PluginCatalogService } from './catalog.ts';
@@ -49,6 +50,7 @@ export interface PluginServiceOptions {
   lifecycle: PluginLifecycle;
   catalog: PluginCatalogService;
   files: PluginFiles;
+  fetch?: PluginFetcher;
   isBuiltin?(pluginId: string): boolean;
 }
 
@@ -159,7 +161,7 @@ export class PluginService {
   }
 
   async refreshCatalog(url?: string): Promise<CatalogResult> {
-    const result = await this.options.catalog.load(url);
+    const result = await this.options.catalog.load(url, { fresh: true });
     this.notify('catalog');
     return result;
   }
@@ -369,7 +371,8 @@ export class PluginService {
       controller.signal,
       AbortSignal.timeout(60_000),
     ]);
-    const response = await fetch(url, {
+    const fetcher = this.options.fetch ?? fetch;
+    const response = await fetcher(url, {
       headers: { 'User-Agent': 'work-studio' },
       signal,
       redirect: 'follow',

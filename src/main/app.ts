@@ -27,6 +27,7 @@ import {
 import { PluginStore } from './plugin/store.ts';
 import { PluginService } from './plugin/service.ts';
 import { PluginCatalogService } from './plugin/catalog.ts';
+import { createPluginFetcher } from './plugin/network.ts';
 import { PluginFiles } from './plugin/files.ts';
 import { SecretsService } from './plugin/secrets.ts';
 import { ListService } from './domains/workspace/lists.ts';
@@ -128,11 +129,13 @@ export class NextApp {
       secrets: pluginSecrets,
     });
     this.lifecycle = new PluginLifecycle(this.plugins, this.protocols);
+    const pluginFetcher = createPluginFetcher(this.storage);
     this.pluginService = new PluginService({
       store: this.pluginStore,
       lifecycle: this.lifecycle,
-      catalog: new PluginCatalogService(this.storage),
+      catalog: new PluginCatalogService(this.storage, pluginFetcher),
       files: pluginFiles,
+      fetch: pluginFetcher,
       isBuiltin: (id) => this.builtinPluginIds.has(id),
     });
     this.shellHost = options.shell
