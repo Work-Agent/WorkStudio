@@ -15,7 +15,6 @@ import {
   type AgentSession as PiAgentSession,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
-  type InlineExtension,
 } from '@earendil-works/pi-coding-agent';
 import type { StorageLayout } from '../../../platform/paths.ts';
 import type {
@@ -31,29 +30,26 @@ import type {
   ThinkingLevel,
 } from '../../../../shared/types.ts';
 import { EventBridge } from './event-bridge.ts';
-import { ModelConfigStore, SettingsService } from './config-service.ts';
-import { modelCatalog, providerCatalog } from './model-catalog.ts';
+import { SettingsService } from './config-service.ts';
 import { loadedResources } from './resources-view.ts';
 import { listSessions } from './session-list.ts';
 import { AppSpaceSettingsStorage } from './settings-storage.ts';
 import { readSessionMessages, deleteSessionFile } from './session-index.ts';
-import { SkillsManager } from './harness/skills.ts';
 import { AgentSession as WorkAgentSession } from './session.ts';
 import { DialogHost, makeUiContext } from './ui-context.ts';
-import { loginProvider as runProviderLogin } from './model-auth.ts';
+import type { AgentApp } from './agent-app.ts';
 
-export interface AgentHostOptions {
+export interface WorkspaceAgentOptions {
+  /** App 级共享服务（模型、凭证、设置、技能、扩展工厂）。 */
+  app: AgentApp;
   storage: StorageLayout;
+  /** 工作区目录（pi 的 cwd）。 */
   workspacePath: string;
-  skills?: SkillsManager;
+  /** 注册表里的工作区 id；缺省按 path 派生（仅兼容旧调用）。 */
+  workspaceId?: string;
   sendEvent?: (frame: PiEventFrame) => void;
   onTurnFinished?: () => void;
   onSessionCreated?: (path: string) => void;
-  onWorkspaceChange?: (path: string) => void;
-  openExternal?: (url: string) => void | Promise<void>;
-  extensionFactories?: InlineExtension[];
-  additionalSkillPaths?: () => string[];
-  skillOwner?: (source: string) => { id: string; label: string } | null;
   ui?: {
     onDialogRequest: (
       request: import('../../../../shared/types.ts').UiDialogRequest,
@@ -67,32 +63,30 @@ export interface AgentHostOptions {
   };
 }
 
-export class AgentHost {
+export class WorkspaceAgent {
   readonly bridge: EventBridge;
   private runtime!: AgentSessionRuntime;
   private workspacePath: string;
   private settingsStorage!: AppSpaceSettingsStorage;
-  private readonly agentDir: string;
-  private readonly skills: SkillsManager;
-  private readonly modelStore: ModelConfigStore;
-  private readonly oauthStates = new Set<string>();
+  private readonly app: AgentApp;
   private pendingReason = 'replace';
   private dialogHost: DialogHost | null = null;
   private editorText = '';
 
-  private constructor(private readonly options: AgentHostOptions) {
+  private constructor(private readonly options: WorkspaceAgentOptions) {
     this.workspacePath = options.workspacePath;
-    this.agentDir = options.storage.dataRoot;
-    this.skills = options.skills ?? new SkillsManager();
-    this.modelStore = new ModelConfigStore(this.agentDir);
+    this.app = options.app;
     this.bridge = new EventBridge((frame) => options.sendEvent?.(frame));
   }
 
-  static async bootstrap(options: AgentHostOptions): Promise<AgentHost> {
+  static async bootstrap(
+    options: WorkspaceAgentOptions,
+  ): Promise<WorkspaceAgent> {
     process.env['PI_SKIP_VERSION_CHECK'] = '1';
     mkdirSync(options.storage.dataRoot, { recursive: true });
-    const host = new AgentHost(options);
-    const workspaceId = workspaceIdOf(options.workspacePath);
+    const host = new WorkspaceAgent(options);
+    const workspaceId =
+      options.workspaceId ?? workspaceIdOf(options.workspacePath);
     host.settingsStorage = new AppSpaceSettingsStorage(
       join(options.storage.dataRoot, 'settings.json'),
       join(options.storage.workspaceBase(workspaceId), 'settings.json'),
@@ -103,7 +97,7 @@ export class AgentHost {
     );
     host.runtime = await createAgentSessionRuntime(host.createFactory(), {
       cwd: options.workspacePath,
-      agentDir: host.agentDir,
+      agentDir: options.app.agentDir,
       sessionManager,
     });
     host.installRebindHooks();
@@ -121,7 +115,7 @@ export class AgentHost {
   }
 
   get modelRuntime() {
-    return this.runtime.services.modelRuntime;
+    return this.app.modelRuntime;
   }
 
   get settingsManager(): SettingsManager {
@@ -132,8 +126,12 @@ export class AgentHost {
     return this.workspacePath;
   }
 
-  skillsRef(): SkillsManager {
-    return this.skills;
+  get workspaceId(): string {
+    return this.options.workspaceId ?? workspaceIdOf(this.workspacePath);
+  }
+
+  skillsRef() {
+    return this.app.skills;
   }
 
   resolveSessionsDir(): string {
@@ -143,11 +141,11 @@ export class AgentHost {
         ? configured
         : join(this.workspacePath, configured);
     }
-    return this.options.storage.sessionsDir(workspaceIdOf(this.workspacePath));
+    return this.app.storage.sessionsDir(this.workspaceId);
   }
 
   get settingsService(): SettingsService {
-    return new SettingsService(this.settingsStorage);
+    return this.app.settingsServiceFor(this.workspaceId);
   }
 
   getSnapshot(): AgentSnapshot {
@@ -179,14 +177,6 @@ export class AgentHost {
       cwd: this.workspacePath,
       workspacePath: this.workspacePath,
     };
-  }
-
-  getModels(): ModelOption[] {
-    return this.modelRuntime.getAvailableSnapshot().map((model) => ({
-      provider: model.provider,
-      modelId: model.id,
-      label: model.name ?? model.id,
-    }));
   }
 
   async prompt(params: {
@@ -321,44 +311,39 @@ export class AgentHost {
   }
 
   getProviderCatalog(customProviderIds: string[]): ProviderInfoView[] {
-    return providerCatalog(this.modelRuntime, customProviderIds);
+    return this.app.getProviderCatalog(customProviderIds);
   }
 
   getModelCatalog(): ModelCatalogItem[] {
-    return modelCatalog(this.modelRuntime);
+    return this.app.getModelCatalog();
   }
 
   getModelsView(): unknown {
-    const config = this.modelStore.readView();
-    return {
-      providers: this.getProviderCatalog(Object.keys(config.providers)),
-      catalog: this.getModelCatalog(),
-      config,
-    };
+    return this.app.getModelsView();
+  }
+
+  getModels(): ModelOption[] {
+    return this.app.models();
   }
 
   async saveProvider(providerId: string, config: unknown): Promise<void> {
-    await this.modelStore.saveProvider(providerId, config as never);
-    await this.rebuildForModelChange();
+    await this.app.saveProvider(providerId, config);
   }
 
   async deleteProvider(providerId: string): Promise<void> {
-    await this.modelStore.deleteProvider(providerId);
-    await this.rebuildForModelChange();
+    await this.app.deleteProvider(providerId);
   }
 
   async saveModel(providerId: string, model: unknown): Promise<void> {
-    await this.modelStore.saveModel(providerId, model as never);
-    await this.rebuildForModelChange();
+    await this.app.saveModel(providerId, model);
   }
 
   async deleteModel(providerId: string, modelId: string): Promise<void> {
-    await this.modelStore.deleteModel(providerId, modelId);
-    await this.rebuildForModelChange();
+    await this.app.deleteModel(providerId, modelId);
   }
 
   beginOAuth(providerId: string, state: string): void {
-    this.oauthStates.add(`${providerId}:${state}`);
+    this.app.beginOAuth(providerId, state);
   }
 
   async completeOAuth(
@@ -366,26 +351,12 @@ export class AgentHost {
     state: string,
     input: { accessToken?: string },
   ): Promise<void> {
-    const key = `${providerId}:${state}`;
-    if (!this.oauthStates.delete(key)) {
-      throw new Error('OAuth state 不匹配或已过期');
-    }
-    if (input.accessToken) {
-      // Provider 已完成 token 交换；先通过 pi 的凭据接口落盘。
-      await this.modelRuntime.setRuntimeApiKey(providerId, input.accessToken);
-      await this.modelRuntime.refresh({
-        providers: [providerId],
-        allowNetwork: true,
-      });
-      this.emitStatus();
-      return;
-    }
-    throw new Error('OAuth 回调缺少 accessToken');
+    await this.app.completeOAuth(providerId, state, input);
+    this.emitStatus();
   }
 
   async logoutProvider(providerId: string): Promise<void> {
-    await this.modelRuntime.logout(providerId);
-    await this.modelRuntime.refresh({ providers: [providerId] });
+    await this.app.logoutProvider(providerId);
     this.emitStatus();
   }
 
@@ -394,30 +365,19 @@ export class AgentHost {
     type: 'api_key' | 'oauth';
     apiKey?: string;
   }): Promise<void> {
-    if (input.type === 'api_key' && input.apiKey) {
-      await this.modelRuntime.setRuntimeApiKey(input.providerId, input.apiKey);
-      await this.modelRuntime.refresh({ providers: [input.providerId] });
-      this.emitStatus();
-      return;
-    }
-    await runProviderLogin(
-      {
-        runtime: () => this.modelRuntime,
-        askDialog: (dialogType, fields) => {
-          const host = this.dialogHost;
-          if (!host) throw new Error('对话框宿主未接入');
-          return host.ask(dialogType, fields) as Promise<
-            string | boolean | undefined
-          >;
-        },
-        dialogHost: () => this.dialogHost,
-        notify: (message, level, source) =>
-          this.options.ui?.onNotify(message, level, source),
-        openExternal: this.options.openExternal,
-        emitStatus: () => this.emitStatus(),
+    await this.app.loginProvider(input, {
+      askDialog: (dialogType, fields) => {
+        const host = this.dialogHost;
+        if (!host) throw new Error('对话框宿主未接入');
+        return host.ask(dialogType, fields as never) as Promise<
+          string | boolean | undefined
+        >;
       },
-      { providerId: input.providerId, type: 'oauth' },
-    );
+      dialogHost: () => this.dialogHost,
+      notify: (message, level) =>
+        this.options.ui?.onNotify(message, level, 'provider'),
+      emitStatus: () => this.emitStatus(),
+    });
   }
 
   async rebuildForModelChange(): Promise<void> {
@@ -468,7 +428,6 @@ export class AgentHost {
     this.pendingReason = 'skills';
     this.bridge.detach();
     await this.runtime.dispose();
-    const workspaceId = workspaceIdOf(this.workspacePath);
     const sessionsDir = this.resolveSessionsDir();
     const sessionManager =
       file && existsSync(file)
@@ -476,7 +435,7 @@ export class AgentHost {
         : SessionManager.create(this.workspacePath, sessionsDir);
     this.runtime = await createAgentSessionRuntime(this.createFactory(), {
       cwd: this.workspacePath,
-      agentDir: this.agentDir,
+      agentDir: this.app.agentDir,
       sessionManager,
     });
     this.installRebindHooks();
@@ -488,37 +447,6 @@ export class AgentHost {
   async extendSkillPaths(paths: string[]): Promise<void> {
     if (paths.length === 0) return;
     await this.rebuildForSkills();
-  }
-
-  async setWorkspace(path: string): Promise<AgentSnapshot> {
-    if (!existsSync(path)) throw new Error(`Directory not found: ${path}`);
-    this.workspacePath = path;
-    this.options.onWorkspaceChange?.(path);
-    await this.rebuildForWorkspace();
-    return this.getSnapshot();
-  }
-
-  async rebuildForWorkspace(): Promise<void> {
-    this.pendingReason = 'workspace';
-    this.bridge.detach();
-    await this.runtime.dispose();
-    const workspaceId = workspaceIdOf(this.workspacePath);
-    this.settingsStorage = new AppSpaceSettingsStorage(
-      join(this.options.storage.dataRoot, 'settings.json'),
-      join(this.options.storage.workspaceBase(workspaceId), 'settings.json'),
-    );
-    const sessionManager = SessionManager.create(
-      this.workspacePath,
-      this.options.storage.sessionsDir(workspaceId),
-    );
-    this.runtime = await createAgentSessionRuntime(this.createFactory(), {
-      cwd: this.workspacePath,
-      agentDir: this.agentDir,
-      sessionManager,
-    });
-    this.installRebindHooks();
-    this.bridge.attach(this.runtime.session);
-    this.emitStatus();
   }
 
   handleDialogResponse(
@@ -595,34 +523,22 @@ export class AgentHost {
 
   private createFactory(): CreateAgentSessionRuntimeFactory {
     return async ({ cwd, sessionManager }) => {
-      const workspaceId = workspaceIdOf(cwd);
-      const storage = new AppSpaceSettingsStorage(
-        join(this.options.storage.dataRoot, 'settings.json'),
-        join(this.options.storage.workspaceBase(workspaceId), 'settings.json'),
-      );
-      this.settingsStorage = storage;
-      const settingsManager = SettingsManager.fromStorage(storage, {
-        projectTrusted: true,
-      });
+      const workspaceId = this.options.workspaceId ?? workspaceIdOf(cwd);
+      const settingsManager = this.app.settingsManagerFor(workspaceId);
+      const extensionFactories = this.app.extensionFactories;
+      const additionalSkillPaths = this.app.additionalSkillPaths();
       const session = await WorkAgentSession.assemble({
         cwd,
         workspaceId,
-        agentDir: this.agentDir,
+        agentDir: this.app.agentDir,
+        modelRuntime: this.app.modelRuntime,
         sessionManager,
         settingsManager,
-        skills: this.skills,
-        ...(this.options.extensionFactories
-          ? { extensionFactories: this.options.extensionFactories }
-          : {}),
-        ...(this.options.additionalSkillPaths
-          ? { additionalSkillPaths: this.options.additionalSkillPaths() }
-          : {}),
-        ...(this.options.skillOwner
-          ? { skillOwner: this.options.skillOwner }
-          : {}),
-        ...(this.options.openExternal
-          ? { openExternal: this.options.openExternal }
-          : {}),
+        skills: this.app.skills,
+        ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
+        ...(additionalSkillPaths.length > 0 ? { additionalSkillPaths } : {}),
+        skillOwner: (source) => this.app.skillOwner(source),
+        openExternal: (url) => this.app.openExternal(url),
       });
       return {
         session: session.piSession,

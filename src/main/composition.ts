@@ -12,7 +12,6 @@ import type { TransportRouter } from './transport/router.ts';
 import type { WebCache } from './transport/web-cache.ts';
 import { BrowserCapability } from './domains/browser/capability.ts';
 import { BrowserModule } from './domains/browser/module.ts';
-import { AgentContext } from './domains/agent/context.ts';
 import { AgentModule } from './domains/agent/module.ts';
 import { ToolSurface } from './domains/agent/tools.ts';
 import { PluginModule } from './domains/plugin/module.ts';
@@ -75,7 +74,6 @@ export function registerSystemModules(
       return result.data as { id: string; title: string; url?: string };
     },
   );
-  const context = new AgentContext();
   const tools = new ToolSurface(
     options.transport,
     registry,
@@ -117,6 +115,6 @@ export function registerSystemModules(
     ),
   );
   registry.registerModule(
-    new AgentModule(context, tools, options.storage, browser, options.plugins),
+    new AgentModule(tools, options.storage, browser, options.plugins),
   );
 }

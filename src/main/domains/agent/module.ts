@@ -11,20 +11,22 @@ import type { DomainRegistry } from '../../registry/registry.ts';
 import type { ToolSurface } from './tools.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
+import { CallFailure } from '../../contract.ts';
 import { createLog } from '../../log.ts';
 import { listSessions } from './runtime/session-list.ts';
 import type { SessionMeta } from '../../../shared/types.ts';
 import type { DialogView } from '../shell/domains.ts';
 import type { PluginManager } from '../../plugin/manager.ts';
-import { AgentHost } from './runtime/agent-host.ts';
+import { AgentApp } from './runtime/agent-app.ts';
+import { AgentRuntimes } from './runtime/agent-runtimes.ts';
+import { WorkspaceAgent } from './runtime/workspace-agent.ts';
 import { PiPackageService } from './runtime/package-service.ts';
 import { createAgentToolsExtension } from './runtime/tools-extension.ts';
-import type { AgentContext } from './context.ts';
+import { AgentContext } from './context.ts';
 import {
   createExtensionsState,
   createModelsState,
   createPromptsState,
-  createSessionsState,
   createSkillsState,
   createThemesState,
   createThinkingState,
@@ -34,7 +36,7 @@ import {
   defineSessionsResources,
   defineSkillsResource,
   defineThemesResource,
-  defineContextResource,
+  defineContextResources,
   defineToolsResource,
   defineRuntimeResource,
   reduceSessionFrame,
@@ -52,12 +54,13 @@ export class AgentModule implements DomainModule {
   readonly id = 'agent';
   readonly dependencies = ['workspace', 'browser', 'plugin'] as const;
 
-  private readonly sessions: SessionsState = createSessionsState();
+  private readonly sessionsByWorkspace = new Map<string, SessionsState>();
   private sessionResources: {
     ensure: (workspaceId: string) => void;
     remove: (workspaceId: string) => void;
-    publish: () => void;
-    event: (name: string, data: unknown) => void;
+    publish: (workspaceId?: string) => void;
+    event: (workspaceId: string, name: string, data: unknown) => void;
+    stateOf: (workspaceId: string) => SessionsState;
   } | null = null;
   private readonly idleSessions = new Map<string, SessionMeta[]>();
   private readonly registeredWorkspaces = new Set<string>();
@@ -74,45 +77,87 @@ export class AgentModule implements DomainModule {
   private offPlugins: (() => void) | null = null;
   private pluginReloadTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly handledDialogs = new Set<string>();
-  private host: AgentHost | null = null;
+  private readonly runtimes: AgentRuntimes;
+  private readonly contexts = new Map<string, AgentContext>();
+  private contextResources: {
+    ensure: (workspaceId: string) => void;
+    remove: (workspaceId: string) => void;
+  } | null = null;
+  private app: AgentApp | null = null;
+  private currentWorkspaceId: string | null = null;
   private packages: PiPackageService | null = null;
 
   constructor(
-    private readonly context: AgentContext,
     private readonly tools: ToolSurface,
     private readonly storage: StorageLayout,
     private readonly browser: BrowserCapability,
     private readonly plugins?: PluginManager,
-  ) {}
+  ) {
+    this.runtimes = new AgentRuntimes((workspaceId, path) =>
+      this.bootstrapAgent(workspaceId, path),
+    );
+  }
+
+  /** 当前工作区的 agent runtime（App 级视图 / 设置用）。 */
+  private host(): WorkspaceAgent | null {
+    return this.currentWorkspaceId
+      ? this.runtimes.get(this.currentWorkspaceId)
+      : null;
+  }
+
+  private workspaceMeta(
+    workspaceId: string,
+  ): { id: string; path: string } | null {
+    const snapshot = this.registry?.snapshot({
+      domain: 'workspace',
+      resource: 'registry',
+    }) as { workspaces?: Array<{ id: string; path: string }> } | null;
+    return (
+      snapshot?.workspaces?.find((item) => item.id === workspaceId) ?? null
+    );
+  }
+
+  /** 按需创建某工作区的 runtime，并把会话投影刷新到该工作区状态。 */
+  private async ensureRuntime(workspaceId: string): Promise<WorkspaceAgent> {
+    const existing = this.runtimes.get(workspaceId);
+    if (existing) return existing;
+    const meta = this.workspaceMeta(workspaceId);
+    if (!meta) {
+      throw new CallFailure('not_found', `工作区不存在：${workspaceId}`);
+    }
+    const agent = await this.runtimes.ensure(workspaceId, meta.path);
+    await this.refreshWorkspaceState(workspaceId, agent);
+    return agent;
+  }
 
   attach(registry: DomainRegistry): void {
     this.registry = registry;
     this.sessionResources = defineSessionsResources(
       registry,
-      this.sessions,
-      this.context,
+      this.sessionsByWorkspace,
       this.thinking,
-      () => this.host,
+      (workspaceId) => this.runtimes.get(workspaceId),
+      (workspaceId) => this.ensureRuntime(workspaceId),
       (workspaceId) => this.idleSessions.get(workspaceId) ?? [],
     );
     this.modelResources = defineModelsResources(
       registry,
       this.models,
-      () => this.host,
+      () => this.host(),
       this.browser,
     );
-    defineSkillsResource(registry, this.skills, () => this.host);
+    defineSkillsResource(registry, this.skills, () => this.host());
     defineToolsResource(registry, this.tools);
-    definePromptsResource(registry, this.prompts, () => this.host);
-    defineThemesResource(registry, this.themes, () => this.host);
+    definePromptsResource(registry, this.prompts, () => this.host());
+    defineThemesResource(registry, this.themes, () => this.host());
     defineExtensionsResource(
       registry,
       this.extensions,
-      () => this.host,
+      () => this.host(),
       () => this.packages,
     );
-    defineContextResource(registry, this.context);
-    defineRuntimeResource(registry, () => this.host);
+    this.contextResources = defineContextResources(registry, this.contexts);
+    defineRuntimeResource(registry, () => this.host());
   }
 
   async start(): Promise<void> {
@@ -121,97 +166,48 @@ export class AgentModule implements DomainModule {
     const snapshot = registry.snapshot({
       domain: 'workspace',
       resource: 'registry',
-    }) as { current?: { path?: string } | null } | null;
-    const workspacePath = snapshot?.current?.path;
-    if (workspacePath) {
+    }) as { current?: { id?: string; path?: string } | null } | null;
+    const current = snapshot?.current;
+    this.app = await AgentApp.create({
+      storage: this.storage,
+      extensionFactories: [createAgentToolsExtension(this.tools, this.browser)],
+      additionalSkillPaths: () => this.plugins?.skillPaths() ?? [],
+      skillOwner: (source) => this.plugins?.skillOwner(source) ?? null,
+    });
+    this.app.onChanged = () => {
+      this.refreshAppModels();
+      for (const [, agent] of this.runtimes.entries()) {
+        void agent.rebuildForModelChange().catch(() => undefined);
+      }
+    };
+    if (current?.id && current.path) {
+      this.currentWorkspaceId = current.id;
       try {
-        this.host = await AgentHost.bootstrap({
-          storage: this.storage,
-          workspacePath,
-          extensionFactories: [
-            createAgentToolsExtension(this.tools, this.browser),
-          ],
-          sendEvent: (frame) => {
-            const agent = registry.define('agent');
-            agent.resource('runtime').event('event', frame);
-            this.sessionResources?.event('event', frame);
-            if (
-              reduceSessionFrame(this.sessions, frame, this.host, () =>
-                this.sessionResources?.publish(),
-              )
-            ) {
-              this.sessionResources?.publish();
-            }
-          },
-          additionalSkillPaths: () => this.plugins?.skillPaths() ?? [],
-          skillOwner: (source) => this.plugins?.skillOwner(source) ?? null,
-          ui: {
-            onDialogRequest: (request) => {
-              void this.dispatchShell('dialogs', 'open', {
-                id: request.id,
-                dialogType: request.dialogType,
-                title: request.title,
-                ...(request.message ? { message: request.message } : {}),
-                ...(request.options ? { options: request.options } : {}),
-                ...(request.placeholder
-                  ? { placeholder: request.placeholder }
-                  : {}),
-                ...(request.prefill ? { prefill: request.prefill } : {}),
-                ...(request.secret ? { secret: true } : {}),
-              });
-            },
-            onDialogResolved: (id) => {
-              void this.dispatchShell('dialogs', 'dismiss', { id });
-            },
-            onNotify: (message, level, source) => {
-              void this.dispatchShell('notices', 'notify', {
-                message,
-                level,
-                source,
-              });
-            },
-          },
-          onTurnFinished: () => {
-            this.registry?.define('agent').resource('runtime').publish();
-          },
-        });
+        const agent = await this.runtimes.ensure(current.id, current.path);
         this.packages = new PiPackageService({
-          settingsManager: () => this.host?.settingsManager ?? null,
-          cwd: () => this.host?.getWorkspacePath() ?? workspacePath,
+          settingsManager: () => this.host()?.settingsManager ?? null,
+          cwd: () => this.host()?.getWorkspacePath() ?? current.path!,
           agentDir: () => this.storage.dataRoot,
           onChanged: () => this.reloadAfterPackages(),
         });
+        this.refreshAppModels();
+        this.syncSkills();
+        await this.refreshWorkspaceState(current.id, agent);
+        await this.syncSessionResources();
       } catch (error) {
-        this.host = null;
         this.packages = null;
         console.error('[agent] runtime bootstrap failed', error);
       }
-    }
-    applyWorkspace(this.context, registry);
-    if (this.host) {
-      this.models.providers = this.host.getProviderCatalog([]);
-      this.models.models = this.host.getModelCatalog();
-      this.modelResources?.sync();
-      this.syncSkills();
-      this.sessions.workspaceId =
-        (snapshot as { current?: { id?: string } | null } | null)?.current
-          ?.id ?? '';
-      this.sessions.items = await this.host.listSessions().catch(() => []);
-      this.sessions.messages = await this.host.getMessages().catch(() => []);
-      this.sessions.commands = this.host.getCommands();
-      this.sessions.currentId = this.host.getSnapshot().sessionId ?? null;
-      await this.syncSessionResources();
     }
     this.offDialogs = registry.onUpdate((update) => {
       if (
         update.domain !== 'shell' ||
         update.type !== 'snapshot' ||
-        !this.sessions.workspaceId ||
-        update.resource !== `${this.sessions.workspaceId}/dialogs`
+        !update.resource.endsWith('/dialogs')
       ) {
         return;
       }
-      this.handleDialogUpdate();
+      this.handleDialogUpdate(update.resource.slice(0, -'/dialogs'.length));
     });
     this.offPlugins = registry.onUpdate((update) => {
       if (
@@ -225,7 +221,7 @@ export class AgentModule implements DomainModule {
       if (this.pluginReloadTimer) clearTimeout(this.pluginReloadTimer);
       this.pluginReloadTimer = setTimeout(() => {
         this.pluginReloadTimer = null;
-        void this.host
+        void this.host()
           ?.reloadResources()
           .then(() => this.syncSkills())
           .catch((error) => console.warn('[agent] skill reload failed', error));
@@ -239,35 +235,98 @@ export class AgentModule implements DomainModule {
       ) {
         return;
       }
-      applyWorkspace(this.context, registry, update.data);
       const current = (update.data as { current: WorkspaceMeta | null })
         .current;
-      if (current?.path && this.host) {
-        void this.host
-          .setWorkspace(current.path)
-          .then(() => this.refreshSessions())
-          .catch((error: unknown) => {
-            console.error('[agent] workspace rebind failed', error);
-          });
-      }
+      if (!current?.id || !current.path) return;
+      void this.switchWorkspace(current.id, current.path);
     });
   }
 
-  private async refreshSessions(): Promise<void> {
-    const host = this.host;
-    const registry = this.registry;
-    if (!host || !registry) return;
-    const list = await host.listSessions().catch(() => []);
-    const snapshot = registry.snapshot({
-      domain: 'workspace',
-      resource: 'registry',
-    }) as { current?: { id?: string } | null } | null;
-    this.sessions.workspaceId = snapshot?.current?.id ?? '';
-    this.sessions.items = list;
-    this.sessions.currentId = host.getSnapshot().sessionId ?? null;
-    this.sessions.messages = await host.getMessages().catch(() => []);
-    this.sessions.commands = host.getCommands();
+  private async bootstrapAgent(
+    workspaceId: string,
+    workspacePath: string,
+  ): Promise<WorkspaceAgent> {
+    const app = this.app;
+    if (!app) throw new Error('agent app 未初始化');
+    return WorkspaceAgent.bootstrap({
+      app,
+      storage: this.storage,
+      workspacePath,
+      workspaceId,
+      sendEvent: (frame) => {
+        const registry = this.registry;
+        if (!registry) return;
+        registry.define('agent').resource('runtime').event('event', frame);
+        this.sessionResources?.event(workspaceId, 'event', frame);
+        const state = this.sessionsByWorkspace.get(workspaceId);
+        if (!state) return;
+        if (
+          reduceSessionFrame(state, frame, this.runtimes.get(workspaceId), () =>
+            this.sessionResources?.publish(workspaceId),
+          )
+        ) {
+          this.sessionResources?.publish(workspaceId);
+        }
+      },
+      ui: {
+        onDialogRequest: (request) => {
+          void this.dispatchShell(workspaceId, 'dialogs', 'open', {
+            id: request.id,
+            dialogType: request.dialogType,
+            title: request.title,
+            ...(request.message ? { message: request.message } : {}),
+            ...(request.options ? { options: request.options } : {}),
+            ...(request.placeholder
+              ? { placeholder: request.placeholder }
+              : {}),
+            ...(request.prefill ? { prefill: request.prefill } : {}),
+            ...(request.secret ? { secret: true } : {}),
+          });
+        },
+        onDialogResolved: (id) => {
+          void this.dispatchShell(workspaceId, 'dialogs', 'dismiss', { id });
+        },
+        onNotify: (message, level, source) => {
+          void this.dispatchShell(workspaceId, 'notices', 'notify', {
+            message,
+            level,
+            source,
+          });
+        },
+      },
+      onTurnFinished: () => {
+        this.registry?.define('agent').resource('runtime').publish();
+      },
+    });
+  }
+
+  private async switchWorkspace(
+    workspaceId: string,
+    path: string,
+  ): Promise<void> {
+    this.currentWorkspaceId = workspaceId;
+    try {
+      const agent =
+        this.runtimes.get(workspaceId) ??
+        (await this.runtimes.ensure(workspaceId, path));
+      await this.refreshWorkspaceState(workspaceId, agent);
+      this.refreshAppModels();
+      this.syncSkills();
+    } catch (error) {
+      console.error('[agent] workspace bootstrap failed', error);
+    }
     await this.syncSessionResources();
+  }
+
+  private async refreshWorkspaceState(
+    workspaceId: string,
+    agent: WorkspaceAgent,
+  ): Promise<void> {
+    const state = this.sessionResources?.stateOf(workspaceId);
+    if (!state) return;
+    state.items = await agent.listSessions().catch(() => []);
+    state.messages = await agent.getMessages().catch(() => []);
+    state.commands = agent.getCommands();
   }
 
   /** 每个已登记工作区一份 `<wsId>/sessions`；非激活工作区只给只读投影。 */
@@ -284,17 +343,22 @@ export class AgentModule implements DomainModule {
     } | null;
     const workspaces = state?.workspaces ?? [];
     const known = new Set(workspaces.map((item) => item.id));
-    for (const workspaceId of Array.from(this.idleSessions.keys())) {
+    for (const [workspaceId] of this.runtimes.entries()) {
       if (known.has(workspaceId)) continue;
-      this.idleSessions.delete(workspaceId);
+      void this.runtimes.dispose(workspaceId);
     }
     for (const workspaceId of Array.from(this.registeredWorkspaces)) {
       if (known.has(workspaceId)) continue;
       this.registeredWorkspaces.delete(workspaceId);
       resources.remove(workspaceId);
+      this.contextResources?.remove(workspaceId);
+    }
+    for (const workspaceId of Array.from(this.idleSessions.keys())) {
+      if (known.has(workspaceId)) continue;
+      this.idleSessions.delete(workspaceId);
     }
     for (const meta of workspaces) {
-      if (meta.id === this.sessions.workspaceId) {
+      if (this.runtimes.get(meta.id)) {
         this.idleSessions.delete(meta.id);
         continue;
       }
@@ -307,12 +371,25 @@ export class AgentModule implements DomainModule {
     for (const meta of workspaces) {
       this.registeredWorkspaces.add(meta.id);
       resources.ensure(meta.id);
+      this.contextResources?.ensure(meta.id);
+      const context = this.contexts.get(meta.id);
+      if (context && context.snapshot().cwd !== meta.path) {
+        context.setWorkspace(meta.path);
+      }
     }
     resources.publish();
   }
 
+  private refreshAppModels(): void {
+    const app = this.app;
+    if (!app) return;
+    this.models.providers = app.getProviderCatalog([]);
+    this.models.models = app.getModelCatalog();
+    this.modelResources?.sync();
+  }
+
   private async reloadAfterPackages(): Promise<void> {
-    const host = this.host;
+    const host = this.host();
     const registry = this.registry;
     if (!host || !registry) return;
     await host.reloadResources();
@@ -328,30 +405,26 @@ export class AgentModule implements DomainModule {
   }
 
   private syncSkills(): void {
-    const host = this.host;
-    if (!host) return;
-    this.skills.catalog = host
-      .skillsRef()
-      .getSkillInfos()
-      .map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        ...(skill.pluginId ? { pluginId: skill.pluginId } : {}),
-        ...(skill.path ? { path: skill.path } : {}),
-      }));
+    const app = this.app;
+    if (!app) return;
+    this.skills.catalog = app.skills.getSkillInfos().map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      ...(skill.pluginId ? { pluginId: skill.pluginId } : {}),
+      ...(skill.path ? { path: skill.path } : {}),
+    }));
     this.skills.sources = this.plugins?.skillSources() ?? [];
     this.registry?.define('agent').resource('skills').publish();
   }
 
   private async dispatchShell(
+    workspaceId: string,
     resource: 'dialogs' | 'notices',
     action: string,
     input: Record<string, unknown>,
   ): Promise<void> {
     const registry = this.registry;
-    if (!registry) return;
-    const workspaceId = this.sessions.workspaceId;
-    if (!workspaceId) return;
+    if (!registry || !workspaceId) return;
     const result = await registry.dispatchCommand(
       { domain: 'shell', resource: `${workspaceId}/${resource}` },
       action,
@@ -367,20 +440,22 @@ export class AgentModule implements DomainModule {
     }
   }
 
-  private handleDialogUpdate(): void {
-    const host = this.host;
+  private handleDialogUpdate(workspaceId: string): void {
+    const host = this.runtimes.get(workspaceId);
     const registry = this.registry;
-    if (!host || !registry) return;
-    if (!this.sessions.workspaceId) return;
+    if (!host || !registry || !workspaceId) return;
     const dialogs = registry.snapshot({
       domain: 'shell',
-      resource: `${this.sessions.workspaceId}/dialogs`,
+      resource: `${workspaceId}/dialogs`,
     }) as DialogView[] | null;
     for (const dialog of dialogs ?? []) {
-      if (dialog.status === 'open' || this.handledDialogs.has(dialog.id)) {
+      if (
+        dialog.status === 'open' ||
+        this.handledDialogs.has(`${workspaceId}:${dialog.id}`)
+      ) {
         continue;
       }
-      this.handledDialogs.add(dialog.id);
+      this.handledDialogs.add(`${workspaceId}:${dialog.id}`);
       const response = dialog.response;
       const value =
         typeof response?.value === 'string' ? { value: response.value } : {};
@@ -411,22 +486,12 @@ export class AgentModule implements DomainModule {
     this.offDialogs?.();
     this.offDialogs = null;
     this.handledDialogs.clear();
-    for (const id of this.sessions.sessions.keys()) {
-      this.registry
-        ?.define('agent')
-        .remove(`${this.sessions.workspaceId}/session/${id}`);
-    }
-    for (const workspaceId of this.idleSessions.keys()) {
+    for (const workspaceId of Array.from(this.sessionsByWorkspace.keys())) {
       this.sessionResources?.remove(workspaceId);
-    }
-    if (this.sessions.workspaceId) {
-      this.sessionResources?.remove(this.sessions.workspaceId);
     }
     this.idleSessions.clear();
     this.sessionResources = null;
-    this.sessions.sessions.clear();
-    this.sessions.currentId = null;
-    this.sessions.items = [];
+    this.sessionsByWorkspace.clear();
     this.models.providers = [];
     this.models.models = [];
     this.modelResources = null;
@@ -439,24 +504,14 @@ export class AgentModule implements DomainModule {
     this.thinking.levels = [];
     this.extensions.list = [];
     this.extensions.errors = [];
-    this.context.setWorkspace('');
-    this.host?.dispose();
-    this.host = null;
+    for (const workspaceId of Array.from(this.contexts.keys())) {
+      this.contextResources?.remove(workspaceId);
+    }
+    this.contexts.clear();
+    this.contextResources = null;
+    void this.runtimes.disposeAll();
+    this.currentWorkspaceId = null;
+    this.app = null;
     this.registry = null;
   }
-}
-
-function applyWorkspace(
-  context: AgentContext,
-  registry: DomainRegistry,
-  data?: unknown,
-): void {
-  const snapshot =
-    data !== undefined
-      ? (data as { current: WorkspaceMeta | null })
-      : (registry.snapshot({
-          domain: 'workspace',
-          resource: 'registry',
-        }) as { current: WorkspaceMeta | null } | null);
-  context.setWorkspace(snapshot?.current?.path ?? '');
 }

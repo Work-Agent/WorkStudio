@@ -15,7 +15,10 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { composeExtensionFactories } from './harness/builtin-extensions.ts';
 import { SYSTEM_PROMPT } from './harness/prompts.ts';
-import type { InlineExtension } from '@earendil-works/pi-coding-agent';
+import type {
+  InlineExtension,
+  ModelRuntime,
+} from '@earendil-works/pi-coding-agent';
 import type { SkillsManager } from './harness/skills.ts';
 
 type ExtensionsResult = Awaited<
@@ -26,6 +29,7 @@ export interface AgentSessionInput {
   cwd: string;
   workspaceId: string;
   agentDir: string;
+  modelRuntime?: ModelRuntime;
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
   skills: SkillsManager;
@@ -49,6 +53,7 @@ export class AgentSession {
     const services = await createAgentSessionServices({
       cwd: input.cwd,
       agentDir: input.agentDir,
+      ...(input.modelRuntime ? { modelRuntime: input.modelRuntime } : {}),
       settingsManager: input.settingsManager,
       resourceLoaderOptions: {
         extensionFactories: composeExtensionFactories(
