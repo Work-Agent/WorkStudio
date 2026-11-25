@@ -57,7 +57,10 @@ export class ShellModule implements DomainModule {
   private readonly offs: Array<() => void> = [];
 
   constructor(private readonly options: ShellModuleOptions) {
-    this.appearance = createAppearanceState(options.appearance.read());
+    this.appearance = createAppearanceState(
+      options.appearance.read(),
+      options.host?.effectiveTheme() ?? 'dark',
+    );
     options.host?.applyAppearance(
       this.appearance.theme,
       this.appearance.zoom,
@@ -155,6 +158,13 @@ export class ShellModule implements DomainModule {
         this.views.records.delete(id);
         this.registry?.define('shell').remove(`view/${id}`);
         this.registry?.define('shell').resource('views').publish();
+      }),
+      // 跟随系统时 state.theme 只能由平台事件刷新；显式 light/dark 忽略系统变化。
+      host.onSystemThemeChanged((theme) => {
+        if (this.appearance.source !== 'system') return;
+        if (this.appearance.theme === theme) return;
+        this.appearance.theme = theme;
+        this.registry?.define('shell').resource('appearance').patch({ theme });
       }),
     );
   }

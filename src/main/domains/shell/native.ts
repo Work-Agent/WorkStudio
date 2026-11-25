@@ -441,6 +441,22 @@ export class ShellHost {
     entry.view.webContents.close();
   }
 
+  /** 平台当前生效的亮 / 暗：跟随系统时由系统决定，否则等于 themeSource。 */
+  effectiveTheme(): 'light' | 'dark' {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  }
+
+  /** 系统主题变化：订阅方自行判断是否处于跟随系统。 */
+  onSystemThemeChanged(
+    listener: (theme: 'light' | 'dark') => void,
+  ): () => void {
+    const handler = (): void => listener(this.effectiveTheme());
+    nativeTheme.on('updated', handler);
+    return () => {
+      nativeTheme.removeListener('updated', handler);
+    };
+  }
+
   /** 主题与内容缩放应用到所有窗口/视图。 */
   applyAppearance(
     theme: 'light' | 'dark',
@@ -448,7 +464,7 @@ export class ShellHost {
     source?: 'light' | 'dark' | 'system',
   ): void {
     nativeTheme.themeSource = source ?? theme;
-    const effective = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+    const effective = this.effectiveTheme();
     const background = effective === 'dark' ? '#1a1c1d' : '#f4f4f5';
     for (const entry of this.windows.values()) {
       if (!entry.window.isDestroyed()) {
@@ -477,7 +493,7 @@ export class ShellHost {
   }
 
   private backgroundColor(): string {
-    return nativeTheme.shouldUseDarkColors ? '#1a1c1d' : '#f4f4f5';
+    return this.effectiveTheme() === 'dark' ? '#1a1c1d' : '#f4f4f5';
   }
 
   /** 应用布局快照到当前窗口的原生视图。 */

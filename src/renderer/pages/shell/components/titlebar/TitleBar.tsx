@@ -87,7 +87,10 @@ export function TitleBar() {
         </button>
         <button
           onClick={toggle}
-          title={theme === 'dark' ? '切换为亮色' : '切换为暗色'}
+          data-testid="theme-toggle"
+          title={
+            theme === 'dark' ? '当前深色，切换为浅色' : '当前浅色，切换为深色'
+          }
           className="h-8 w-8 rounded-md flex items-center justify-center transition-colors text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#2f3233] hover:text-zinc-900 dark:hover:text-zinc-100"
         >
           {theme === 'dark' ? (

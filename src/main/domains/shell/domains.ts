@@ -8,6 +8,7 @@
  */
 
 import type { AppearanceSettings } from '../../../shared/appearance.ts';
+import { resolveAppearance } from '../../../shared/appearance.ts';
 import type { ViewType } from '../../contract.ts';
 import { CallFailure } from '../../contract.ts';
 import type { Protocols } from '../../protocols.ts';
@@ -864,9 +865,14 @@ export interface AppearanceState {
 
 export function createAppearanceState(
   settings: AppearanceSettings = { theme: 'dark', zoom: 100 },
+  systemTheme: 'light' | 'dark' = 'dark',
 ): AppearanceState {
+  const { effectiveTheme } = resolveAppearance(
+    settings,
+    systemTheme === 'dark',
+  );
   return {
-    theme: settings.theme === 'light' ? 'light' : 'dark',
+    theme: effectiveTheme,
     source: settings.theme,
     zoom: settings.zoom / 100,
   };
@@ -879,6 +885,12 @@ export function defineAppearanceResource(
   host?: ShellHost,
 ): void {
   const resource = registry.define('shell').resource('appearance');
+  /** theme 是解析结果：非 system 时等于 source，system 时取平台当前值。 */
+  const resolvedTheme = (): 'light' | 'dark' =>
+    resolveAppearance(
+      { theme: state.source, zoom: state.zoom * 100 },
+      (host?.effectiveTheme() ?? state.theme) === 'dark',
+    ).effectiveTheme;
   resource.snapshot(() => ({
     theme: state.theme,
     source: state.source,
@@ -892,22 +904,22 @@ export function defineAppearanceResource(
       zoom: { type: 'number' },
     },
     run: (input) => {
-      if (input.theme === 'light' || input.theme === 'dark') {
-        state.theme = input.theme;
-      }
-      if (
+      const source =
         input.source === 'light' ||
         input.source === 'dark' ||
         input.source === 'system'
-      ) {
-        state.source = input.source;
-      }
+          ? input.source
+          : input.theme === 'light' || input.theme === 'dark'
+            ? input.theme
+            : state.source;
+      state.source = source;
       if (typeof input.zoom === 'number') {
         state.zoom = Math.min(2, Math.max(0.5, input.zoom));
       }
-      if (state.source !== 'system') state.theme = state.source;
       persist?.({ theme: state.source, zoom: state.zoom * 100 });
+      // 先落 themeSource，再读平台生效值，跟随系统时才拿得到正确结果。
       host?.applyAppearance(state.theme, state.zoom, state.source);
+      state.theme = resolvedTheme();
       resource.patch({
         theme: state.theme,
         source: state.source,

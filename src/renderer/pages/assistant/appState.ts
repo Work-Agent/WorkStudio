@@ -4,6 +4,7 @@
  * 只依赖 window.workStudio 与 domain/resources；不再使用旧路径兼容层。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { effectiveTheme } from '../../shared/domains/appearance.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type {
   AgentSnapshot,
@@ -157,7 +158,7 @@ export function useAppShell(): AssistantShell | null {
   const themeState = useResource<{ theme: 'light' | 'dark' }>(
     'shell',
     'appearance',
-    { theme: 'dark' },
+    { theme: effectiveTheme() },
   );
   const layouts = useResource<
     Array<{ windowId: string; scene?: { aiFloating?: boolean } }>
