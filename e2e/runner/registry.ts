@@ -43,6 +43,7 @@ import assistantThinking from '../cases/assistant-thinking.ts';
 import agentResources from '../cases/agent-resources.ts';
 import settingsAppearance from '../cases/settings-appearance.ts';
 import newPageTheme from '../cases/new-page-theme.ts';
+import settingsAddress from '../cases/settings-address.ts';
 
 export const cases: readonly E2ECase[] = [
   windowDefaults,
@@ -88,6 +89,7 @@ export const cases: readonly E2ECase[] = [
   shellCapture,
   themeToggle,
   newPageTheme,
+  settingsAddress,
   assistantFloating,
 ];
 

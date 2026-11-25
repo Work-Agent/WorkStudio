@@ -253,6 +253,35 @@ export function defineViewsResource(
       return record;
     },
   });
+  list.command('address', {
+    summary: '更新视图地址与标题（不导航）',
+    args: {
+      url: { type: 'string', required: true },
+      title: { type: 'string' },
+    },
+    run: (input, ctx) => {
+      if (ctx.origin.type !== 'view') {
+        throw new CallFailure('invalid', '只有页面可以更新自身地址');
+      }
+      const id = ctx.origin.viewId;
+      const record = state.records.get(id);
+      if (!record) {
+        throw new CallFailure('not_found', `视图不存在：${id}`);
+      }
+      const next: ViewRecord = {
+        ...record,
+        url: String(input.url),
+        ...(typeof input.title === 'string' ? { title: input.title } : {}),
+      };
+      state.records.set(id, next);
+      registry
+        .define('shell')
+        .resource(viewResourceName(id))
+        .patch({ url: next.url, title: next.title });
+      list.publish();
+      return next;
+    },
+  });
   list.command('activate', {
     summary: '切换当前视图',
     args: { id: { type: 'string', required: true } },

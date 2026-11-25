@@ -21,7 +21,6 @@ async function complete(): Promise<void> {
   );
   if (!result.ok) throw new Error(result.error.message);
   if (app) app.textContent = '授权完成，可以关闭此页面。';
-  history.replaceState(null, '', location.pathname);
 }
 
 void complete().catch((error: unknown) => {

@@ -3,6 +3,7 @@
  * 卡片内容直接是 React + next domain，不再内嵌页面。
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { command } from '../../shared/api/bridge.ts';
 import { openListItem, useLists } from '../../shared/domains/lists.ts';
 import { notifyError } from '../../shared/domains/notices.ts';
 import { createRoot } from 'react-dom/client';
@@ -1782,19 +1783,29 @@ function Card({
 }
 
 /** 地址里的卡片：work://studio/settings/<card>。 */
-function cardFromAddress(): string {
-  const parts = location.pathname.split('/').filter(Boolean);
-  return parts[0] === 'settings' && parts[1] ? parts[1] : '';
+function cardFromUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'work:' || url.hostname !== 'studio') return '';
+    const parts = url.pathname.split('/').filter(Boolean);
+    return parts[0] === 'settings' && parts[1] ? parts[1] : '';
+  } catch {
+    return '';
+  }
 }
 
-/** 卡片与地址一一对应：开一张卡 = 换一次地址；全收起 = /settings。 */
-function applyCard(card: string): void {
-  const path = card ? `/settings/${card}` : '/settings';
-  try {
-    history.replaceState(null, '', path);
-  } catch {
-    /* 非标准 scheme 时忽略，地址仍由主进程记录 */
-  }
+function cardFromAddress(): string {
+  return cardFromUrl(location.href);
+}
+
+/** 地址由主进程视图投影持有；页面只上报当前卡片，不直接改 document URL。 */
+function publishCard(card: string): void {
+  const url = card
+    ? `work://studio/settings/${encodeURIComponent(card)}`
+    : 'work://studio/settings';
+  void command('shell', 'views', 'address', { url, title: '设置' }).catch(
+    () => undefined,
+  );
 }
 
 function SettingsHome() {
@@ -1804,6 +1815,41 @@ function SettingsHome() {
     () => pages.filter((page) => !page.internal),
     [pages],
   );
+
+  // document URL 不承担卡片路由（custom scheme 的 replaceState 会触发
+  // Chromium bad IPC）；以 shell/views 的 active.url 为准，支持重载后恢复。
+  useEffect(() => {
+    const bridge = window.workStudio;
+    if (!bridge) return;
+    let disposed = false;
+    const apply = (value: unknown): void => {
+      if (disposed || !Array.isArray(value)) return;
+      const active = value.find(
+        (item): item is { active?: boolean; url?: string } =>
+          typeof item === 'object' &&
+          item !== null &&
+          (item as { active?: unknown }).active === true,
+      );
+      if (typeof active?.url !== 'string') return;
+      if (!active.url.startsWith('work://studio/settings')) return;
+      setOpenCard(cardFromUrl(active.url));
+    };
+    const off = bridge.onUpdate((update) => {
+      if (
+        update.domain === 'shell' &&
+        update.resource === 'views' &&
+        update.type === 'snapshot'
+      ) {
+        apply(update.data);
+      }
+    });
+    void bridge.subscribe('shell', 'views').then(apply);
+    return () => {
+      disposed = true;
+      off();
+      bridge.unsubscribe('shell', 'views');
+    };
+  }, []);
 
   // 从地址进入时展开对应卡片并滚到可见处。
   useEffect(() => {
@@ -1815,7 +1861,7 @@ function SettingsHome() {
   const toggle = (card: string, next: boolean): void => {
     const value = next ? card : '';
     setOpenCard(value);
-    applyCard(value);
+    publishCard(value);
   };
 
   return (
