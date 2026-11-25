@@ -45,7 +45,7 @@ export interface SystemModulesOptions {
   pluginService: PluginService;
   appearance: AppearanceStore;
   shellHost?: ShellHost;
-  openItem?: (item: ListItem) => Promise<unknown>;
+  openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>;
   settingsPages?: SettingsPage[];
 }
 
@@ -53,25 +53,28 @@ export function registerSystemModules(
   registry: DomainRegistry,
   options: SystemModulesOptions,
 ): void {
-  const browser = new BrowserCapability(options.shellHost, async (input) => {
-    const result = await registry.dispatchCommand(
-      { domain: 'shell', resource: 'views' },
-      'open',
-      {
-        id: input.id,
-        type: 'web',
-        title: input.title,
-        url: input.url,
-      },
-      {
-        origin: { type: 'service', id: 'browser' },
-        changed: (ref, type) => registry.changed(ref, type),
-        log: createLog('browser'),
-      },
-    );
-    if (!result.ok) throw new Error(result.error.message);
-    return result.data as { id: string; title: string; url?: string };
-  });
+  const browser = new BrowserCapability(
+    options.shellHost,
+    async (windowId, input) => {
+      const result = await registry.dispatchCommand(
+        { domain: 'shell', resource: `${windowId}/views` },
+        'open',
+        {
+          id: input.id,
+          type: 'web',
+          title: input.title,
+          url: input.url,
+        },
+        {
+          origin: { type: 'service', id: 'browser' },
+          changed: (ref, type) => registry.changed(ref, type),
+          log: createLog('browser'),
+        },
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data as { id: string; title: string; url?: string };
+    },
+  );
   const context = new AgentContext();
   const tools = new ToolSurface(
     options.transport,

@@ -7,7 +7,10 @@ export default defineCase({
   async run(ctx) {
     await ctx.expect.poll(async () => {
       const state = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('agent', 'sessions'),
+        window.workStudio.subscribe(
+          'agent',
+          `${String(window.workStudio.workspaceId)}/sessions`,
+        ),
       )) as {
         current?: unknown;
         items?: unknown[];

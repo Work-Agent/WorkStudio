@@ -10,14 +10,10 @@ export default defineCase({
   title: '拖拽捕获层收到 pointerup 后结束预览',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const record = (await ctx.evaluate(() =>
-      window.workStudio.subscribe('shell', 'layout'),
-    )) as LayoutRecord[];
-    const windowId = record[0]?.windowId;
-    if (!windowId) throw new Error('布局未就绪');
+    const windowId = await ctx.evaluate(() => window.workStudio.workspaceId);
+    if (!windowId) throw new Error('窗口未绑定工作区');
     await ctx.evaluate(async (id) => {
-      await window.workStudio.command('shell', 'layout', 'begin', {
-        windowId: id,
+      await window.workStudio.command('shell', `${id}/layout`, 'begin', {
         input: {
           type: 'pane-resize',
           side: 'left',
@@ -25,27 +21,40 @@ export default defineCase({
           pointerY: 0,
         },
       });
-      await window.workStudio.command('shell', 'layout', 'move', {
-        windowId: id,
+      await window.workStudio.command('shell', `${id}/layout`, 'move', {
         input: { pointerX: 40, pointerY: 0 },
       });
     }, windowId);
-    await ctx.expect.poll(async () => {
-      const next = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      return Boolean(next[0]?.preview);
-    }, '拖拽预览未生成');
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(async () => {
+          const id = window.workStudio.workspaceId;
+          if (!id) return false;
+          const record = (await window.workStudio.subscribe(
+            'shell',
+            `${id}/layout`,
+          )) as LayoutRecord | null;
+          return Boolean(record?.preview);
+        }),
+      '拖拽预览未生成',
+    );
 
     const capture = await ctx.waitForPage(/^work:\/\/studio\/capture$/);
     await capture.evaluate(() => {
       window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
     });
-    await ctx.expect.poll(async () => {
-      const next = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      return next[0]?.preview === null;
-    }, '捕获层 pointerup 没有结束交互');
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(async () => {
+          const id = window.workStudio.workspaceId;
+          if (!id) return false;
+          const record = (await window.workStudio.subscribe(
+            'shell',
+            `${id}/layout`,
+          )) as LayoutRecord | null;
+          return record?.preview === null;
+        }),
+      '捕获层 pointerup 没有结束交互',
+    );
   },
 });

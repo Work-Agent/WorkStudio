@@ -813,22 +813,29 @@ function PluginsCard() {
   );
 }
 
+function sessionsResource(): string {
+  const ws = window.workStudio?.workspaceId;
+  return ws ? `${ws}/sessions` : 'sessions';
+}
+
 function SessionsCard() {
   const aggregate = useResource<{
     items?: SessionItem[];
     current?: AgentSnapshot | null;
-  }>('agent', 'sessions', { items: [], current: null });
+  }>('agent', sessionsResource(), { items: [], current: null });
   const sessions = aggregate.items ?? [];
   const current = aggregate.current ?? null;
   return (
     <Panel>
       <div className="flex justify-end gap-2">
         {current?.isStreaming && (
-          <Button onClick={() => void run('agent', 'sessions', 'abort')}>
+          <Button
+            onClick={() => void run('agent', sessionsResource(), 'abort')}
+          >
             停止当前任务
           </Button>
         )}
-        <Button onClick={() => void run('agent', 'sessions', 'new')}>
+        <Button onClick={() => void run('agent', sessionsResource(), 'new')}>
           新建会话
         </Button>
       </div>
@@ -849,7 +856,9 @@ function SessionsCard() {
             <Button
               disabled={current?.sessionFile === session.path}
               onClick={() =>
-                void run('agent', 'sessions', 'open', { id: session.path })
+                void run('agent', sessionsResource(), 'open', {
+                  id: session.path,
+                })
               }
             >
               打开
@@ -858,7 +867,7 @@ function SessionsCard() {
               onClick={() => {
                 const name = window.prompt('重命名会话', session.name);
                 if (name?.trim()) {
-                  void run('agent', 'sessions', 'rename', {
+                  void run('agent', sessionsResource(), 'rename', {
                     name: name.trim(),
                     path: session.path,
                   });
@@ -871,7 +880,7 @@ function SessionsCard() {
               disabled={current?.isStreaming}
               onClick={() => {
                 if (!window.confirm(`删除会话「${session.name}」？`)) return;
-                void run('agent', 'sessions', 'delete', {
+                void run('agent', sessionsResource(), 'delete', {
                   path: session.path,
                 });
               }}
@@ -1096,7 +1105,7 @@ function ModelsCard() {
                     active={active}
                     disabled={active}
                     onClick={() =>
-                      void run('agent', 'sessions', 'setModel', {
+                      void run('agent', sessionsResource(), 'setModel', {
                         provider: model.provider,
                         model: model.modelId,
                       })
@@ -1803,9 +1812,12 @@ function publishCard(card: string): void {
   const url = card
     ? `work://studio/settings/${encodeURIComponent(card)}`
     : 'work://studio/settings';
-  void command('shell', 'views', 'address', { url, title: '设置' }).catch(
-    () => undefined,
-  );
+  const wsId = window.workStudio?.workspaceId;
+  if (!wsId) return;
+  void command('shell', `${wsId}/views`, 'address', {
+    url,
+    title: '设置',
+  }).catch(() => undefined);
 }
 
 function SettingsHome() {
@@ -1821,6 +1833,9 @@ function SettingsHome() {
   useEffect(() => {
     const bridge = window.workStudio;
     if (!bridge) return;
+    const wsId = bridge.workspaceId;
+    if (!wsId) return;
+    const views = `${wsId}/views`;
     let disposed = false;
     const apply = (value: unknown): void => {
       if (disposed || !Array.isArray(value)) return;
@@ -1837,17 +1852,17 @@ function SettingsHome() {
     const off = bridge.onUpdate((update) => {
       if (
         update.domain === 'shell' &&
-        update.resource === 'views' &&
+        update.resource === views &&
         update.type === 'snapshot'
       ) {
         apply(update.data);
       }
     });
-    void bridge.subscribe('shell', 'views').then(apply);
+    void bridge.subscribe('shell', views).then(apply);
     return () => {
       disposed = true;
       off();
-      bridge.unsubscribe('shell', 'views');
+      bridge.unsubscribe('shell', views);
     };
   }, []);
 

@@ -33,8 +33,8 @@ export interface ResolvedPage {
 }
 
 export interface PageRouterOptions {
-  /** 资源页打开前登记 workspace/<ref>。 */
-  openRef?: (ref: string) => void;
+  /** 资源页打开前登记 workspace/<wsId>/<ref>。 */
+  openRef?: (ref: string, workspaceId: string) => void;
 }
 
 export class PageRouter {
@@ -90,7 +90,7 @@ export class PageRouter {
       case 'resource': {
         const plugin = this.plugins.pluginOfRef(target.ref);
         if (!plugin) throw new Error(`没有插件认领资源：${target.ref}`);
-        this.options.openRef?.(target.ref);
+        this.options.openRef?.(target.ref, target.workspaceId);
         return {
           type: 'resource',
           url: pluginUrl(plugin.id, 'content', { ref: target.ref }),

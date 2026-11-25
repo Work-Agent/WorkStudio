@@ -50,7 +50,12 @@ export default defineCase({
     } finally {
       if (viewId) {
         await ctx.evaluate(async (id) => {
-          await window.workStudio.command('shell', 'views', 'close', { id });
+          await window.workStudio.command(
+            'shell',
+            `${String(window.workStudio.workspaceId)}/views`,
+            'close',
+            { id },
+          );
         }, viewId);
       }
       await ctx.evaluate(async (source) => {

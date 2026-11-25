@@ -24,6 +24,7 @@ import {
   TITLEBAR_OVERLAY_COLORS,
 } from '../../../shared/titlebar.ts';
 import { hardenWebContents } from '../../platform/policy.ts';
+import { WORKSPACE_ARG } from '../../../shared/channels.ts';
 import type { ViewRecord, WindowRecord } from './domains.ts';
 
 export interface ShellWindowOptions {
@@ -63,6 +64,7 @@ interface ViewEntry {
   record: ViewRecord;
   view: WebContentsView;
   window: BrowserWindow;
+  windowId: string;
   senderId: string;
 }
 
@@ -70,13 +72,25 @@ type Rect = { x: number; y: number; width: number; height: number };
 
 export class ShellHost {
   private readonly windows = new Map<string, WindowEntry>();
+  /** key = `${windowId}\u0000${viewId}`：同一 contentPath 可在不同窗口各自成页。 */
   private readonly views = new Map<string, ViewEntry>();
   private readonly byWorkspace = new Map<string, string>();
   private readonly windowClosedListeners = new Set<(id: string) => void>();
-  private readonly viewClosedListeners = new Set<(id: string) => void>();
+  private readonly viewClosedListeners = new Set<
+    (windowId: string, viewId: string) => void
+  >();
   private readonly windowActivatedListeners = new Set<(id: string) => void>();
+  private readonly windowResizedListeners = new Set<(id: string) => void>();
   private readonly layouts = new Map<string, LayoutSnapshot>();
   private seq = 0;
+
+  private static viewKey(windowId: string, viewId: string): string {
+    return `${windowId}\u0000${viewId}`;
+  }
+
+  private viewOf(windowId: string, viewId: string): ViewEntry | undefined {
+    return this.views.get(ShellHost.viewKey(windowId, viewId));
+  }
 
   constructor(private readonly options: ShellHostOptions) {}
 
@@ -85,7 +99,14 @@ export class ShellHost {
     return () => this.windowClosedListeners.delete(listener);
   }
 
-  onViewClosed(listener: (id: string) => void): () => void {
+  onWindowResized(listener: (id: string) => void): () => void {
+    this.windowResizedListeners.add(listener);
+    return () => this.windowResizedListeners.delete(listener);
+  }
+
+  onViewClosed(
+    listener: (windowId: string, viewId: string) => void,
+  ): () => void {
     this.viewClosedListeners.add(listener);
     return () => this.viewClosedListeners.delete(listener);
   }
@@ -132,6 +153,7 @@ export class ShellHost {
         ...(this.options.preload ? { preload: this.options.preload } : {}),
         contextIsolation: true,
         sandbox: true,
+        additionalArguments: [`${WORKSPACE_ARG}${workspaceId}`],
         ...this.options.window?.browserWindow?.webPreferences,
       },
     });
@@ -148,7 +170,10 @@ export class ShellHost {
     this.byWorkspace.set(workspaceId, id);
     this.registerShellOrigin(senderId, id);
     window.on('focus', () => this.activateWindow(id));
-    window.on('resize', () => this.resizeWindow(id));
+    window.on('resize', () => {
+      for (const listener of this.windowResizedListeners) listener(id);
+      this.resizeWindow(id);
+    });
     window.on('closed', () => this.forgetWindow(id));
     if (this.options.shellUrl) void window.loadURL(this.options.shellUrl);
     if (this.options.assistantUrl) {
@@ -190,13 +215,13 @@ export class ShellHost {
     return record;
   }
 
-  openWelcome(): ViewRecord | null {
+  openWelcome(windowId: string): ViewRecord | null {
     if (!this.options.welcomeUrl) return null;
-    const windowEntry = this.activeWindowEntry();
+    const windowEntry = this.windows.get(windowId);
     if (!windowEntry) return null;
-    const existing = this.views.get('welcome');
+    const existing = this.viewOf(windowId, 'welcome');
     if (existing) {
-      this.activateView('welcome');
+      this.activateView(windowId, 'welcome');
       return existing.record;
     }
     return this.mountView(
@@ -271,9 +296,9 @@ export class ShellHost {
     return this.windows.keys().next().value ?? null;
   }
 
-  openView(input: ViewOpenInput): ViewRecord {
-    const windowEntry = this.activeWindowEntry();
-    if (!windowEntry) throw new Error('没有可用的工作区窗口');
+  openView(windowId: string, input: ViewOpenInput): ViewRecord {
+    const windowEntry = this.windows.get(windowId);
+    if (!windowEntry) throw new Error(`没有可用的工作区窗口：${windowId}`);
     return this.mountView(windowEntry, input, true);
   }
 
@@ -282,9 +307,10 @@ export class ShellHost {
     input: ViewOpenInput,
     activate: boolean,
   ): ViewRecord {
-    const existing = input.id ? this.views.get(input.id) : null;
+    const windowId = windowEntry.record.id;
+    const existing = input.id ? this.viewOf(windowId, input.id) : undefined;
     if (existing) {
-      if (activate) this.activateView(existing.record.id);
+      if (activate) this.activateView(windowId, existing.record.id);
       return existing.record;
     }
     const id = input.id ?? `view-${++this.seq}`;
@@ -300,6 +326,9 @@ export class ShellHost {
             : {}),
         contextIsolation: true,
         sandbox: true,
+        additionalArguments: [
+          `${WORKSPACE_ARG}${windowEntry.record.workspaceId}`,
+        ],
         ...(dev ? { webSecurity: false } : {}),
       },
     });
@@ -313,31 +342,33 @@ export class ShellHost {
       pinned: false,
     };
     if (activate) {
-      for (const [otherId, entry] of this.views) {
-        if (entry.window !== windowEntry.window) continue;
+      for (const [otherKey, entry] of this.views) {
+        if (entry.windowId !== windowId) continue;
         if (entry.record.type !== 'page' && entry.record.type !== 'web') {
           continue;
         }
         entry.view.setVisible(false);
-        this.views.set(otherId, entry);
+        this.views.set(otherKey, entry);
       }
     }
-    if (input.type === 'overlay') {
+    if (input.type === 'overlay' || input.type === 'capture') {
+      // 对话框 / 捕获层是覆盖在壳层之上的透明层，不能用自己的底色盖住页面。
       view.setBackgroundColor('#00000000');
       view.setVisible(false);
-    } else if (input.type !== 'capture') {
+    } else {
       // WebContentsView 默认白底；深色模式下新页面首帧会先露出白色。
       view.setBackgroundColor(this.backgroundColor());
     }
-    if (input.type === 'capture') view.setVisible(false);
     windowEntry.window.contentView.addChildView(view);
     const senderId = String(view.webContents.id);
-    this.views.set(id, {
+    const entry: ViewEntry = {
       record,
       view,
       window: windowEntry.window,
+      windowId,
       senderId,
-    });
+    };
+    this.views.set(ShellHost.viewKey(windowId, id), entry);
     this.resizeWindow(windowEntry.record.id);
     this.options.origins.register(senderId, {
       type: 'view',
@@ -346,8 +377,11 @@ export class ShellHost {
     });
     view.webContents.on('destroyed', () => {
       this.options.origins.remove(senderId);
-      this.views.delete(id);
-      for (const listener of this.viewClosedListeners) listener(id);
+      const key = ShellHost.viewKey(windowId, id);
+      // 关闭后立刻用同一 id 重开时，新视图已经登记；迟到的 destroyed 不能删掉新条目。
+      if (this.views.get(key) !== entry) return;
+      this.views.delete(key);
+      for (const listener of this.viewClosedListeners) listener(windowId, id);
     });
     if (input.type === 'web') {
       const onNavigate = (
@@ -356,8 +390,8 @@ export class ShellHost {
       ): void => {
         if (!url.startsWith('work://studio/oauth')) return;
         event.preventDefault();
-        this.closeView(id);
-        this.openView({ type: 'page', title: 'OAuth 回调', url });
+        this.closeView(windowId, id);
+        this.openView(windowId, { type: 'page', title: 'OAuth 回调', url });
       };
       view.webContents.on('will-navigate', onNavigate);
       view.webContents.on('will-redirect', onNavigate);
@@ -416,26 +450,39 @@ export class ShellHost {
     }
   }
 
-  activateView(id: string): void {
-    const entry = this.views.get(id);
+  /** 单个窗口的系统视图显隐（对话框是窗口模态）。 */
+  setWindowSystemViewVisible(
+    windowId: string,
+    type: 'assistant' | 'overlay',
+    visible: boolean,
+  ): void {
+    for (const entry of this.views.values()) {
+      if (entry.windowId !== windowId || entry.record.type !== type) continue;
+      if (!entry.view.webContents.isDestroyed()) entry.view.setVisible(visible);
+    }
+  }
+
+  activateView(windowId: string, id: string): void {
+    const entry = this.viewOf(windowId, id);
     if (!entry) return;
-    for (const [otherId, other] of this.views) {
-      if (other.window !== entry.window) continue;
+    for (const [key, other] of this.views) {
+      if (other.windowId !== windowId) continue;
       if (other.record.type !== 'page' && other.record.type !== 'web') {
         continue;
       }
-      other.view.setVisible(otherId === id);
+      other.view.setVisible(key === ShellHost.viewKey(windowId, id));
     }
     entry.window.contentView.addChildView(entry.view);
-    this.resizeWindow(this.windowIdOf(entry.window));
+    this.resizeWindow(windowId);
     entry.view.webContents.focus();
   }
 
-  closeView(id: string): void {
-    const entry = this.views.get(id);
+  closeView(windowId: string, id: string): void {
+    const key = ShellHost.viewKey(windowId, id);
+    const entry = this.views.get(key);
     if (!entry) return;
     // 先从映射移除，避免关闭事件异步到达时覆盖紧随其后的同 id 新视图。
-    this.views.delete(id);
+    this.views.delete(key);
     this.options.origins.remove(entry.senderId);
     entry.window.contentView.removeChildView(entry.view);
     entry.view.webContents.close();
@@ -502,30 +549,38 @@ export class ShellHost {
     this.resizeWindow(windowId);
   }
 
-  navigateView(id: string, url: string): void {
-    const entry = this.views.get(id);
+  navigateView(windowId: string, id: string, url: string): void {
+    const entry = this.viewOf(windowId, id);
     if (!entry) return;
     entry.record.url = url;
     void entry.view.webContents.loadURL(url);
   }
 
-  reloadView(id: string): void {
-    this.views.get(id)?.view.webContents.reload();
+  reloadView(windowId: string, id: string): void {
+    this.viewOf(windowId, id)?.view.webContents.reload();
   }
 
-  async evaluateView<T>(id: string, script: string): Promise<T> {
-    const entry = this.views.get(id);
+  async evaluateView<T>(
+    windowId: string,
+    id: string,
+    script: string,
+  ): Promise<T> {
+    const entry = this.viewOf(windowId, id);
     if (!entry) throw new Error(`视图不存在：${id}`);
     return entry.view.webContents.executeJavaScript(script, true) as Promise<T>;
   }
 
-  async captureView(id: string): Promise<{
+  async captureView(
+    windowId: string,
+    id: string,
+  ): Promise<{
     url: string;
     title: string;
     html: string;
     text: string;
   }> {
     return this.evaluateView(
+      windowId,
       id,
       `(() => ({
       url: location.href,
@@ -536,14 +591,14 @@ export class ShellHost {
     );
   }
 
-  async screenshotView(id: string): Promise<Uint8Array> {
-    const entry = this.views.get(id);
+  async screenshotView(windowId: string, id: string): Promise<Uint8Array> {
+    const entry = this.viewOf(windowId, id);
     if (!entry) throw new Error(`视图不存在：${id}`);
     const image = await entry.view.webContents.capturePage();
     return new Uint8Array(image.toPNG());
   }
 
-  setViewDirty(_id: string, _dirty: boolean): void {}
+  setViewDirty(_windowId: string, _id: string, _dirty: boolean): void {}
 
   dispose(): void {
     this.layouts.clear();
@@ -575,6 +630,9 @@ export class ShellHost {
     this.windows.delete(id);
     this.byWorkspace.delete(entry.record.workspaceId);
     this.layouts.delete(id);
+    for (const [key, view] of this.views) {
+      if (view.windowId === id) this.views.delete(key);
+    }
     for (const listener of this.windowClosedListeners) listener(id);
   }
 

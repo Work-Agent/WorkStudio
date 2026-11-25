@@ -48,60 +48,63 @@ async function assistantCommand(
   const input = (params ?? {}) as Record<string, unknown>;
   switch (name) {
     case 'session.new':
-      return command('agent', 'sessions', 'new');
+      return command('agent', sessionsResource(), 'new');
     case 'session.getCommands': {
-      const state = (await next.subscribe('agent', 'sessions')) as {
+      const state = (await next.subscribe('agent', sessionsResource())) as {
         commands?: unknown[];
       } | null;
       return ok(state?.commands ?? []);
     }
     case 'session.getMessages': {
-      const state = (await next.subscribe('agent', 'sessions')) as {
+      const state = (await next.subscribe('agent', sessionsResource())) as {
         active?: unknown;
       } | null;
       return ok(state?.active ?? null);
     }
     case 'session.openTab': {
       const path = String(input['path'] ?? '');
-      return command('agent', 'sessions', 'open', { id: path });
+      return command('agent', sessionsResource(), 'open', { id: path });
     }
     case 'session.closeTabs':
-      return command('agent', 'sessions', 'closeOpened', {
+      return command('agent', sessionsResource(), 'closeOpened', {
         paths: Array.isArray(input['paths']) ? input['paths'] : [],
       });
     case 'session.prompt':
-      return command('agent', 'sessions', 'prompt', input);
+      return command('agent', sessionsResource(), 'prompt', input);
     case 'session.steer':
-      return command('agent', 'sessions', 'steer', input);
+      return command('agent', sessionsResource(), 'steer', input);
     case 'session.followUp':
     case 'session.follow-up':
-      return command('agent', 'sessions', 'followUp', input);
+      return command('agent', sessionsResource(), 'followUp', input);
     case 'session.abort':
-      return command('agent', 'sessions', 'abort');
+      return command('agent', sessionsResource(), 'abort');
     case 'session.retry':
-      return command('agent', 'sessions', 'retry', input);
+      return command('agent', sessionsResource(), 'retry', input);
     case 'session.compact':
-      return command('agent', 'sessions', 'compact', input);
+      return command('agent', sessionsResource(), 'compact', input);
     case 'session.fork':
-      return command('agent', 'sessions', 'fork', input);
+      return command('agent', sessionsResource(), 'fork', input);
     case 'session.rename':
-      return command('agent', 'sessions', 'rename', input);
+      return command('agent', sessionsResource(), 'rename', input);
     case 'session.delete':
-      return command('agent', 'sessions', 'delete', input);
+      return command('agent', sessionsResource(), 'delete', input);
     case 'agent.setModel':
-      return command('agent', 'sessions', 'setModel', input);
+      return command('agent', sessionsResource(), 'setModel', input);
     case 'agent.setThinking':
-      return command('agent', 'sessions', 'setThinking', input);
+      return command('agent', sessionsResource(), 'setThinking', input);
     case 'agent.thinkingLevels': {
-      const state = (await next.subscribe('agent', 'sessions')) as {
+      const state = (await next.subscribe('agent', sessionsResource())) as {
         thinking?: { levels?: string[] };
       } | null;
       return ok(state?.thinking?.levels ?? []);
     }
     case 'agent.status':
       return ok(
-        ((await next.subscribe('agent', 'sessions')) as { current?: unknown })
-          ?.current ?? null,
+        (
+          (await next.subscribe('agent', sessionsResource())) as {
+            current?: unknown;
+          }
+        )?.current ?? null,
       );
     case 'skills.list': {
       const state = (await next.subscribe('agent', 'skills')) as {
@@ -132,8 +135,7 @@ async function assistantCommand(
         if (key in patch) scene[key] = patch[key];
       }
       if (Object.keys(scene).length > 0) {
-        await command('shell', 'layout', 'scene', {
-          windowId: wsId,
+        await command('shell', `${wsId}/layout`, 'scene', {
           patch: scene,
         });
       }
@@ -142,6 +144,12 @@ async function assistantCommand(
     default:
       return fail(`assistant command not mapped: ${name}`);
   }
+}
+
+/** 会话投影按窗口工作区寻址：`agent/<wsId>/sessions`。 */
+function sessionsResource(): string {
+  const ws = window.workStudio?.workspaceId;
+  return ws ? `${ws}/sessions` : 'sessions';
 }
 
 export const bridge = next
@@ -163,32 +171,26 @@ export const bridge = next
             pointerY: input.anchor?.y ?? 0,
           };
           const wsId = await workspaceId();
-          const result = await command('shell', 'layout', 'begin', {
-            windowId: wsId,
+          const result = await command('shell', `${wsId}/layout`, 'begin', {
             input: lastInput,
           });
           return { ok: result.ok };
         },
         async move(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('shell', 'layout', 'move', {
-            windowId: wsId,
+          const result = await command('shell', `${wsId}/layout`, 'move', {
             input: lastInput,
           });
           return { ok: result.ok };
         },
         async end(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('shell', 'layout', 'end', {
-            windowId: wsId,
-          });
+          const result = await command('shell', `${wsId}/layout`, 'end', {});
           return { ok: result.ok };
         },
         async cancel(): Promise<{ ok: boolean }> {
           const wsId = await workspaceId();
-          const result = await command('shell', 'layout', 'cancel', {
-            windowId: wsId,
-          });
+          const result = await command('shell', `${wsId}/layout`, 'cancel', {});
           return { ok: result.ok };
         },
       },

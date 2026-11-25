@@ -10,9 +10,21 @@ import type {
   DomainUpdate,
   WorkStudioBridge,
 } from '@workstudio/sdk';
-import { BRIDGE_CHANNELS } from '../shared/channels.ts';
+import { BRIDGE_CHANNELS, workspaceIdOfArgv } from '../shared/channels.ts';
+
+function argvOf(): readonly string[] {
+  try {
+    // sandbox preload 里 process 可能没有 argv；拿不到就当未注入。
+    return typeof process === 'undefined' || !Array.isArray(process.argv)
+      ? []
+      : process.argv;
+  } catch {
+    return [];
+  }
+}
 
 const bridge: WorkStudioBridge = {
+  workspaceId: workspaceIdOfArgv(argvOf()),
   subscribe: (domain, resource) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.subscribe, domain, resource),
 

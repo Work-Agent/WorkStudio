@@ -16,15 +16,16 @@ export default defineCase({
       window.workStudio.subscribe('settings', 'storage'),
     )) as Storage;
     if (!storage.dataRoot) throw new Error('数据根不可用');
-    await ctx.evaluate(async (windowId) => {
-      await window.workStudio.command('shell', 'layout', 'scene', {
-        windowId,
+    await ctx.evaluate(async () => {
+      const windowId = window.workStudio.workspaceId;
+      if (!windowId) throw new Error('窗口未绑定工作区');
+      await window.workStudio.command('shell', `${windowId}/layout`, 'scene', {
         patch: {
           sidebarCollapsed: true,
           paneWidths: { left: 300, right: 360 },
         },
       });
-    }, storage.workspaceId);
+    });
     const file = join(storage.dataRoot, 'ui-state.json');
     const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<
       string,
@@ -34,9 +35,10 @@ export default defineCase({
     if (scene?.sidebarCollapsed !== true || scene.paneWidths?.left !== 300) {
       throw new Error(`布局未持久化：${JSON.stringify(scene)}`);
     }
-    await ctx.evaluate(async (windowId) => {
-      await window.workStudio.command('shell', 'layout', 'scene', {
-        windowId,
+    await ctx.evaluate(async () => {
+      const windowId = window.workStudio.workspaceId;
+      if (!windowId) return;
+      await window.workStudio.command('shell', `${windowId}/layout`, 'scene', {
         patch: {
           sidebarCollapsed: false,
           aiOpen: true,
@@ -45,6 +47,6 @@ export default defineCase({
           floating: null,
         },
       });
-    }, storage.workspaceId);
+    });
   },
 });

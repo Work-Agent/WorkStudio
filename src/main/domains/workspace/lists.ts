@@ -1,5 +1,5 @@
 /**
- * 系统列表投影：provider → ListGroup → 一个 ListSnapshot。
+ * 系统列表投影：provider → ListGroup → 每个工作区一份 ListSnapshot。
  *
  * 列表定义归 App/Workspace，数据由 provider 现取；插件列表暂不开放，
  * 这里只承载 docs/temp/sessions/plugins/settings 五类系统 provider。
@@ -49,40 +49,76 @@ export class ListRegistry {
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
-  providers(): ListEntry[] {
-    return [...this.entries.values()].filter((entry) => entry.provider);
+  /** 来源资源命中：哪些组需要随它重算。 */
+  definitionsOf(domain: string, resource: string): string[] {
+    const matched: string[] = [];
+    for (const [id, entry] of this.entries) {
+      const deps = entry.definition.deps ?? [];
+      const hit = deps.some(
+        (dep) =>
+          dep.domain === domain &&
+          (dep.resource === resource || resource.endsWith(`/${dep.resource}`)),
+      );
+      if (hit) matched.push(id);
+    }
+    return matched;
+  }
+
+  providers(only?: ReadonlySet<string>): ListEntry[] {
+    return [...this.entries.values()].filter(
+      (entry) => entry.provider && (!only || only.has(entry.definition.id)),
+    );
   }
 }
 
 export class ListService {
   readonly registry = new ListRegistry();
-  private snapshot: ListSnapshot = { workspaceEpoch: 0, groups: [] };
-  private epoch = 0;
+  private readonly snapshots = new Map<string, ListSnapshot>();
+  private readonly epochs = new Map<string, number>();
 
-  current(): ListSnapshot {
-    return this.snapshot;
+  current(workspaceId: string): ListSnapshot {
+    return this.snapshots.get(workspaceId) ?? { workspaceEpoch: 0, groups: [] };
   }
 
-  async refresh(context: ListProviderContext): Promise<ListSnapshot> {
-    this.epoch += 1;
-    const groups: ListGroup[] = [];
-    for (const entry of this.registry.providers()) {
+  forget(workspaceId: string): void {
+    this.snapshots.delete(workspaceId);
+    this.epochs.delete(workspaceId);
+  }
+
+  /** 全量或按组重算；未参与本次重算的组保留上一份结果。 */
+  async refresh(
+    context: ListProviderContext,
+    only?: ReadonlySet<string>,
+  ): Promise<ListSnapshot> {
+    const epoch = (this.epochs.get(context.workspaceId) ?? 0) + 1;
+    this.epochs.set(context.workspaceId, epoch);
+    const previous = this.snapshots.get(context.workspaceId);
+    const refreshed = new Map<string, ListGroup[]>();
+    for (const entry of this.registry.providers(only)) {
       try {
-        const provided = await entry.provider?.(context);
-        if (provided) groups.push(...provided);
+        refreshed.set(
+          entry.definition.id,
+          (await entry.provider?.(context)) ?? [],
+        );
       } catch (error) {
-        groups.push(errorGroup(entry.definition, error));
+        refreshed.set(entry.definition.id, [
+          errorGroup(entry.definition, error),
+        ]);
       }
     }
-    groups.sort(
+    const kept = (previous?.groups ?? []).filter(
+      (group) => !refreshed.has(group.definitionId),
+    );
+    const groups = [...kept, ...[...refreshed.values()].flat()].sort(
       (a, b) =>
         (this.registry.definitions().find((item) => item.id === a.definitionId)
           ?.order ?? 0) -
         (this.registry.definitions().find((item) => item.id === b.definitionId)
           ?.order ?? 0),
     );
-    this.snapshot = { workspaceEpoch: this.epoch, groups };
-    return this.snapshot;
+    const snapshot: ListSnapshot = { workspaceEpoch: epoch, groups };
+    this.snapshots.set(context.workspaceId, snapshot);
+    return snapshot;
   }
 }
 

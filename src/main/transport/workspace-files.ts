@@ -23,9 +23,12 @@ const MAX_GREP_BYTES = 4 * 1024 * 1024;
 
 export class WorkspaceFiles implements ResourceAdapter {
   private root: string;
+  /** 已登记的工作区根：读操作可跨工作区（多窗口并行）。 */
+  private roots: string[];
 
   constructor(root: string) {
     this.root = resolve(root);
+    this.roots = [this.root];
   }
 
   /** 工作区切换：只换根，不重建适配器。 */
@@ -33,12 +36,16 @@ export class WorkspaceFiles implements ResourceAdapter {
     this.root = resolve(root);
   }
 
+  setRoots(roots: readonly string[]): void {
+    this.roots = roots.map((root) => resolve(root));
+  }
+
   refOf(path: string): string {
     return pathToFileURL(resolve(path)).toString();
   }
 
   async ls(ref: string, options: ListOptions = {}): Promise<Entry[]> {
-    const path = this.pathOf(ref);
+    const path = this.pathOf(ref, 'read');
     const info = await stat(path).catch(() => null);
     if (!info?.isDirectory()) return [];
     const names = await readdir(path);
@@ -67,7 +74,7 @@ export class WorkspaceFiles implements ResourceAdapter {
   }
 
   async find(ref: string, query: string): Promise<Entry[]> {
-    const root = this.pathOf(ref);
+    const root = this.pathOf(ref, 'read');
     const matcher = globToRegExp(query);
     const result: Entry[] = [];
     await this.walk(root, async (path, info) => {
@@ -87,7 +94,7 @@ export class WorkspaceFiles implements ResourceAdapter {
   }
 
   async read(ref: string, options: ReadOptions = {}): Promise<Item[]> {
-    const path = this.pathOf(ref);
+    const path = this.pathOf(ref, 'read');
     const info = await stat(path).catch(() => null);
     if (!info?.isFile())
       throw new CallFailure('not_found', `文件不存在：${ref}`);
@@ -109,7 +116,7 @@ export class WorkspaceFiles implements ResourceAdapter {
   }
 
   async grep(ref: string, query: string): Promise<Item[]> {
-    const root = this.pathOf(ref);
+    const root = this.pathOf(ref, 'read');
     const regex = new RegExp(query, 'i');
     const result: Item[] = [];
     let scanned = 0;
@@ -136,16 +143,17 @@ export class WorkspaceFiles implements ResourceAdapter {
   }
 
   async readBytes(ref: string): Promise<Uint8Array> {
-    return readFile(this.pathOf(ref));
+    return readFile(this.pathOf(ref, 'read'));
   }
 
   async writeBytes(ref: string, bytes: Uint8Array): Promise<void> {
-    const path = this.pathOf(ref);
+    const path = this.pathOf(ref, 'write');
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);
   }
 
-  private pathOf(ref: string): string {
+  /** 读操作认所有已登记工作区；写操作只认当前工作区。 */
+  private pathOf(ref: string, access: 'read' | 'write' = 'write'): string {
     let path: string;
     try {
       path = fileURLToPath(ref);
@@ -153,7 +161,8 @@ export class WorkspaceFiles implements ResourceAdapter {
       throw new CallFailure('invalid', `不是 file:// 地址：${ref}`);
     }
     const absolute = resolve(path);
-    if (!isWithin(this.root, absolute)) {
+    const roots = access === 'read' ? this.roots : [this.root];
+    if (!roots.some((root) => isWithin(root, absolute))) {
       throw new CallFailure('denied', `路径不在工作区：${ref}`);
     }
     return absolute;

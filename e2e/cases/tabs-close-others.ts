@@ -38,25 +38,41 @@ export default defineCase({
 
     await ctx.evaluate(async () => {
       const bridge = window.workStudio;
-      const before = (await bridge.subscribe('shell', 'views')) as ViewInfo[];
+      const before = (await bridge.subscribe(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+      )) as ViewInfo[];
       const anchor = before.find((view) => view.type === 'web');
       if (!anchor) throw new Error('网页标签不存在');
 
-      await bridge.command('shell', 'views', 'closeOthers', {
-        id: 'missing-anchor',
-      });
+      await bridge.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'closeOthers',
+        {
+          id: 'missing-anchor',
+        },
+      );
       const afterUnknown = (await bridge.subscribe(
         'shell',
-        'views',
+        `${String(window.workStudio.workspaceId)}/views`,
       )) as ViewInfo[];
       if (afterUnknown.length !== before.length) {
         throw new Error('未知锚点误删了标签');
       }
 
-      await bridge.command('shell', 'views', 'closeOthers', {
-        id: anchor.id,
-      });
-      const after = (await bridge.subscribe('shell', 'views')) as ViewInfo[];
+      await bridge.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'closeOthers',
+        {
+          id: anchor.id,
+        },
+      );
+      const after = (await bridge.subscribe(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+      )) as ViewInfo[];
       if (after.length !== 1 || after[0]?.id !== anchor.id) {
         throw new Error(
           `关闭其他未保留锚点：${after.map((view) => view.id).join(',')}`,

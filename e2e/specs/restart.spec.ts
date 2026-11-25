@@ -12,13 +12,9 @@ test('重启恢复工作区与布局场景', async () => {
   const workspace = await currentPath(firstShell);
   if (!workspace) throw new Error('首次启动没有工作区');
   await firstShell.evaluate(async () => {
-    const registry = (await window.workStudio.subscribe(
-      'workspace',
-      'registry',
-    )) as { current?: { id: string } | null };
-    if (!registry.current) throw new Error('没有当前工作区');
-    await window.workStudio.command('shell', 'layout', 'scene', {
-      windowId: registry.current.id,
+    const windowId = window.workStudio.workspaceId;
+    if (!windowId) throw new Error('窗口未绑定工作区');
+    await window.workStudio.command('shell', `${windowId}/layout`, 'scene', {
       patch: { sidebarCollapsed: true, aiOpen: false },
     });
   });

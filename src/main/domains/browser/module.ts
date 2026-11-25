@@ -19,18 +19,18 @@ import {
 } from '../../platform/preferences.ts';
 import { BrowserCapability } from './capability.ts';
 import {
-  createAutomationState,
-  createCaptureState,
+  createAutomationStates,
+  createCaptureStates,
   createPolicyState,
-  defineAutomationResource,
-  defineTabsResource,
-  defineCaptureResource,
+  defineAutomationResources,
+  defineTabsResources,
+  defineCaptureResources,
   definePolicyResource,
   defineWebResource,
   registerWebAdapter,
   unregisterWebAdapter,
-  type AutomationState,
-  type CaptureState,
+  type AutomationStates,
+  type CaptureStates,
   type PolicyState,
 } from './domains.ts';
 
@@ -39,10 +39,24 @@ export class BrowserModule implements DomainModule {
   readonly dependencies = ['shell', 'workspace'] as const;
 
   private readonly policy: PolicyState = createPolicyState();
-  private readonly automation: AutomationState = createAutomationState();
-  private readonly capture: CaptureState = createCaptureState();
+  private readonly automation: AutomationStates = createAutomationStates();
+  private readonly capture: CaptureStates = createCaptureStates();
+  private readonly windowResources = new Set<string>();
+  private tabResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
+  private automationResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
+  private captureResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
   private registry: DomainRegistry | null = null;
   private offWorkspace: (() => void) | null = null;
+  private offWindows: (() => void) | null = null;
 
   constructor(
     readonly capability: BrowserCapability,
@@ -53,10 +67,14 @@ export class BrowserModule implements DomainModule {
 
   attach(registry: DomainRegistry): void {
     this.registry = registry;
-    defineTabsResource(registry, this.capability);
+    this.tabResources = defineTabsResources(registry, this.capability);
     definePolicyResource(registry, this.policy);
-    defineAutomationResource(registry, this.automation, this.capability);
-    defineCaptureResource(registry, this.capture);
+    this.automationResources = defineAutomationResources(
+      registry,
+      this.automation,
+      this.capability,
+    );
+    this.captureResources = defineCaptureResources(registry, this.capture);
     defineWebResource(registry, this.cache, this.capability, (url, ref) =>
       this.saveSnapshot(url, ref),
     );
@@ -76,17 +94,63 @@ export class BrowserModule implements DomainModule {
           this.loadPolicy();
         }
       });
+      // 标签 / 自动化 / 采集按窗口资源化，跟随窗口生命周期。
+      this.offWindows = registry.onUpdate((update) => {
+        if (
+          update.domain !== 'shell' ||
+          update.resource !== 'windows' ||
+          update.type !== 'snapshot'
+        ) {
+          return;
+        }
+        this.syncWindows(
+          (update.data as { windows?: Array<{ id: string }> }).windows ?? [],
+        );
+      });
+      const windows = registry.snapshot({
+        domain: 'shell',
+        resource: 'windows',
+      }) as { windows?: Array<{ id: string }> } | null;
+      this.syncWindows(windows?.windows ?? []);
     }
   }
 
   stop(): void {
     this.offWorkspace?.();
     this.offWorkspace = null;
+    this.offWindows?.();
+    this.offWindows = null;
     unregisterWebAdapter(this.transport);
+    for (const windowId of Array.from(this.windowResources)) {
+      this.tabResources?.remove(windowId);
+      this.automationResources?.remove(windowId);
+      this.captureResources?.remove(windowId);
+    }
+    this.windowResources.clear();
+    this.tabResources = null;
+    this.automationResources = null;
+    this.captureResources = null;
     this.policy.allowlist = [];
-    this.automation.attached.clear();
-    this.capture.session = null;
+    this.automation.byWindow.clear();
+    this.capture.byWindow.clear();
     this.registry = null;
+  }
+
+  private syncWindows(windows: Array<{ id: string }>): void {
+    const known = new Set(windows.map((window) => window.id));
+    for (const windowId of Array.from(this.windowResources)) {
+      if (known.has(windowId)) continue;
+      this.windowResources.delete(windowId);
+      this.tabResources?.remove(windowId);
+      this.automationResources?.remove(windowId);
+      this.captureResources?.remove(windowId);
+    }
+    for (const window of windows) {
+      this.windowResources.add(window.id);
+      this.tabResources?.ensure(window.id);
+      this.automationResources?.ensure(window.id);
+      this.captureResources?.ensure(window.id);
+    }
   }
 
   private async saveSnapshot(

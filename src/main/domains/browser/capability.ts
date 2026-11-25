@@ -1,7 +1,8 @@
 /**
  * Browser 能力：打开、导航、执行脚本、读取与采集。
  *
- * 视图宿主在迁移时以具体 Electron 实现注入；这里只保留浏览器聚合状态。
+ * 标签按窗口（= 工作区）隔离：`browser/<wsId>/tabs`；agent 工具等没有窗口上下文的
+ * 调用方沿用「活动窗口」的便捷方法，内部仍然落到具体窗口。
  */
 
 import { notImplemented } from '../../contract.ts';
@@ -40,17 +41,24 @@ export interface BrowserViewHandle {
   url?: string;
 }
 
-export type BrowserOpenView = (input: {
-  id: string;
-  type: 'web';
-  title: string;
-  url: string;
-}) => Promise<BrowserViewHandle>;
+export type BrowserOpenView = (
+  windowId: string,
+  input: {
+    id: string;
+    type: 'web';
+    title: string;
+    url: string;
+  },
+) => Promise<BrowserViewHandle>;
+
+interface WindowTabs {
+  readonly tabs: Map<string, BrowserTab>;
+  readonly byUrl: Map<string, string>;
+  activeId: string | null;
+}
 
 export class BrowserCapability {
-  private readonly tabs = new Map<string, BrowserTab>();
-  private readonly byUrl = new Map<string, string>();
-  private activeId: string | null = null;
+  private readonly windows = new Map<string, WindowTabs>();
   private seq = 0;
 
   constructor(
@@ -58,38 +66,76 @@ export class BrowserCapability {
     private readonly openView?: BrowserOpenView,
   ) {}
 
-  list(): BrowserTab[] {
-    return [...this.tabs.values()];
+  private tabsOf(windowId: string): WindowTabs {
+    let state = this.windows.get(windowId);
+    if (!state) {
+      state = { tabs: new Map(), byUrl: new Map(), activeId: null };
+      this.windows.set(windowId, state);
+    }
+    return state;
   }
 
-  snapshot(): BrowserSnapshotView {
-    const active = this.activeId
-      ? (this.tabs.get(this.activeId) ?? null)
+  private activeWindow(): string {
+    const id = this.host?.activeWindow();
+    if (!id) throw new Error('没有活动窗口');
+    return id;
+  }
+
+  /** 标签属于哪个窗口：agent 工具只拿得到标签 id。 */
+  private tabWindow(id: string): string | null {
+    for (const [windowId, state] of this.windows) {
+      if (state.tabs.has(id)) return windowId;
+    }
+    return null;
+  }
+
+  forgetWindow(windowId: string): void {
+    this.windows.delete(windowId);
+  }
+
+  list(windowId: string): BrowserTab[] {
+    return [...this.tabsOf(windowId).tabs.values()];
+  }
+
+  snapshot(windowId: string): BrowserSnapshotView {
+    const state = this.tabsOf(windowId);
+    const active = state.activeId
+      ? (state.tabs.get(state.activeId) ?? null)
       : null;
     return {
-      tabs: this.list(),
-      activeId: this.activeId,
+      tabs: [...state.tabs.values()],
+      activeId: state.activeId,
       url: active?.url ?? null,
       title: active?.title ?? null,
       text: '',
     };
   }
 
+  /** 便捷入口：活动窗口。 */
   async open(url: string, title?: string): Promise<BrowserTab> {
-    const existingId = this.byUrl.get(url);
-    const existing = existingId ? this.tabs.get(existingId) : null;
+    return this.openIn(this.activeWindow(), url, title);
+  }
+
+  async openIn(
+    windowId: string,
+    url: string,
+    title?: string,
+  ): Promise<BrowserTab> {
+    const state = this.tabsOf(windowId);
+    const existingId = state.byUrl.get(url);
+    const existing = existingId ? state.tabs.get(existingId) : null;
     if (existing) {
-      await this.openView?.({
+      await this.openView?.(windowId, {
         id: existing.id,
         type: 'web',
         title: existing.title,
         url,
       });
-      this.host?.activateView(existing.id);
-      for (const [key, item] of this.tabs) {
-        this.tabs.set(key, { ...item, active: key === existing.id });
+      this.host?.activateView(windowId, existing.id);
+      for (const [key, item] of state.tabs) {
+        state.tabs.set(key, { ...item, active: key === existing.id });
       }
-      this.activeId = existing.id;
+      state.activeId = existing.id;
       return existing;
     }
     if (!this.host && !this.openView) notImplemented('browser/open');
@@ -101,54 +147,85 @@ export class BrowserCapability {
       url,
     };
     const view = this.openView
-      ? await this.openView(input)
-      : this.host!.openView(input);
+      ? await this.openView(windowId, input)
+      : this.host!.openView(windowId, input);
     const tab: BrowserTab = {
       id,
       url,
       title: title ?? view.title,
       active: true,
     };
-    this.byUrl.set(url, id);
-    for (const [key, item] of this.tabs) {
-      this.tabs.set(key, { ...item, active: false });
+    state.byUrl.set(url, id);
+    for (const [key, item] of state.tabs) {
+      state.tabs.set(key, { ...item, active: false });
     }
-    this.tabs.set(id, tab);
-    this.activeId = id;
+    state.tabs.set(id, tab);
+    state.activeId = id;
     return tab;
   }
 
-  async navigate(id: string, url: string): Promise<void> {
+  async navigateIn(windowId: string, id: string, url: string): Promise<void> {
     this.requireHost('browser/navigate');
-    this.host!.navigateView(id, url);
-    const tab = this.tabs.get(id);
-    if (tab) this.tabs.set(id, { ...tab, url });
+    this.host!.navigateView(windowId, id, url);
+    const state = this.tabsOf(windowId);
+    const tab = state.tabs.get(id);
+    if (tab) state.tabs.set(id, { ...tab, url });
+  }
+
+  async evaluateIn<T>(
+    windowId: string,
+    id: string,
+    script: string,
+  ): Promise<T> {
+    this.requireHost('browser/evaluate');
+    return this.host!.evaluateView<T>(windowId, id, script);
   }
 
   async evaluate<T>(id: string, script: string): Promise<T> {
-    this.requireHost('browser/evaluate');
-    return this.host!.evaluateView<T>(id, script);
+    const windowId = this.tabWindow(id);
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.evaluateIn<T>(windowId, id, script);
   }
 
-  async read(id?: string): Promise<BrowserPageView> {
+  async readIn(windowId: string, id?: string): Promise<BrowserPageView> {
     this.requireHost('browser/read');
-    const target = id ?? this.activeId;
+    const state = this.tabsOf(windowId);
+    const target = id ?? state.activeId;
     if (!target) throw new Error('没有活动网页');
-    const page = await this.host!.captureView(target);
+    const page = await this.host!.captureView(windowId, target);
     return { url: page.url, title: page.title, text: page.text };
   }
 
-  async click(id: string, selector: string): Promise<void> {
+  async read(id?: string): Promise<BrowserPageView> {
+    const windowId = id ? this.tabWindow(id) : this.activeWindow();
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.readIn(windowId, id);
+  }
+
+  async clickIn(windowId: string, id: string, selector: string): Promise<void> {
     this.requireHost('browser/click');
     await this.host!.evaluateView(
+      windowId,
       id,
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('element not found'); el.click(); })()`,
     );
   }
 
-  async type(id: string, selector: string, text: string): Promise<void> {
+  async click(id: string, selector: string): Promise<void> {
+    const windowId = this.tabWindow(id);
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.clickIn(windowId, id, selector);
+  }
+
+  async typeIn(
+    windowId: string,
+    id: string,
+    selector: string,
+    text: string,
+  ): Promise<void> {
     this.requireHost('browser/type');
     await this.host!.evaluateView(
+      windowId,
       id,
       `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
@@ -161,17 +238,36 @@ export class BrowserCapability {
     );
   }
 
-  async screenshot(id: string): Promise<Uint8Array> {
+  async type(id: string, selector: string, text: string): Promise<void> {
+    const windowId = this.tabWindow(id);
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.typeIn(windowId, id, selector, text);
+  }
+
+  async screenshotIn(windowId: string, id: string): Promise<Uint8Array> {
     this.requireHost('browser/screenshot');
-    return this.host!.screenshotView(id);
+    return this.host!.screenshotView(windowId, id);
+  }
+
+  async screenshot(id: string): Promise<Uint8Array> {
+    const windowId = this.tabWindow(id);
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.screenshotIn(windowId, id);
+  }
+
+  async captureIn(windowId: string, id?: string): Promise<BrowserCaptureView> {
+    this.requireHost('browser/capture');
+    const state = this.tabsOf(windowId);
+    const target = id ?? state.activeId;
+    if (!target) throw new Error('没有活动网页');
+    const page = await this.host!.captureView(windowId, target);
+    return { url: page.url, title: page.title, html: page.html };
   }
 
   async capture(id?: string): Promise<BrowserCaptureView> {
-    this.requireHost('browser/capture');
-    const target = id ?? this.activeId;
-    if (!target) throw new Error('没有活动网页');
-    const page = await this.host!.captureView(target);
-    return { url: page.url, title: page.title, html: page.html };
+    const windowId = id ? this.tabWindow(id) : this.activeWindow();
+    if (!windowId) throw new Error(`网页标签不存在：${id}`);
+    return this.captureIn(windowId, id);
   }
 
   private requireHost(name: string): void {

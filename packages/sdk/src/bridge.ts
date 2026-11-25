@@ -45,6 +45,8 @@ export type DomainUpdate =
     };
 
 export interface WorkStudioBridge {
+  /** 当前窗口绑定的工作区（窗口与工作区 1:1）；宿主未注入时为 null。 */
+  readonly workspaceId: string | null;
   subscribe(domain: string, resource: string): Promise<unknown>;
   unsubscribe(domain: string, resource: string): void;
   command<T = unknown>(

@@ -21,45 +21,50 @@ export default defineCase({
     );
     if (!workspace) throw new Error('workspace not ready');
 
-    await ctx.expect.poll(async () => {
-      const records = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      return records.some((record) => record.windowId === workspace.id);
-    }, '窗口布局未发布');
+    const windowId = await ctx.evaluate(() => window.workStudio.workspaceId);
+    if (!windowId) throw new Error('窗口未绑定工作区');
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(async (id) => {
+          const record = (await window.workStudio.subscribe(
+            'shell',
+            `${id}/layout`,
+          )) as LayoutRecord | null;
+          return record !== null;
+        }, windowId),
+      '窗口布局未发布',
+    );
 
-    await ctx.evaluate(async (windowId) => {
-      const id = String(windowId);
-      await window.workStudio.command('shell', 'layout', 'scene', {
-        windowId: id,
+    await ctx.evaluate(async (id) => {
+      await window.workStudio.command('shell', `${id}/layout`, 'scene', {
         patch: { sidebarCollapsed: true, aiOpen: false },
       });
-    }, workspace.id);
+    }, windowId);
 
-    await ctx.expect.poll(async () => {
-      const records = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      const record = records.find((item) => item.windowId === workspace.id);
-      return (
-        record?.scene?.sidebarCollapsed === true &&
-        record.scene.aiOpen === false &&
-        record.snapshot?.sidebar?.width === 56 &&
-        record.snapshot.assistantVisible === false
-      );
-    }, '布局场景未收敛到快照');
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(async (id) => {
+          const record = (await window.workStudio.subscribe(
+            'shell',
+            `${id}/layout`,
+          )) as LayoutRecord | null;
+          return (
+            record?.scene?.sidebarCollapsed === true &&
+            record.scene.aiOpen === false &&
+            record.snapshot?.sidebar?.width === 56 &&
+            record.snapshot.assistantVisible === false
+          );
+        }, windowId),
+      '布局场景未收敛到快照',
+    );
 
-    await ctx.evaluate(async (windowId) => {
-      const id = String(windowId);
+    await ctx.evaluate(async (id) => {
       const before = (await window.workStudio.subscribe(
         'shell',
-        'layout',
-      )) as LayoutRecord[];
-      const width =
-        before.find((item) => item.windowId === windowId)?.scene?.paneWidths
-          ?.left ?? 240;
-      await window.workStudio.command('shell', 'layout', 'begin', {
-        windowId: id,
+        `${id}/layout`,
+      )) as LayoutRecord | null;
+      const width = before?.scene?.paneWidths?.left ?? 240;
+      await window.workStudio.command('shell', `${id}/layout`, 'begin', {
         input: {
           type: 'pane-resize',
           side: 'left',
@@ -67,21 +72,16 @@ export default defineCase({
           pointerY: 0,
         },
       });
-      await window.workStudio.command('shell', 'layout', 'move', {
-        windowId: id,
+      await window.workStudio.command('shell', `${id}/layout`, 'move', {
         input: { pointerX: 80, pointerY: 0 },
       });
-      await window.workStudio.command('shell', 'layout', 'end', {
-        windowId: id,
-      });
+      await window.workStudio.command('shell', `${id}/layout`, 'end', {});
       const after = (await window.workStudio.subscribe(
         'shell',
-        'layout',
-      )) as LayoutRecord[];
-      const next =
-        after.find((item) => item.windowId === windowId)?.scene?.paneWidths
-          ?.left ?? width;
+        `${id}/layout`,
+      )) as LayoutRecord | null;
+      const next = after?.scene?.paneWidths?.left ?? width;
       if (next === width) throw new Error('拖拽未提交左栏宽度');
-    }, workspace.id);
+    }, windowId);
   },
 });

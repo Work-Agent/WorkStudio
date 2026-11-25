@@ -111,6 +111,15 @@ export function defineWindowsResource(
 
 // ─── view ────────────────────────────────────────────────────
 
+/** 当前活动窗口：跨域打开页面时用它定位 `<wsId>/views`。 */
+export function activeWindowId(registry: DomainRegistry): string | null {
+  const state = registry.snapshot({
+    domain: 'shell',
+    resource: 'windows',
+  }) as { active?: string | null } | null;
+  return state?.active ?? null;
+}
+
 export interface ViewRecord {
   id: string;
   type: ViewType;
@@ -122,46 +131,59 @@ export interface ViewRecord {
 }
 
 export interface ViewState {
-  readonly records: Map<string, ViewRecord>;
-}
-
-function viewResourceName(viewId: string): string {
-  return `view/${viewId}`;
+  /** windowId → viewId → 记录；窗口与工作区 1:1。 */
+  readonly records: Map<string, Map<string, ViewRecord>>;
 }
 
 export function createViewState(): ViewState {
   return { records: new Map() };
 }
 
-export function defineViewsResource(
+export function viewsResourceName(windowId: string): string {
+  return `${windowId}/views`;
+}
+
+export function viewResourceName(windowId: string, viewId: string): string {
+  return `${windowId}/view/${viewId}`;
+}
+
+export function defineViewsResources(
   registry: DomainRegistry,
   state: ViewState,
   host?: ShellHost,
-): void {
-  const ensureResource = (viewId: string): void => {
-    if (registry.define('shell').resourceOf(viewResourceName(viewId))) return;
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const recordsOf = (windowId: string): Map<string, ViewRecord> => {
+    let records = state.records.get(windowId);
+    if (!records) {
+      records = new Map();
+      state.records.set(windowId, records);
+    }
+    return records;
+  };
 
-    const resource = registry
-      .define('shell')
-      .resource(viewResourceName(viewId));
-    resource.snapshot(() => state.records.get(viewId) ?? null);
+  const ensureViewResource = (windowId: string, viewId: string): void => {
+    const domain = registry.define('shell');
+    const name = viewResourceName(windowId, viewId);
+    if (domain.resourceOf(name)) return;
+    const resource = domain.resource(name);
+    resource.snapshot(() => recordsOf(windowId).get(viewId) ?? null);
     resource.command('loaded', {
       summary: '页面加载完成',
       args: {},
-      run: () => state.records.get(viewId) ?? null,
+      run: () => recordsOf(windowId).get(viewId) ?? null,
     });
     resource.command('dirty', {
       summary: '上报脏态',
       args: { dirty: { type: 'boolean', required: true } },
       run: (input) => {
-        const record = state.records.get(viewId);
+        const record = recordsOf(windowId).get(viewId);
         if (!record) {
           throw new CallFailure('not_found', `视图不存在：${viewId}`);
         }
         const dirty = input.dirty === true;
-        host?.setViewDirty(viewId, dirty);
+        host?.setViewDirty(windowId, viewId, dirty);
         const next = { ...record, dirty };
-        state.records.set(viewId, next);
+        recordsOf(windowId).set(viewId, next);
         resource.patch({ dirty: next.dirty });
         return next;
       },
@@ -170,14 +192,14 @@ export function defineViewsResource(
       summary: '页面请求导航',
       args: { url: { type: 'string', required: true } },
       run: (input) => {
-        const record = state.records.get(viewId);
+        const record = recordsOf(windowId).get(viewId);
         if (!record) {
           throw new CallFailure('not_found', `视图不存在：${viewId}`);
         }
         const url = String(input.url);
-        host?.navigateView(viewId, url);
+        host?.navigateView(windowId, viewId, url);
         const next = { ...record, url };
-        state.records.set(viewId, next);
+        recordsOf(windowId).set(viewId, next);
         resource.patch({ url: next.url });
         return next;
       },
@@ -187,258 +209,292 @@ export function defineViewsResource(
       args: {},
       run: () => {
         if (!host) throw new CallFailure('failed', '视图宿主未接入');
-        host.reloadView(viewId);
+        host.reloadView(windowId, viewId);
         return null;
       },
     });
   };
 
-  const list = registry.define('shell').resource('views');
-  list.snapshot(() => [...state.records.values()]);
+  const define = (windowId: string): void => {
+    const domain = registry.define('shell');
+    const name = viewsResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    const records = recordsOf(windowId);
+    const list = domain.resource(name);
+    list.snapshot(() => [...records.values()]);
 
-  const ensureWelcome = (): void => {
-    if (state.records.size > 0 || !host) return;
-    const record = host.openWelcome();
-    if (!record) return;
-    state.records.set(record.id, record);
-    ensureResource(record.id);
-    registry.define('shell').resource(viewResourceName(record.id)).publish();
-  };
-
-  list.command('open', {
-    summary: '打开内容视图',
-    args: {
-      id: { type: 'string', required: true },
-      type: { type: 'string', required: true },
-      title: { type: 'string' },
-      url: { type: 'string' },
-    },
-    run: (input) => {
-      const id = String(input.id);
-      const existing = state.records.get(id);
-      if (existing) {
-        host?.activateView(id);
-        for (const [otherId, other] of state.records) {
-          state.records.set(otherId, {
-            ...other,
-            active: otherId === id,
-          });
-        }
-        list.publish();
-        return state.records.get(id) ?? existing;
-      }
-      const openInput: ViewOpenInput = {
-        id,
-        type: input.type as ViewType,
-        title: typeof input.title === 'string' ? input.title : id,
-        ...(typeof input.url === 'string' ? { url: input.url } : {}),
-      };
-      const record: ViewRecord = host
-        ? host.openView(openInput)
-        : {
-            id,
-            type: openInput.type,
-            title: openInput.title,
-            ...(openInput.url ? { url: openInput.url } : {}),
-            active: true,
-            dirty: false,
-            pinned: false,
-          };
-      for (const [otherId, other] of state.records) {
-        state.records.set(otherId, { ...other, active: otherId === record.id });
-      }
-      state.records.set(record.id, record);
-      ensureResource(record.id);
-      registry.define('shell').resource(viewResourceName(record.id)).publish();
-      list.publish();
-      return record;
-    },
-  });
-  list.command('address', {
-    summary: '更新视图地址与标题（不导航）',
-    args: {
-      url: { type: 'string', required: true },
-      title: { type: 'string' },
-    },
-    run: (input, ctx) => {
-      if (ctx.origin.type !== 'view') {
-        throw new CallFailure('invalid', '只有页面可以更新自身地址');
-      }
-      const id = ctx.origin.viewId;
-      const record = state.records.get(id);
-      if (!record) {
-        throw new CallFailure('not_found', `视图不存在：${id}`);
-      }
-      const next: ViewRecord = {
-        ...record,
-        url: String(input.url),
-        ...(typeof input.title === 'string' ? { title: input.title } : {}),
-      };
-      state.records.set(id, next);
+    const ensureWelcome = (): void => {
+      if (records.size > 0 || !host) return;
+      const record = host.openWelcome(windowId);
+      if (!record) return;
+      records.set(record.id, record);
+      ensureViewResource(windowId, record.id);
       registry
         .define('shell')
-        .resource(viewResourceName(id))
-        .patch({ url: next.url, title: next.title });
-      list.publish();
-      return next;
-    },
-  });
-  list.command('activate', {
-    summary: '切换当前视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      const target = String(input.id);
-      if (!state.records.has(target)) {
-        throw new CallFailure('not_found', `视图不存在：${target}`);
-      }
-      host?.activateView(target);
-      for (const [id, record] of state.records) {
-        const next = { ...record, active: id === target };
-        state.records.set(id, next);
-        registry.define('shell').resource(viewResourceName(id)).publish();
-      }
-      list.publish();
-      return [...state.records.values()];
-    },
-  });
-  list.command('close', {
-    summary: '关闭视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      const id = String(input.id);
-      const closed = state.records.get(id);
-      host?.closeView(id);
-      state.records.delete(id);
-      registry.define('shell').remove(viewResourceName(id));
-      if (closed?.active) {
-        const next = [...state.records.values()][0];
-        if (next) {
-          state.records.set(next.id, { ...next, active: true });
-          host?.activateView(next.id);
+        .resource(viewResourceName(windowId, record.id))
+        .publish();
+    };
+
+    list.command('open', {
+      summary: '打开内容视图',
+      args: {
+        id: { type: 'string', required: true },
+        type: { type: 'string', required: true },
+        title: { type: 'string' },
+        url: { type: 'string' },
+      },
+      run: (input) => {
+        const id = String(input.id);
+        const existing = records.get(id);
+        if (existing) {
+          host?.activateView(windowId, id);
+          for (const [otherId, other] of records) {
+            records.set(otherId, { ...other, active: otherId === id });
+          }
+          list.publish();
+          return records.get(id) ?? existing;
+        }
+        const openInput: ViewOpenInput = {
+          id,
+          type: input.type as ViewType,
+          title: typeof input.title === 'string' ? input.title : id,
+          ...(typeof input.url === 'string' ? { url: input.url } : {}),
+        };
+        const record: ViewRecord = host
+          ? host.openView(windowId, openInput)
+          : {
+              id,
+              type: openInput.type,
+              title: openInput.title,
+              ...(openInput.url ? { url: openInput.url } : {}),
+              active: true,
+              dirty: false,
+              pinned: false,
+            };
+        for (const [otherId, other] of records) {
+          records.set(otherId, { ...other, active: otherId === record.id });
+        }
+        records.set(record.id, record);
+        ensureViewResource(windowId, record.id);
+        registry
+          .define('shell')
+          .resource(viewResourceName(windowId, record.id))
+          .publish();
+        list.publish();
+        return record;
+      },
+    });
+    list.command('address', {
+      summary: '更新视图地址与标题（不导航）',
+      args: {
+        url: { type: 'string', required: true },
+        title: { type: 'string' },
+      },
+      run: (input, ctx) => {
+        if (ctx.origin.type !== 'view') {
+          throw new CallFailure('invalid', '只有页面可以更新自身地址');
+        }
+        const id = ctx.origin.viewId;
+        const record = records.get(id);
+        if (!record) {
+          throw new CallFailure('not_found', `视图不存在：${id}`);
+        }
+        const next: ViewRecord = {
+          ...record,
+          url: String(input.url),
+          ...(typeof input.title === 'string' ? { title: input.title } : {}),
+        };
+        records.set(id, next);
+        registry
+          .define('shell')
+          .resource(viewResourceName(windowId, id))
+          .patch({ url: next.url, title: next.title });
+        list.publish();
+        return next;
+      },
+    });
+    list.command('activate', {
+      summary: '切换当前视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        const target = String(input.id);
+        if (!records.has(target)) {
+          throw new CallFailure('not_found', `视图不存在：${target}`);
+        }
+        host?.activateView(windowId, target);
+        for (const [id, record] of records) {
+          records.set(id, { ...record, active: id === target });
           registry
             .define('shell')
-            .resource(viewResourceName(next.id))
+            .resource(viewResourceName(windowId, id))
             .publish();
         }
-      }
-      ensureWelcome();
-      list.publish();
-      return null;
-    },
-  });
-  list.command('pin', {
-    summary: '固定 / 取消固定视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      const id = String(input.id);
-      const record = state.records.get(id);
-      if (!record) {
-        throw new CallFailure('not_found', `视图不存在：${id}`);
-      }
-      const next = { ...record, pinned: !record.pinned };
-      state.records.set(id, next);
-      registry.define('shell').resource(viewResourceName(id)).publish();
-      list.publish();
-      return next;
-    },
-  });
-  list.command('closeOthers', {
-    summary: '关闭其他视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      const keep = String(input.id);
-      if (!state.records.has(keep)) return [...state.records.values()];
-      for (const id of state.records.keys()) {
-        if (id === keep) continue;
-        host?.closeView(id);
-        state.records.delete(id);
-        registry.define('shell').remove(viewResourceName(id));
-      }
-      for (const [id, record] of state.records) {
-        const next = { ...record, active: id === keep };
-        state.records.set(id, next);
-        registry.define('shell').resource(viewResourceName(id)).publish();
-      }
-      host?.activateView(keep);
-      list.publish();
-      return [...state.records.values()];
-    },
-  });
-  list.command('closeLeft', {
-    summary: '关闭左侧视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => closeSide(String(input.id), 'left'),
-  });
-  list.command('closeRight', {
-    summary: '关闭右侧视图',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => closeSide(String(input.id), 'right'),
-  });
-  list.command('closeAll', {
-    summary: '关闭全部视图',
-    args: {},
-    run: () => {
-      for (const id of state.records.keys()) {
-        host?.closeView(id);
-        state.records.delete(id);
-        registry.define('shell').remove(viewResourceName(id));
-      }
-      ensureWelcome();
-      list.publish();
-      return [...state.records.values()];
-    },
-  });
-  list.command('move', {
-    summary: '移动视图顺序',
-    args: {
-      fromId: { type: 'string', required: true },
-      toId: { type: 'string', required: true },
-    },
-    run: (input) => {
-      const fromId = String(input.fromId);
-      const toId = String(input.toId);
-      const entries = [...state.records.entries()];
-      const fromIndex = entries.findIndex(([id]) => id === fromId);
-      const toIndex = entries.findIndex(([id]) => id === toId);
-      if (fromIndex < 0 || toIndex < 0) return [...state.records.values()];
-      const [entry] = entries.splice(fromIndex, 1);
-      if (!entry) return [...state.records.values()];
-      entries.splice(toIndex, 0, entry);
-      state.records.clear();
-      for (const [id, record] of entries) state.records.set(id, record);
-      list.publish();
-      return [...state.records.values()];
-    },
-  });
-  list.command('goBack', {
-    summary: '后退',
-    args: { id: { type: 'string', required: true } },
-    run: () => null,
-  });
-  list.command('goForward', {
-    summary: '前进',
-    args: { id: { type: 'string', required: true } },
-    run: () => null,
-  });
-  list.command('runAction', {
-    summary: '执行视图动作',
-    args: { id: { type: 'string', required: true } },
-    run: () => null,
-  });
+        list.publish();
+        return [...records.values()];
+      },
+    });
+    list.command('close', {
+      summary: '关闭视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        const id = String(input.id);
+        const closed = records.get(id);
+        host?.closeView(windowId, id);
+        records.delete(id);
+        registry.define('shell').remove(viewResourceName(windowId, id));
+        if (closed?.active) {
+          const next = [...records.values()][0];
+          if (next) {
+            records.set(next.id, { ...next, active: true });
+            host?.activateView(windowId, next.id);
+            registry
+              .define('shell')
+              .resource(viewResourceName(windowId, next.id))
+              .publish();
+          }
+        }
+        ensureWelcome();
+        list.publish();
+        return null;
+      },
+    });
+    list.command('pin', {
+      summary: '固定 / 取消固定视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        const id = String(input.id);
+        const record = records.get(id);
+        if (!record) {
+          throw new CallFailure('not_found', `视图不存在：${id}`);
+        }
+        const next = { ...record, pinned: !record.pinned };
+        records.set(id, next);
+        registry
+          .define('shell')
+          .resource(viewResourceName(windowId, id))
+          .publish();
+        list.publish();
+        return next;
+      },
+    });
+    list.command('closeOthers', {
+      summary: '关闭其他视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        const keep = String(input.id);
+        if (!records.has(keep)) return [...records.values()];
+        for (const id of [...records.keys()]) {
+          if (id === keep) continue;
+          host?.closeView(windowId, id);
+          records.delete(id);
+          registry.define('shell').remove(viewResourceName(windowId, id));
+        }
+        for (const [id, record] of records) {
+          records.set(id, { ...record, active: id === keep });
+          registry
+            .define('shell')
+            .resource(viewResourceName(windowId, id))
+            .publish();
+        }
+        host?.activateView(windowId, keep);
+        list.publish();
+        return [...records.values()];
+      },
+    });
+    list.command('closeLeft', {
+      summary: '关闭左侧视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => closeSide(String(input.id), 'left'),
+    });
+    list.command('closeRight', {
+      summary: '关闭右侧视图',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => closeSide(String(input.id), 'right'),
+    });
+    list.command('closeAll', {
+      summary: '关闭全部视图',
+      args: {},
+      run: () => {
+        for (const id of [...records.keys()]) {
+          host?.closeView(windowId, id);
+          records.delete(id);
+          registry.define('shell').remove(viewResourceName(windowId, id));
+        }
+        ensureWelcome();
+        list.publish();
+        return [...records.values()];
+      },
+    });
+    list.command('move', {
+      summary: '移动视图顺序',
+      args: {
+        fromId: { type: 'string', required: true },
+        toId: { type: 'string', required: true },
+      },
+      run: (input) => {
+        const fromId = String(input.fromId);
+        const toId = String(input.toId);
+        const entries = [...records.entries()];
+        const fromIndex = entries.findIndex(([id]) => id === fromId);
+        const toIndex = entries.findIndex(([id]) => id === toId);
+        if (fromIndex < 0 || toIndex < 0) return [...records.values()];
+        const [entry] = entries.splice(fromIndex, 1);
+        if (!entry) return [...records.values()];
+        entries.splice(toIndex, 0, entry);
+        records.clear();
+        for (const [id, record] of entries) records.set(id, record);
+        list.publish();
+        return [...records.values()];
+      },
+    });
+    list.command('goBack', {
+      summary: '后退',
+      args: { id: { type: 'string', required: true } },
+      run: () => null,
+    });
+    list.command('goForward', {
+      summary: '前进',
+      args: { id: { type: 'string', required: true } },
+      run: () => null,
+    });
+    list.command('runAction', {
+      summary: '执行视图动作',
+      args: { id: { type: 'string', required: true } },
+      run: () => null,
+    });
 
-  function closeSide(id: string, side: 'left' | 'right'): ViewRecord[] {
-    const ids = [...state.records.keys()];
-    const index = ids.indexOf(id);
-    if (index < 0) return [...state.records.values()];
-    const remove = side === 'left' ? ids.slice(0, index) : ids.slice(index + 1);
-    for (const viewId of remove) {
-      host?.closeView(viewId);
-      state.records.delete(viewId);
-      registry.define('shell').remove(viewResourceName(viewId));
+    function closeSide(id: string, side: 'left' | 'right'): ViewRecord[] {
+      const ids = [...records.keys()];
+      const index = ids.indexOf(id);
+      if (index < 0) return [...records.values()];
+      const remove =
+        side === 'left' ? ids.slice(0, index) : ids.slice(index + 1);
+      for (const viewId of remove) {
+        host?.closeView(windowId, viewId);
+        records.delete(viewId);
+        registry.define('shell').remove(viewResourceName(windowId, viewId));
+      }
+      list.publish();
+      return [...records.values()];
     }
-    list.publish();
-    return [...state.records.values()];
-  }
+  };
+
+  return {
+    ensure: (windowId: string) => {
+      recordsOf(windowId);
+      define(windowId);
+    },
+    remove: (windowId: string) => {
+      const records = state.records.get(windowId);
+      if (records) {
+        for (const viewId of [...records.keys()]) {
+          registry.define('shell').remove(viewResourceName(windowId, viewId));
+        }
+      }
+      state.records.delete(windowId);
+      registry.define('shell').remove(viewsResourceName(windowId));
+    },
+  };
 }
 
 // ─── layout ──────────────────────────────────────────────────
@@ -456,6 +512,8 @@ export interface LayoutRecord {
   scene: SceneState;
   preview: InteractionPreview | null;
   input: InteractionInput | null;
+  /** 交互起始光标：move 只按它与当前光标的差值出预览。 */
+  cursor: { x: number; y: number } | null;
   snapshot: LayoutSnapshot & { scene: SceneState };
 }
 
@@ -504,11 +562,17 @@ function snapshotOf(
     scene,
     preview,
     input: null,
+    cursor: null,
     snapshot: { ...layout, scene },
   };
 }
 
-export function defineLayoutResource(
+export function layoutResourceName(windowId: string): string {
+  return `${windowId}/layout`;
+}
+
+/** 布局按窗口资源化：`shell/<wsId>/layout`（窗口与工作区 1:1）。 */
+export function defineLayoutResources(
   registry: DomainRegistry,
   state: LayoutState,
   host?: ShellHost,
@@ -516,10 +580,11 @@ export function defineLayoutResource(
     sceneFor?: (windowId: string) => SceneState | undefined;
     persist?: (windowId: string, scene: SceneState) => void;
   } = {},
-): void {
-  const resource = registry.define('shell').resource('layout');
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const recordOf = (windowId: string): LayoutRecord | null =>
+    state.records.get(windowId) ?? null;
 
-  const ensure = (windowId: string): LayoutRecord => {
+  const ensureRecord = (windowId: string): LayoutRecord => {
     const existing = state.records.get(windowId);
     if (existing) return existing;
     const restored = options.sceneFor?.(windowId);
@@ -537,214 +602,201 @@ export function defineLayoutResource(
     state.records.set(record.windowId, record);
     host?.applyLayout(record.windowId, record.snapshot);
     options.persist?.(record.windowId, record.scene);
-    resource.publish();
+    registry
+      .define('shell')
+      .resource(layoutResourceName(record.windowId))
+      .publish();
   };
 
-  resource.snapshot(() => [...state.records.values()]);
+  const define = (windowId: string): void => {
+    const domain = registry.define('shell');
+    const name = layoutResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    const resource = domain.resource(name);
+    resource.snapshot(() => recordOf(windowId));
 
-  resource.command('ensure', {
-    summary: '确保窗口存在布局快照',
-    args: { windowId: { type: 'string', required: true } },
-    run: (input) => {
-      const record = ensure(String(input.windowId));
-      publish(record);
-      return record;
-    },
-  });
-
-  resource.command('set', {
-    summary: '提交窗口布局',
-    args: { windowId: { type: 'string', required: true } },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const incoming = input.snapshot as
-        | (Partial<LayoutSnapshot> & { scene?: SceneState })
-        | null
-        | undefined;
-      if (incoming && typeof incoming === 'object') {
-        const scene = incoming.scene
-          ? { ...current.scene, ...incoming.scene }
-          : current.scene;
-        const record = snapshotOf(windowId, scene, null, host);
+    resource.command('scene', {
+      summary: '更新窗口场景',
+      args: {},
+      run: (input) => {
+        const current = ensureRecord(windowId);
+        const patch =
+          typeof input.patch === 'object' && input.patch !== null
+            ? (input.patch as SceneState)
+            : {};
+        const next: SceneState = {
+          ...current.scene,
+          ...(typeof patch.sidebarCollapsed === 'boolean'
+            ? { sidebarCollapsed: patch.sidebarCollapsed }
+            : {}),
+          ...(typeof patch.aiOpen === 'boolean'
+            ? { aiOpen: patch.aiOpen }
+            : {}),
+          ...(typeof patch.aiFloating === 'boolean'
+            ? { aiFloating: patch.aiFloating }
+            : {}),
+          ...(isPaneWidths(patch.paneWidths)
+            ? {
+                paneWidths: {
+                  left: patch.paneWidths.left,
+                  right: patch.paneWidths.right,
+                },
+              }
+            : {}),
+          ...(patch.floating === null
+            ? { floating: null }
+            : isRect(patch.floating)
+              ? { floating: patch.floating }
+              : {}),
+        };
+        const record = snapshotOf(windowId, next, null, host);
         publish(record);
         return record;
-      }
-      publish(current);
-      return current;
-    },
-  });
+      },
+    });
 
-  resource.command('scene', {
-    summary: '更新窗口场景',
-    args: {
-      windowId: { type: 'string', required: true },
-    },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const patch =
-        typeof input.patch === 'object' && input.patch !== null
-          ? (input.patch as SceneState)
-          : {};
-      const next: SceneState = {
-        ...current.scene,
-        ...(typeof patch.sidebarCollapsed === 'boolean'
-          ? { sidebarCollapsed: patch.sidebarCollapsed }
-          : {}),
-        ...(typeof patch.aiOpen === 'boolean' ? { aiOpen: patch.aiOpen } : {}),
-        ...(typeof patch.aiFloating === 'boolean'
-          ? { aiFloating: patch.aiFloating }
-          : {}),
-        ...(isPaneWidths(patch.paneWidths)
-          ? {
-              paneWidths: {
-                left: patch.paneWidths.left,
-                right: patch.paneWidths.right,
-              },
-            }
-          : {}),
-        ...(patch.floating === null
-          ? { floating: null }
-          : isRect(patch.floating)
-            ? { floating: patch.floating }
+    resource.command('begin', {
+      summary: '开始拖拽 / 缩放交互',
+      args: {},
+      run: (input) => {
+        const current = ensureRecord(windowId);
+        const interaction = input.input as InteractionInput;
+        const side = paneSideOf(interaction);
+        // 只有左侧分隔条与壳层同坐标系（整窗页面）；其余分栏拖拽用窗口光标，
+        // 避免把某页自己的局部坐标当成窗口坐标。
+        const cursor =
+          side === 'left' &&
+          typeof interaction.pointerX === 'number' &&
+          typeof interaction.pointerY === 'number'
+            ? { x: interaction.pointerX, y: interaction.pointerY }
+            : (host?.windowCursor(windowId) ?? { x: 0, y: 0 });
+        const session = beginInteraction(sceneOf(current), interaction, cursor);
+        const preview = previewInteraction(
+          session,
+          cursor,
+          host?.windowSize(windowId) ?? { width: 1440, height: 900 },
+        );
+        const record: LayoutRecord = {
+          ...snapshotOf(windowId, current.scene, preview, host),
+          input: interaction,
+          cursor,
+        };
+        publish(record);
+        host?.showCapture(windowId, interactionCursor(interaction));
+        return record;
+      },
+    });
+
+    resource.command('move', {
+      summary: '更新拖拽 / 缩放预览',
+      args: {},
+      run: (input) => {
+        const current = ensureRecord(windowId);
+        if (!current.preview) return current;
+        const pointer = input.input as
+          | { pointerX?: number; pointerY?: number }
+          | undefined;
+        const source = current.input ?? { type: current.preview.type };
+        const usePointer =
+          source.type === 'pane-resize' && paneSideOf(source) === 'left';
+        const cursor =
+          usePointer &&
+          typeof pointer?.pointerX === 'number' &&
+          typeof pointer?.pointerY === 'number'
+            ? { x: pointer.pointerX, y: pointer.pointerY }
+            : (host?.windowCursor(windowId) ?? { x: 0, y: 0 });
+        const session: InteractionSession = {
+          input: source,
+          scene: sceneOf(current),
+          cursor: current.cursor ?? cursor,
+        };
+        const preview = previewInteraction(
+          session,
+          cursor,
+          host?.windowSize(windowId) ?? { width: 1440, height: 900 },
+        );
+        const record: LayoutRecord = {
+          ...snapshotOf(windowId, current.scene, preview, host),
+          input: current.input,
+          cursor: current.cursor,
+        };
+        publish(record);
+        return record;
+      },
+    });
+
+    resource.command('end', {
+      summary: '结束交互并提交场景',
+      args: {},
+      run: () => {
+        const current = ensureRecord(windowId);
+        const size = host?.windowSize(windowId) ?? { width: 1440, height: 900 };
+        const committed = (
+          current.preview
+            ? commitInteraction(current.preview, sceneOf(current), size.width)
+            : {}
+        ) as Partial<{
+          sidebarCollapsed: boolean;
+          paneWidths: { left: number; right: number };
+          floating: LayoutSnapshot['assistantFloating'] | null;
+        }>;
+        const next: SceneState = {
+          ...current.scene,
+          ...(committed.sidebarCollapsed !== undefined
+            ? { sidebarCollapsed: committed.sidebarCollapsed }
             : {}),
-      };
-      const record = snapshotOf(windowId, next, null, host);
-      publish(record);
-      return record;
-    },
-  });
+          ...(committed.paneWidths ? { paneWidths: committed.paneWidths } : {}),
+          ...(committed.floating !== undefined
+            ? { floating: committed.floating }
+            : {}),
+        };
+        const record = snapshotOf(windowId, next, null, host);
+        publish(record);
+        host?.hideCapture(windowId);
+        return record;
+      },
+    });
 
-  resource.command('begin', {
-    summary: '开始拖拽 / 缩放交互',
-    args: {
-      windowId: { type: 'string', required: true },
-    },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const interaction = input.input as InteractionInput;
-      const cursor =
-        interaction.type === 'pane-resize' &&
-        interaction.side !== 'right' &&
-        typeof interaction.pointerX === 'number' &&
-        typeof interaction.pointerY === 'number'
-          ? { x: interaction.pointerX, y: interaction.pointerY }
-          : (host?.windowCursor(windowId) ?? { x: 0, y: 0 });
-      const session = beginInteraction(sceneOf(current), interaction, cursor);
-      const preview = previewInteraction(
-        session,
-        cursor,
-        host?.windowSize(windowId) ?? { width: 1440, height: 900 },
-      );
-      const record: LayoutRecord = {
-        ...snapshotOf(windowId, current.scene, preview, host),
-        input: interaction,
-      };
-      publish(record);
-      host?.showCapture(windowId, interactionCursor(interaction));
-      return record;
-    },
-  });
+    resource.command('cancel', {
+      summary: '取消交互',
+      args: {},
+      run: () => {
+        const current = ensureRecord(windowId);
+        const record = snapshotOf(windowId, current.scene, null, host);
+        publish(record);
+        host?.hideCapture(windowId);
+        return record;
+      },
+    });
 
-  resource.command('move', {
-    summary: '更新拖拽 / 缩放预览',
-    args: {
-      windowId: { type: 'string', required: true },
-    },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      if (!current.preview) return current;
-      const pointer = input.input as
-        | { pointerX?: number; pointerY?: number }
-        | undefined;
-      const source = current.input ?? { type: current.preview.type };
-      const usePointer =
-        source.type === 'pane-resize' && source.side !== 'right';
-      const cursor =
-        usePointer &&
-        typeof pointer?.pointerX === 'number' &&
-        typeof pointer?.pointerY === 'number'
-          ? { x: pointer.pointerX, y: pointer.pointerY }
-          : (host?.windowCursor(windowId) ?? { x: 0, y: 0 });
-      const session: InteractionSession = {
-        input: source,
-        scene: sceneOf(current),
-        cursor,
-      };
-      const preview = previewInteraction(
-        session,
-        cursor,
-        host?.windowSize(windowId) ?? { width: 1440, height: 900 },
-      );
-      const record: LayoutRecord = {
-        ...snapshotOf(windowId, current.scene, preview, host),
-        input: current.input,
-      };
-      publish(record);
-      return record;
-    },
-  });
+    resource.command('resize', {
+      summary: '窗口尺寸变化后重算',
+      args: {},
+      run: () => {
+        const current = ensureRecord(windowId);
+        const record = snapshotOf(
+          windowId,
+          current.scene,
+          current.preview,
+          host,
+        );
+        publish(record);
+        return record;
+      },
+    });
+  };
 
-  resource.command('end', {
-    summary: '结束交互并提交场景',
-    args: { windowId: { type: 'string', required: true } },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const size = host?.windowSize(windowId) ?? { width: 1440, height: 900 };
-      const committed = (
-        current.preview
-          ? commitInteraction(current.preview, sceneOf(current), size.width)
-          : {}
-      ) as Partial<{
-        sidebarCollapsed: boolean;
-        paneWidths: { left: number; right: number };
-        floating: LayoutSnapshot['assistantFloating'] | null;
-      }>;
-      const next: SceneState = {
-        ...current.scene,
-        ...(committed.sidebarCollapsed !== undefined
-          ? { sidebarCollapsed: committed.sidebarCollapsed }
-          : {}),
-        ...(committed.paneWidths ? { paneWidths: committed.paneWidths } : {}),
-        ...(committed.floating !== undefined
-          ? { floating: committed.floating }
-          : {}),
-      };
-      const record = snapshotOf(windowId, next, null, host);
+  return {
+    ensure: (windowId: string) => {
+      const record = ensureRecord(windowId);
+      define(windowId);
       publish(record);
-      host?.hideCapture(windowId);
-      return record;
     },
-  });
-
-  resource.command('cancel', {
-    summary: '取消交互',
-    args: { windowId: { type: 'string', required: true } },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const record = snapshotOf(windowId, current.scene, null, host);
-      publish(record);
-      host?.hideCapture(windowId);
-      return record;
+    remove: (windowId: string) => {
+      registry.define('shell').remove(layoutResourceName(windowId));
+      state.records.delete(windowId);
     },
-  });
-
-  resource.command('resize', {
-    summary: '窗口尺寸变化后重算',
-    args: { windowId: { type: 'string', required: true } },
-    run: (input) => {
-      const windowId = String(input.windowId);
-      const current = ensure(windowId);
-      const record = snapshotOf(windowId, current.scene, current.preview, host);
-      publish(record);
-      return record;
-    },
-  });
+  };
 }
 
 function isPaneWidths(
@@ -758,6 +810,11 @@ function isPaneWidths(
     typeof widths.right === 'number' &&
     Number.isFinite(widths.right)
   );
+}
+
+function paneSideOf(input: InteractionInput): 'left' | 'right' | null {
+  if (input.type !== 'pane-resize') return null;
+  return input.side ?? (input.target === 'right' ? 'right' : 'left');
 }
 
 function interactionCursor(input: InteractionInput): string {
@@ -1057,122 +1114,158 @@ export interface DialogState {
   readonly records: Map<string, DialogView>;
 }
 
-export function createDialogState(): DialogState {
-  return { seq: 0, records: new Map() };
+/** 对话框是窗口模态：每个窗口一份状态与 `shell/<wsId>/dialogs` 资源。 */
+export interface DialogStates {
+  readonly byWindow: Map<string, DialogState>;
 }
 
-export function defineDialogsResource(
+export function createDialogStates(): DialogStates {
+  return { byWindow: new Map() };
+}
+
+function dialogStateOf(states: DialogStates, windowId: string): DialogState {
+  let state = states.byWindow.get(windowId);
+  if (!state) {
+    state = { seq: 0, records: new Map() };
+    states.byWindow.set(windowId, state);
+  }
+  return state;
+}
+
+export function dialogsResourceName(windowId: string): string {
+  return `${windowId}/dialogs`;
+}
+
+export function defineDialogsResources(
   registry: DomainRegistry,
-  state: DialogState,
-  onVisibility?: (visible: boolean) => void,
-): void {
-  const resource = registry.define('shell').resource('dialogs');
-  const publish = (): void => {
-    resource.publish();
-    onVisibility?.(
-      [...state.records.values()].some((item) => item.status === 'open'),
-    );
-  };
-  resource.snapshot(() => [...state.records.values()]);
-  resource.command('open', {
-    summary: '打开对话框',
-    args: {
-      id: { type: 'string' },
-      dialogType: { enum: ['select', 'input', 'editor', 'confirm'] },
-      title: { type: 'string', required: true },
-      message: { type: 'string' },
-      placeholder: { type: 'string' },
-      prefill: { type: 'string' },
-      secret: { type: 'boolean' },
-    },
-    run: (input) => {
-      const id =
-        typeof input.id === 'string' && input.id
-          ? input.id
-          : `dialog-${++state.seq}`;
-      const dialogType = String(input.dialogType ?? 'confirm') as
-        | 'select'
-        | 'input'
-        | 'editor'
-        | 'confirm';
-      const view: DialogView = {
-        id,
-        request: {
+  states: DialogStates,
+  onVisibility?: (windowId: string, visible: boolean) => void,
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const define = (windowId: string): void => {
+    const domain = registry.define('shell');
+    const name = dialogsResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    const state = dialogStateOf(states, windowId);
+    const resource = domain.resource(name);
+    const publish = (): void => {
+      resource.publish();
+      onVisibility?.(
+        windowId,
+        [...state.records.values()].some((item) => item.status === 'open'),
+      );
+    };
+    resource.snapshot(() => [...state.records.values()]);
+    resource.command('open', {
+      summary: '打开对话框',
+      args: {
+        id: { type: 'string' },
+        dialogType: { enum: ['select', 'input', 'editor', 'confirm'] },
+        title: { type: 'string', required: true },
+        message: { type: 'string' },
+        placeholder: { type: 'string' },
+        prefill: { type: 'string' },
+        secret: { type: 'boolean' },
+      },
+      run: (input) => {
+        const id =
+          typeof input.id === 'string' && input.id
+            ? input.id
+            : `dialog-${++state.seq}`;
+        const dialogType = String(input.dialogType ?? 'confirm') as
+          | 'select'
+          | 'input'
+          | 'editor'
+          | 'confirm';
+        const view: DialogView = {
           id,
-          dialogType,
-          title: String(input.title),
-          ...(typeof input.message === 'string'
-            ? { message: input.message }
-            : {}),
-          ...(Array.isArray(input.options)
-            ? {
-                options: input.options.filter(
-                  (value): value is string => typeof value === 'string',
-                ),
-              }
-            : {}),
-          ...(typeof input.placeholder === 'string'
-            ? { placeholder: input.placeholder }
-            : {}),
-          ...(typeof input.prefill === 'string'
-            ? { prefill: input.prefill }
-            : {}),
-          ...(input.secret === true ? { secret: true } : {}),
-        },
-        status: 'open',
-      };
-      state.records.set(id, view);
-      publish();
-      return view;
+          request: {
+            id,
+            dialogType,
+            title: String(input.title),
+            ...(typeof input.message === 'string'
+              ? { message: input.message }
+              : {}),
+            ...(Array.isArray(input.options)
+              ? {
+                  options: input.options.filter(
+                    (value): value is string => typeof value === 'string',
+                  ),
+                }
+              : {}),
+            ...(typeof input.placeholder === 'string'
+              ? { placeholder: input.placeholder }
+              : {}),
+            ...(typeof input.prefill === 'string'
+              ? { prefill: input.prefill }
+              : {}),
+            ...(input.secret === true ? { secret: true } : {}),
+          },
+          status: 'open',
+        };
+        state.records.set(id, view);
+        publish();
+        return view;
+      },
+    });
+    resource.command('respond', {
+      summary: '应答对话框',
+      args: {
+        id: { type: 'string', required: true },
+        value: { type: 'string' },
+        confirmed: { type: 'boolean' },
+        cancelled: { type: 'boolean' },
+      },
+      run: (input) => {
+        const id = String(input.id);
+        const view = state.records.get(id);
+        if (!view) throw new CallFailure('not_found', `对话框不存在：${id}`);
+        if (view.status !== 'open') {
+          throw new CallFailure('invalid', `对话框已结束：${id}`);
+        }
+        const cancelled = input.cancelled === true;
+        const next: DialogView = {
+          ...view,
+          status: cancelled ? 'cancelled' : 'resolved',
+          response: cancelled
+            ? {}
+            : {
+                ...(typeof input.value === 'string'
+                  ? { value: input.value }
+                  : {}),
+                ...(typeof input.confirmed === 'boolean'
+                  ? { confirmed: input.confirmed }
+                  : {}),
+              },
+        };
+        state.records.set(id, next);
+        publish();
+        return next;
+      },
+    });
+    resource.command('dismiss', {
+      summary: '撤销对话框',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        const id = String(input.id);
+        const view = state.records.get(id);
+        if (!view) return null;
+        state.records.set(id, { ...view, status: 'cancelled' });
+        publish();
+        return null;
+      },
+    });
+  };
+
+  return {
+    ensure: (windowId: string) => {
+      dialogStateOf(states, windowId);
+      define(windowId);
     },
-  });
-  resource.command('respond', {
-    summary: '应答对话框',
-    args: {
-      id: { type: 'string', required: true },
-      value: { type: 'string' },
-      confirmed: { type: 'boolean' },
-      cancelled: { type: 'boolean' },
+    remove: (windowId: string) => {
+      states.byWindow.delete(windowId);
+      registry.define('shell').remove(dialogsResourceName(windowId));
     },
-    run: (input) => {
-      const id = String(input.id);
-      const view = state.records.get(id);
-      if (!view) throw new CallFailure('not_found', `对话框不存在：${id}`);
-      if (view.status !== 'open') {
-        throw new CallFailure('invalid', `对话框已结束：${id}`);
-      }
-      const cancelled = input.cancelled === true;
-      const next: DialogView = {
-        ...view,
-        status: cancelled ? 'cancelled' : 'resolved',
-        response: cancelled
-          ? {}
-          : {
-              ...(typeof input.value === 'string'
-                ? { value: input.value }
-                : {}),
-              ...(typeof input.confirmed === 'boolean'
-                ? { confirmed: input.confirmed }
-                : {}),
-            },
-      };
-      state.records.set(id, next);
-      publish();
-      return next;
-    },
-  });
-  resource.command('dismiss', {
-    summary: '撤销对话框',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      const id = String(input.id);
-      const view = state.records.get(id);
-      if (!view) return null;
-      state.records.set(id, { ...view, status: 'cancelled' });
-      publish();
-      return null;
-    },
-  });
+  };
 }
 
 // ─── notice ─────────────────────────────────────────────────
@@ -1189,48 +1282,83 @@ export interface NoticeState {
   notices: NoticeRecord[];
 }
 
-export function createNoticeState(): NoticeState {
-  return { seq: 0, notices: [] };
+/** 通知跟随窗口：每个窗口一份状态与 `shell/<wsId>/notices` 资源。 */
+export interface NoticeStates {
+  readonly byWindow: Map<string, NoticeState>;
 }
 
-export function defineNoticesResource(
+export function createNoticeStates(): NoticeStates {
+  return { byWindow: new Map() };
+}
+
+function noticeStateOf(states: NoticeStates, windowId: string): NoticeState {
+  let state = states.byWindow.get(windowId);
+  if (!state) {
+    state = { seq: 0, notices: [] };
+    states.byWindow.set(windowId, state);
+  }
+  return state;
+}
+
+export function noticesResourceName(windowId: string): string {
+  return `${windowId}/notices`;
+}
+
+export function defineNoticesResources(
   registry: DomainRegistry,
-  state: NoticeState,
-): void {
-  const resource = registry.define('shell').resource('notices');
-  resource.snapshot(() => state.notices);
-  resource.command('notify', {
-    summary: '推送通知',
-    args: {
-      level: { enum: ['info', 'warn', 'error'] },
-      message: { type: 'string', required: true },
-      source: { type: 'string' },
+  states: NoticeStates,
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const define = (windowId: string): void => {
+    const domain = registry.define('shell');
+    const name = noticesResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    const state = noticeStateOf(states, windowId);
+    const resource = domain.resource(name);
+    resource.snapshot(() => state.notices);
+    resource.command('notify', {
+      summary: '推送通知',
+      args: {
+        level: { enum: ['info', 'warn', 'error'] },
+        message: { type: 'string', required: true },
+        source: { type: 'string' },
+      },
+      run: (input) => {
+        const notice: NoticeRecord = {
+          id: `notice-${++state.seq}`,
+          level:
+            input.level === 'warn' || input.level === 'error'
+              ? input.level
+              : 'info',
+          message: String(input.message),
+          ...(typeof input.source === 'string' ? { source: input.source } : {}),
+        };
+        state.notices = [...state.notices, notice];
+        resource.publish();
+        return notice;
+      },
+    });
+    resource.command('dismiss', {
+      summary: '关闭通知',
+      args: { id: { type: 'string' } },
+      run: (input) => {
+        const id = typeof input.id === 'string' ? input.id : null;
+        state.notices = id
+          ? state.notices.filter((notice) => notice.id !== id)
+          : [];
+        resource.publish();
+        return state.notices;
+      },
+    });
+  };
+
+  return {
+    ensure: (windowId: string) => {
+      noticeStateOf(states, windowId);
+      define(windowId);
     },
-    run: (input) => {
-      const notice: NoticeRecord = {
-        id: `notice-${++state.seq}`,
-        level:
-          input.level === 'warn' || input.level === 'error'
-            ? input.level
-            : 'info',
-        message: String(input.message),
-        ...(typeof input.source === 'string' ? { source: input.source } : {}),
-      };
-      state.notices = [...state.notices, notice];
-      resource.publish();
-      return notice;
+    remove: (windowId: string) => {
+      states.byWindow.delete(windowId);
+      registry.define('shell').remove(noticesResourceName(windowId));
     },
-  });
-  resource.command('dismiss', {
-    summary: '关闭通知',
-    args: { id: { type: 'string' } },
-    run: (input) => {
-      const id = typeof input.id === 'string' ? input.id : null;
-      state.notices = id
-        ? state.notices.filter((notice) => notice.id !== id)
-        : [];
-      resource.publish();
-      return state.notices;
-    },
-  });
+  };
 }

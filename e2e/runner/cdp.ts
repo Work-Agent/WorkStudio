@@ -63,7 +63,7 @@ export async function waitForCdpTarget(
         (item) =>
           item.type === 'page' &&
           !!item.webSocketDebuggerUrl &&
-          pattern.test(`${item.title ?? ''} ${item.url}`),
+          pattern.test(item.url),
       );
       if (target) return target;
     } catch (error) {

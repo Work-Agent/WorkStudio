@@ -1,4 +1,4 @@
-/** 场景投影：写入 shell/layout 的 scene 字段；没有持久值时用默认三栏。 */
+/** 场景投影：写入 shell/<wsId>/layout 的 scene 字段；没有持久值时用默认三栏。 */
 import { useCallback } from 'react';
 import { command, useResource } from '../../../shared/api/bridge.ts';
 import { useActiveWorkspaceId } from './windows.ts';
@@ -27,13 +27,16 @@ export function useScene(): {
   patch(patch: SceneState): void;
 } {
   const wsId = useActiveWorkspaceId();
-  const records = useResource<LayoutRecord[]>('shell', 'layout', []);
-  const scene = records.find((record) => record.windowId === wsId)?.scene;
+  const record = useResource<LayoutRecord | null>(
+    'shell',
+    wsId ? `${wsId}/layout` : null,
+    null,
+  );
+  const scene = record?.scene;
   const patch = useCallback(
     (next: SceneState) => {
       if (!wsId) return;
-      void command('shell', 'layout', 'scene', {
-        windowId: wsId,
+      void command('shell', `${wsId}/layout`, 'scene', {
         patch: next,
       }).catch(() => undefined);
     },

@@ -1034,7 +1034,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
     name: 'dev_shot',
     label: 'Dev Screenshot',
     description:
-      '截取 dev 窗口当前界面为 PNG（经 CDP 9222），可先执行 JS 操作页面再截图。窗口离线时会自动拉起。返回保存路径，用 read 查看图片。',
+      '截取 dev 窗口当前界面为 PNG（经 CDP 9222），可先执行 JS 操作页面再截图。截图前先探测窗口；离线时直接返回状态，不拉起窗口、不等待。返回保存路径，用 read 查看图片。',
     promptSnippet: '截取 dev 窗口当前界面（CDP 截图，可预操作页面）',
     promptGuidelines: [
       '改完 UI 需要目视验证时，调用 dev_shot 工具截图（可用 eval 参数先点击/切状态，waitMs 等渲染），再 read 保存的 PNG 查看。不要另写截图脚本。',
@@ -1064,19 +1064,17 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      // 截图不做拉起：窗口没开就直接返回状态，避免等待与意外启动。
       if (!(await refreshWindowState(ctx))) {
-        await ensureDevWindow(ctx); // 离线时自动拉起（最长约 20s）
-        if (!windowOnline) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `dev 窗口离线且拉起失败，详见 ${DEV_LOG}。`,
-              },
-            ],
-            details: undefined,
-          };
-        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `dev 窗口离线（CDP ${CDP_PORT} 未响应）；dev_shot 不负责拉起，需要时先启动 dev 窗口。`,
+            },
+          ],
+          details: undefined,
+        };
       }
       const outPath = resolve(
         ctx.sessionManager.getCwd(),

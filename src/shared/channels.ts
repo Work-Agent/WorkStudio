@@ -6,3 +6,14 @@ export const BRIDGE_CHANNELS = {
   notify: 'workstudio:notify',
   update: 'workstudio:update',
 } as const;
+
+/** 窗口 → 渲染层的工作区绑定；窗口与工作区 1:1，值即该窗口的 wsId。 */
+export const WORKSPACE_ARG = '--work-studio-workspace=';
+
+export function workspaceIdOfArgv(
+  argv: readonly string[] | null | undefined,
+): string | null {
+  if (!Array.isArray(argv)) return null;
+  const arg = argv.find((item) => item.startsWith(WORKSPACE_ARG));
+  return arg ? arg.slice(WORKSPACE_ARG.length) : null;
+}

@@ -11,6 +11,7 @@ import { workUrl } from '../../../shared/pages.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import { CallFailure } from '../../contract.ts';
 import { createLog } from '../../log.ts';
+import { activeWindowId } from '../shell/domains.ts';
 import { UpdatesService } from './updates.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import {
@@ -173,8 +174,10 @@ export class SettingsModule implements DomainModule {
     const page = this.settings.pages.get(pageId);
     if (!page) throw new CallFailure('not_found', `设置页不存在：${pageId}`);
     const welcome = pageId === 'welcome';
+    const windowId = activeWindowId(registry);
+    if (!windowId) throw new CallFailure('failed', '没有活动窗口');
     const result = await registry.dispatchCommand(
-      { domain: 'shell', resource: 'views' },
+      { domain: 'shell', resource: `${windowId}/views` },
       'open',
       {
         id: welcome ? 'welcome' : `settings:${pageId}`,

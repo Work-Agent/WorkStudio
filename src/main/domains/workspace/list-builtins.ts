@@ -13,12 +13,11 @@ import type {
 } from '../../../shared/lists.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { TransportRouter } from '../../transport/router.ts';
-import type { ListRegistry } from './lists.ts';
+import type { ListProviderContext, ListRegistry } from './lists.ts';
 
 export interface SystemListDeps {
   registry: DomainRegistry;
   transport: TransportRouter;
-  workspacePath: () => string;
 }
 
 const OPEN_ACTION: ListActionSpec = {
@@ -58,6 +57,7 @@ export const tempDefinition: ListDefinition = {
   unit: '个标签',
   order: 30,
   sourceScope: 'workspace',
+  deps: [{ domain: 'shell', resource: 'views' }],
   itemType: 'link',
   fields: [{ key: 'title', type: 'text' }],
   actions: [OPEN_ACTION],
@@ -73,6 +73,7 @@ export const sessionsDefinition: ListDefinition = {
   unit: '个会话',
   order: 40,
   sourceScope: 'workspace',
+  deps: [{ domain: 'agent', resource: 'sessions' }],
   itemType: 'session',
   fields: [
     { key: 'title', type: 'text' },
@@ -92,6 +93,7 @@ export const pluginsDefinition: ListDefinition = {
   unit: '个',
   order: 50,
   sourceScope: 'app',
+  deps: [{ domain: 'plugin', resource: 'installed' }],
   itemType: 'plugin',
   fields: [
     { key: 'title', type: 'text' },
@@ -110,6 +112,7 @@ export const settingsDefinition: ListDefinition = {
   unit: '项',
   order: 60,
   sourceScope: 'app',
+  deps: [{ domain: 'settings', resource: 'pages' }],
   itemType: 'settings',
   fields: [
     { key: 'title', type: 'text' },
@@ -123,15 +126,22 @@ export function registerSystemLists(
   lists: ListRegistry,
   deps: SystemListDeps,
 ): void {
-  lists.register(docsDefinition, () => docsGroup(deps), 'system');
-  lists.register(tempDefinition, () => tempGroup(deps), 'system');
-  lists.register(sessionsDefinition, () => sessionsGroup(deps), 'system');
+  lists.register(docsDefinition, (ctx) => docsGroup(deps, ctx), 'system');
+  lists.register(tempDefinition, (ctx) => tempGroup(deps, ctx), 'system');
+  lists.register(
+    sessionsDefinition,
+    (ctx) => sessionsGroup(deps, ctx),
+    'system',
+  );
   lists.register(pluginsDefinition, () => pluginsGroup(deps), 'system');
   lists.register(settingsDefinition, () => settingsGroup(deps), 'system');
 }
 
-async function docsGroup(deps: SystemListDeps): Promise<ListGroup[]> {
-  const root = deps.workspacePath();
+async function docsGroup(
+  deps: SystemListDeps,
+  ctx: ListProviderContext,
+): Promise<ListGroup[]> {
+  const root = ctx.workspacePath;
   if (!root) return [];
   const entries = await deps.transport.ls(fileRef(root), { limit: 500 });
   const items: ListItem[] = entries
@@ -163,11 +173,14 @@ async function docsGroup(deps: SystemListDeps): Promise<ListGroup[]> {
   return items.length ? [groupOf(docsDefinition, items)] : [];
 }
 
-function tempGroup(deps: SystemListDeps): ListGroup[] {
+function tempGroup(
+  deps: SystemListDeps,
+  ctx: ListProviderContext,
+): ListGroup[] {
   const views = snapshot<Array<Record<string, unknown>>>(
     deps.registry,
     'shell',
-    'views',
+    `${ctx.workspaceId}/views`,
   );
   const items: ListItem[] = (views ?? [])
     .filter((view) => view['type'] === 'web')
@@ -185,11 +198,14 @@ function tempGroup(deps: SystemListDeps): ListGroup[] {
   return items.length ? [groupOf(tempDefinition, items)] : [];
 }
 
-function sessionsGroup(deps: SystemListDeps): ListGroup[] {
+function sessionsGroup(
+  deps: SystemListDeps,
+  ctx: ListProviderContext,
+): ListGroup[] {
   const snapshotValue = snapshot<Record<string, unknown>>(
     deps.registry,
     'agent',
-    'sessions',
+    `${ctx.workspaceId}/sessions`,
   );
   const items = Array.isArray(snapshotValue?.['items'])
     ? snapshotValue['items']

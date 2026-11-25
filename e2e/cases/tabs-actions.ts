@@ -31,11 +31,19 @@ export default defineCase({
     const web = views.find((view) => view.title === 'ACTIONS');
     if (!web) throw new Error('网页标签不存在');
     await ctx.evaluate(async (id) => {
-      await window.workStudio.command('shell', 'views', 'pin', { id });
+      await window.workStudio.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'pin',
+        { id },
+      );
     }, web.id);
     await ctx.expect.poll(async () => {
       const next = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'views'),
+        window.workStudio.subscribe(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+        ),
       )) as ViewInfo[];
       return next.find((view) => view.id === web.id)?.pinned === true;
     }, '标签未固定');
@@ -43,27 +51,49 @@ export default defineCase({
     await ctx.evaluate(async (id) => {
       const list = (await window.workStudio.subscribe(
         'shell',
-        'views',
+        `${String(window.workStudio.workspaceId)}/views`,
       )) as ViewInfo[];
       const other = list.find((view) => view.id !== id);
       if (other) {
-        await window.workStudio.command('shell', 'views', 'move', {
-          fromId: id,
-          toId: other.id,
-        });
+        await window.workStudio.command(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+          'move',
+          {
+            fromId: id,
+            toId: other.id,
+          },
+        );
       }
-      await window.workStudio.command('shell', 'views', 'closeLeft', { id });
-      await window.workStudio.command('shell', 'views', 'closeRight', { id });
+      await window.workStudio.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'closeLeft',
+        { id },
+      );
+      await window.workStudio.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'closeRight',
+        { id },
+      );
     }, web.id);
     await ctx.expect.poll(async () => {
       const next = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'views'),
+        window.workStudio.subscribe(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+        ),
       )) as ViewInfo[];
       return next.length === 1 && next[0]?.id === web.id;
     }, '左右关闭未保留锚点');
 
     await ctx.evaluate(async () => {
-      await window.workStudio.command('shell', 'views', 'closeAll');
+      await window.workStudio.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'closeAll',
+      );
     });
     await ctx.expect.poll(
       async () => (await ctx.text('doc-tabs')).includes('欢迎'),

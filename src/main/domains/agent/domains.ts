@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { CallFailure } from '../../contract.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
+import type { Resource } from '../../registry/resource.ts';
 import type { AgentContext } from './context.ts';
 import { Session } from './session.ts';
 import type { ToolSurface } from './tools.ts';
@@ -178,18 +179,27 @@ export function reduceSessionFrame(
   return true;
 }
 
-export function defineSessionsResource(
+/** 会话投影按工作区资源化：`agent/<wsId>/sessions`（agent 只服务当前工作区）。 */
+export function defineSessionsResources(
   registry: DomainRegistry,
   state: SessionsState,
   context: AgentContext,
-  thinking?: ThinkingState,
-  host?: () => AgentHost | null,
-): void {
+  thinking: ThinkingState | undefined,
+  host: (() => AgentHost | null) | undefined,
+  idleItems: (workspaceId: string) => SessionMeta[],
+): {
+  ensure: (workspaceId: string) => void;
+  remove: (workspaceId: string) => void;
+  publish: () => void;
+  event: (name: string, data: unknown) => void;
+} {
   const domain = registry.define('agent');
-  const sessions = domain.resource('sessions');
+  const registered = new Set<string>();
 
   const publish = (): void => {
-    sessions.publish();
+    for (const workspaceId of registered) {
+      domain.resourceOf(`${workspaceId}/sessions`)?.publish();
+    }
     if (state.currentId) {
       domain
         .resourceOf(sessionResourceName(state.workspaceId, state.currentId))
@@ -306,7 +316,7 @@ export function defineSessionsResource(
     });
   };
 
-  sessions.snapshot(() => {
+  const liveSnapshot = (): unknown => {
     const runtime = host?.();
     if (runtime) {
       const snapshot = runtime.getSnapshot();
@@ -346,306 +356,365 @@ export function defineSessionsResource(
         levels: thinking?.levels ?? [],
       },
     };
+  };
+
+  const idleSnapshot = (workspaceId: string): unknown => ({
+    workspaceId,
+    current: null,
+    active: null,
+    items: idleItems(workspaceId),
+    commands: [],
+    task: null,
+    opened: [],
+    thinking: { level: null, levels: [] },
   });
 
-  sessions.command('new', {
-    summary: '新建会话',
-    args: {},
-    run: async () => {
-      const runtime = host?.();
-      if (runtime) {
-        state.task = null;
-        await runtime.newSession();
-        state.currentId = runtime.getSnapshot().sessionId ?? null;
-        publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const id = `session-${state.sessions.size + 1}`;
-      const session = new Session(id, context);
-      state.sessions.set(id, session);
-      state.currentId = id;
-      ensureSessionResource(id);
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('open', {
-    summary: '打开会话',
-    args: {
-      id: { type: 'string' },
-      sessionId: { type: 'string' },
-    },
-    run: async (input) => {
-      const id = String(input.id ?? input.sessionId ?? '');
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.switchSession(id);
+  const register = (resource: Resource, workspaceId: string): void => {
+    // 命令按地址注册，运行时再判断该工作区是否仍是 agent 的绑定工作区；
+    // 这样切换工作区不需要重建资源，订阅者也不会丢。
+    const guarded = (
+      action: string,
+      spec: Parameters<Resource['command']>[1],
+    ): void => {
+      resource.command(action, {
+        ...spec,
+        run: (input, ctx) => {
+          if (workspaceId !== state.workspaceId) {
+            throw new CallFailure(
+              'failed',
+              '该工作区未激活：agent 只服务当前工作区',
+            );
+          }
+          return spec.run(input, ctx);
+        },
+      });
+    };
+
+    guarded('new', {
+      summary: '新建会话',
+      args: {},
+      run: async () => {
+        const runtime = host?.();
+        if (runtime) {
+          state.task = null;
+          await runtime.newSession();
+          state.currentId = runtime.getSnapshot().sessionId ?? null;
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const id = `session-${state.sessions.size + 1}`;
+        const session = new Session(id, context);
+        state.sessions.set(id, session);
         state.currentId = id;
+        ensureSessionResource(id);
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = state.sessions.get(id);
-      if (!session) throw new CallFailure('not_found', `会话不存在：${id}`);
-      state.currentId = id;
-      ensureSessionResource(id);
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('refresh', {
-    summary: '刷新会话投影',
-    args: {},
-    run: () => {
-      publish();
-      return sessions.snapshotValue();
-    },
-  });
-  sessions.command('prompt', {
-    summary: '发送消息',
-    args: { text: { type: 'string', required: true } },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        const text = String(input.text);
-        const task: SessionTask = {
-          id: ++state.taskSeq,
-          sessionFile: runtime.getSnapshot().sessionFile,
-          status: 'running',
-          request: text,
-          attempt: 1,
-          stage: '正在执行',
-          error: null,
-          mayHaveSideEffects: false,
-          artifacts: [],
-          tools: [],
-        };
-        state.task = task;
+        return session.snapshot();
+      },
+    });
+    guarded('open', {
+      summary: '打开会话',
+      args: {
+        id: { type: 'string' },
+        sessionId: { type: 'string' },
+      },
+      run: async (input) => {
+        const id = String(input.id ?? input.sessionId ?? '');
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.switchSession(id);
+          state.currentId = id;
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = state.sessions.get(id);
+        if (!session) throw new CallFailure('not_found', `会话不存在：${id}`);
+        state.currentId = id;
+        ensureSessionResource(id);
         publish();
-        try {
-          await runtime.prompt({ text });
-          task.status = runtime.getSnapshot().isStreaming
-            ? 'unconfirmed'
-            : 'done';
-          task.stage = task.status === 'done' ? '本轮结束' : '等待执行结果';
-        } catch (error) {
-          task.status = 'failed';
-          task.error = error instanceof Error ? error.message : String(error);
-          task.stage = '本轮失败';
-          throw error;
-        } finally {
+        return session.snapshot();
+      },
+    });
+    guarded('refresh', {
+      summary: '刷新会话投影',
+      args: {},
+      run: () => {
+        publish();
+        return resource.snapshotValue();
+      },
+    });
+    guarded('prompt', {
+      summary: '发送消息',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          const text = String(input.text);
+          const task: SessionTask = {
+            id: ++state.taskSeq,
+            sessionFile: runtime.getSnapshot().sessionFile,
+            status: 'running',
+            request: text,
+            attempt: 1,
+            stage: '正在执行',
+            error: null,
+            mayHaveSideEffects: false,
+            artifacts: [],
+            tools: [],
+          };
+          state.task = task;
           publish();
+          try {
+            await runtime.prompt({ text });
+            task.status = runtime.getSnapshot().isStreaming
+              ? 'unconfirmed'
+              : 'done';
+            task.stage = task.status === 'done' ? '本轮结束' : '等待执行结果';
+          } catch (error) {
+            task.status = 'failed';
+            task.error = error instanceof Error ? error.message : String(error);
+            task.stage = '本轮失败';
+            throw error;
+          } finally {
+            publish();
+          }
+          return runtimeSession(runtime.getSnapshot());
         }
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      await session.prompt(String(input.text));
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('abort', {
-    summary: '中止当前回合',
-    args: {},
-    run: async () => {
-      const runtime = host?.();
-      if (runtime) {
-        if (state.task) {
-          state.task.status = 'stopping';
-          state.task.stage = '正在停止';
+        const session = requireSession(state);
+        await session.prompt(String(input.text));
+        publish();
+        return session.snapshot();
+      },
+    });
+    guarded('abort', {
+      summary: '中止当前回合',
+      args: {},
+      run: async () => {
+        const runtime = host?.();
+        if (runtime) {
+          if (state.task) {
+            state.task.status = 'stopping';
+            state.task.stage = '正在停止';
+            publish();
+          }
+          await runtime.abort();
+          if (state.task) {
+            state.task.status = runtime.getSnapshot().isStreaming
+              ? 'unconfirmed'
+              : 'stopped';
+            state.task.stage = '已请求停止';
+          }
           publish();
+          return null;
         }
-        await runtime.abort();
-        if (state.task) {
-          state.task.status = runtime.getSnapshot().isStreaming
-            ? 'unconfirmed'
-            : 'stopped';
-          state.task.stage = '已请求停止';
-        }
+        await currentSession(state)?.abort();
         publish();
         return null;
-      }
-      await currentSession(state)?.abort();
-      publish();
-      return null;
-    },
-  });
-  sessions.command('setModel', {
-    summary: '切换当前会话模型',
-    args: {
-      provider: { type: 'string', required: true },
-      model: { type: 'string', required: true },
-    },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.setModel(String(input.provider), String(input.model));
+      },
+    });
+    guarded('setModel', {
+      summary: '切换当前会话模型',
+      args: {
+        provider: { type: 'string', required: true },
+        model: { type: 'string', required: true },
+      },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.setModel(String(input.provider), String(input.model));
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSession(state);
+        session.setModel(String(input.provider), String(input.model));
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      session.setModel(String(input.provider), String(input.model));
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('steer', {
-    summary: '插入当前回合',
-    args: { text: { type: 'string', required: true } },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.steer(String(input.text));
+        return session.snapshot();
+      },
+    });
+    guarded('steer', {
+      summary: '插入当前回合',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.steer(String(input.text));
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSession(state);
+        await session.steer(String(input.text));
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      await session.steer(String(input.text));
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('followUp', {
-    summary: '追加下一回合',
-    args: { text: { type: 'string', required: true } },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.followUp(String(input.text));
+        return session.snapshot();
+      },
+    });
+    guarded('followUp', {
+      summary: '追加下一回合',
+      args: { text: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.followUp(String(input.text));
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSession(state);
+        await session.followUp(String(input.text));
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      await session.followUp(String(input.text));
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('compact', {
-    summary: '压缩当前会话',
-    args: { instructions: { type: 'string' } },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.compact(
+        return session.snapshot();
+      },
+    });
+    guarded('compact', {
+      summary: '压缩当前会话',
+      args: { instructions: { type: 'string' } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.compact(
+            typeof input.instructions === 'string'
+              ? input.instructions
+              : undefined,
+          );
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSession(state);
+        await session.compact(
           typeof input.instructions === 'string'
             ? input.instructions
             : undefined,
         );
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      await session.compact(
-        typeof input.instructions === 'string' ? input.instructions : undefined,
-      );
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('retry', {
-    summary: '重试上一回合',
-    args: { confirmed: { type: 'boolean' } },
-    run: async (input) => {
-      const session = requireSession(state);
-      await session.retry(input.confirmed === true);
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('fork', {
-    summary: '从消息分叉会话',
-    args: {
-      entryId: { type: 'string', required: true },
-      position: { enum: ['before', 'after'] },
-    },
-    run: async (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.fork(
+        return session.snapshot();
+      },
+    });
+    guarded('retry', {
+      summary: '重试上一回合',
+      args: { confirmed: { type: 'boolean' } },
+      run: async (input) => {
+        const session = requireSession(state);
+        await session.retry(input.confirmed === true);
+        publish();
+        return session.snapshot();
+      },
+    });
+    guarded('fork', {
+      summary: '从消息分叉会话',
+      args: {
+        entryId: { type: 'string', required: true },
+        position: { enum: ['before', 'after'] },
+      },
+      run: async (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.fork(
+            String(input.entryId),
+            input.position === 'before' ? 'before' : 'at',
+          );
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSession(state);
+        await session.fork(
           String(input.entryId),
-          input.position === 'before' ? 'before' : 'at',
+          input.position === 'before' ? 'before' : 'after',
         );
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSession(state);
-      await session.fork(
-        String(input.entryId),
-        input.position === 'before' ? 'before' : 'after',
-      );
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('rename', {
-    summary: '重命名会话',
-    args: {
-      name: { type: 'string', required: true },
-      id: { type: 'string' },
-      path: { type: 'string' },
-    },
-    run: (input) => {
-      const id = String(input.id ?? input.path ?? state.currentId ?? '');
-      const runtime = host?.();
-      if (runtime) {
-        runtime.renameSession(id, String(input.name));
+        return session.snapshot();
+      },
+    });
+    guarded('rename', {
+      summary: '重命名会话',
+      args: {
+        name: { type: 'string', required: true },
+        id: { type: 'string' },
+        path: { type: 'string' },
+      },
+      run: (input) => {
+        const id = String(input.id ?? input.path ?? state.currentId ?? '');
+        const runtime = host?.();
+        if (runtime) {
+          runtime.renameSession(id, String(input.name));
+          publish();
+          return runtimeSession(runtime.getSnapshot());
+        }
+        const session = requireSessionById(state, id);
+        session.rename(String(input.name));
         publish();
-        return runtimeSession(runtime.getSnapshot());
-      }
-      const session = requireSessionById(state, id);
-      session.rename(String(input.name));
-      publish();
-      return session.snapshot();
-    },
-  });
-  sessions.command('delete', {
-    summary: '删除会话',
-    args: {
-      id: { type: 'string' },
-      path: { type: 'string' },
-    },
-    run: async (input) => {
-      const id = String(input.id ?? input.path ?? state.currentId ?? '');
-      if (!id) throw new CallFailure('not_found', '没有当前会话');
-      const runtime = host?.();
-      if (runtime) {
-        await runtime.deleteSession(id);
-        state.currentId = runtime.getSnapshot().sessionId ?? null;
-      }
-      state.sessions.delete(id);
-      domain.remove(sessionResourceName(state.workspaceId, id));
-      if (state.currentId === id) state.currentId = null;
-      publish();
-      return null;
-    },
-  });
-  sessions.command('setThinking', {
-    summary: '切换当前思考等级',
-    args: { level: { type: 'string', required: true } },
-    run: (input) => {
-      const runtime = host?.();
-      if (runtime) {
-        runtime.setThinkingLevel(String(input.level));
+        return session.snapshot();
+      },
+    });
+    guarded('delete', {
+      summary: '删除会话',
+      args: {
+        id: { type: 'string' },
+        path: { type: 'string' },
+      },
+      run: async (input) => {
+        const id = String(input.id ?? input.path ?? state.currentId ?? '');
+        if (!id) throw new CallFailure('not_found', '没有当前会话');
+        const runtime = host?.();
+        if (runtime) {
+          await runtime.deleteSession(id);
+          state.currentId = runtime.getSnapshot().sessionId ?? null;
+        }
+        state.sessions.delete(id);
+        domain.remove(sessionResourceName(state.workspaceId, id));
+        if (state.currentId === id) state.currentId = null;
+        publish();
+        return null;
+      },
+    });
+    guarded('setThinking', {
+      summary: '切换当前思考等级',
+      args: { level: { type: 'string', required: true } },
+      run: (input) => {
+        const runtime = host?.();
+        if (runtime) {
+          runtime.setThinkingLevel(String(input.level));
+          publish();
+          return {
+            level: String(input.level),
+            levels: runtime.session.getAvailableThinkingLevels?.() ?? [],
+          };
+        }
+        if (!thinking) return null;
+        thinking.level = String(input.level);
         publish();
         return {
-          level: String(input.level),
-          levels: runtime.session.getAvailableThinkingLevels?.() ?? [],
+          level: thinking.level,
+          levels: thinking.levels,
         };
-      }
-      if (!thinking) return null;
-      thinking.level = String(input.level);
-      publish();
-      return {
-        level: thinking.level,
-        levels: thinking.levels,
-      };
+      },
+    });
+    guarded('closeOpened', {
+      summary: '关闭已打开的会话标签',
+      args: {},
+      run: () => null,
+    });
+  };
+
+  return {
+    ensure: (workspaceId: string) => {
+      registered.add(workspaceId);
+      const name = `${workspaceId}/sessions`;
+      if (domain.resourceOf(name)) return;
+      const resource = domain.resource(name);
+      resource.snapshot(() =>
+        workspaceId === state.workspaceId
+          ? liveSnapshot()
+          : idleSnapshot(workspaceId),
+      );
+      register(resource, workspaceId);
     },
-  });
-  sessions.command('closeOpened', {
-    summary: '关闭已打开的会话标签',
-    args: {},
-    run: () => null,
-  });
+    remove: (workspaceId: string) => {
+      registered.delete(workspaceId);
+      domain.remove(`${workspaceId}/sessions`);
+    },
+    publish,
+    event: (name: string, data: unknown) => {
+      if (!state.workspaceId) return;
+      domain.resourceOf(`${state.workspaceId}/sessions`)?.event(name, data);
+    },
+  };
 }
 
 function runtimeSession(

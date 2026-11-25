@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { DomainUpdate } from '@workstudio/sdk';
 import type { UiDialogRequest } from '../../../shared/types.ts';
+import '../../shared/styles/index.css';
 
 interface Props {
   dialog: UiDialogRequest;
@@ -125,6 +126,9 @@ function Overlay() {
   useEffect(() => {
     const bridge = window.workStudio;
     if (!bridge) return;
+    const wsId = bridge.workspaceId;
+    if (!wsId) return;
+    const dialogs = `${wsId}/dialogs`;
     const apply = (views: DialogView[]): void => {
       setDialogs(
         views
@@ -133,15 +137,15 @@ function Overlay() {
       );
     };
     const off = bridge.onUpdate((update: DomainUpdate) => {
-      if (update.domain !== 'shell' || update.resource !== 'dialogs') return;
+      if (update.domain !== 'shell' || update.resource !== dialogs) return;
       if (update.type === 'snapshot') apply(update.data as DialogView[]);
     });
     void bridge
-      .subscribe('shell', 'dialogs')
+      .subscribe('shell', dialogs)
       .then((value) => apply((value as DialogView[]) ?? []));
     return () => {
       off();
-      bridge.unsubscribe('shell', 'dialogs');
+      bridge.unsubscribe('shell', dialogs);
     };
   }, []);
 
@@ -149,7 +153,9 @@ function Overlay() {
     dialog: UiDialogRequest,
     response: { cancelled?: boolean; value?: string; confirmed?: boolean },
   ): void => {
-    void window.workStudio.command('shell', 'dialogs', 'respond', {
+    const wsId = window.workStudio.workspaceId;
+    if (!wsId) return;
+    void window.workStudio.command('shell', `${wsId}/dialogs`, 'respond', {
       id: dialog.id,
       ...(response.value !== undefined ? { value: response.value } : {}),
       ...(response.confirmed !== undefined

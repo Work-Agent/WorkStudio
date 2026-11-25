@@ -12,7 +12,10 @@ import { command } from '../../../../shared/api/bridge.ts';
 import { openListItem } from '../../../../shared/domains/lists.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
-import { useWorkspaces } from '../../../../shared/domains/workspaces.ts';
+import {
+  useWindowWorkspaceId,
+  useWorkspaces,
+} from '../../../../shared/domains/workspaces.ts';
 
 interface Hit {
   ref: string;
@@ -29,6 +32,7 @@ export function FindList() {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const { current } = useWorkspaces();
+  const workspaceId = useWindowWorkspaceId();
   useEffect(() => {
     inputRef.current?.focus();
     if (current?.path) setRoot(current.path.replace(/\/$/, ''));
@@ -43,7 +47,8 @@ export function FindList() {
     timer.current = setTimeout(() => {
       const pattern = query.includes('*') ? query.trim() : `*${query.trim()}*`;
       setLoading(true);
-      void command<Entry[]>('workspace', 'search', 'find', {
+      if (!workspaceId) return;
+      void command<Entry[]>('workspace', `${workspaceId}/search`, 'find', {
         query: pattern,
       })
         .then((items) => {

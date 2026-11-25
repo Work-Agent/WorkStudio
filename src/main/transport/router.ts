@@ -38,6 +38,11 @@ export class TransportRouter {
     this.workspace.setRoot(root);
   }
 
+  /** 已登记的工作区根：读操作可跨工作区（多窗口并行）。 */
+  setWorkspaceRoots(roots: readonly string[]): void {
+    this.workspace.setRoots(roots);
+  }
+
   /** 域注册自己的传输适配器；同一域可覆盖旧实现（热更新）。 */
   register(
     domain: string,

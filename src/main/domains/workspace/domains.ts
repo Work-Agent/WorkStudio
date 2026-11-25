@@ -6,7 +6,7 @@
  */
 
 import type { WorkspaceMeta } from '../../../shared/app.ts';
-import type { ListItem, ListSnapshot } from '../../../shared/lists.ts';
+import type { ListItem } from '../../../shared/lists.ts';
 import { CallFailure } from '../../contract.ts';
 import { pending } from '../../registry/command.ts';
 import type { TransportRouter } from '../../transport/router.ts';
@@ -14,8 +14,14 @@ import type { DomainRegistry } from '../../registry/registry.ts';
 import type { WorkspaceRepository } from './repo.ts';
 
 interface OpenedResource {
+  workspaceId: string;
   ref: string;
   snapshot: unknown;
+}
+
+/** 资源地址：打开的资源挂在所属工作区下（`workspace/<wsId>/<ref>`）。 */
+function refResourceName(workspaceId: string, ref: string): string {
+  return `${workspaceId}/${ref}`;
 }
 
 export class WorkspaceScope {
@@ -36,9 +42,8 @@ export class WorkspaceScope {
     this.offChanged = registry.onUpdate((update) => {
       if (update.type !== 'event' || update.event !== 'changed') return;
       if (update.domain !== 'workspace') return;
-      if (this.opened.has(update.resource)) {
-        void this.refreshRef(update.resource);
-      }
+      const opened = this.opened.get(update.resource);
+      if (opened) void this.refreshRef(opened.workspaceId, opened.ref);
     });
   }
 
@@ -75,12 +80,19 @@ export class WorkspaceScope {
   }
 
   release(): void {
-    for (const ref of this.opened.keys()) {
-      this.registry?.define('workspace').remove(ref);
-    }
-    this.opened.clear();
+    const workspaceId = this.current?.id;
+    if (workspaceId) this.releaseRefs(workspaceId);
     this.current = null;
     this.publish();
+  }
+
+  /** 只释放某个工作区的资源订阅。 */
+  releaseRefs(workspaceId: string): void {
+    for (const [name, opened] of this.opened) {
+      if (opened.workspaceId !== workspaceId) continue;
+      this.opened.delete(name);
+      this.registry?.define('workspace').remove(name);
+    }
   }
 
   dispose(): void {
@@ -115,41 +127,47 @@ export class WorkspaceScope {
     else this.publish();
   }
 
-  /** `workspace/<ref>`：打开的资源才建立订阅地址。 */
-  openRef(ref: string): void {
+  /** `workspace/<wsId>/<ref>`：打开的资源才建立订阅地址。 */
+  openRef(workspaceId: string, ref: string): void {
     const registry = this.registry;
     if (!registry) throw new CallFailure('failed', '注册表未接入');
-    if (!this.current) throw new CallFailure('failed', '没有当前工作区');
-    if (this.opened.has(ref)) return;
-    this.opened.set(ref, { ref, snapshot: null });
-    const resource = registry.define('workspace').resource(ref);
-    resource.snapshot(() => this.opened.get(ref)?.snapshot ?? null);
+    if (!workspaceId) throw new CallFailure('failed', '没有当前工作区');
+    const name = refResourceName(workspaceId, ref);
+    if (this.opened.has(name)) return;
+    this.opened.set(name, { workspaceId, ref, snapshot: null });
+    const resource = registry.define('workspace').resource(name);
+    resource.snapshot(() => this.opened.get(name)?.snapshot ?? null);
     resource.command('refresh', {
       summary: '重新读取资源',
       args: {},
-      run: () => this.refreshRef(ref),
+      run: () => this.refreshRef(workspaceId, ref),
     });
-    void this.refreshRef(ref);
+    void this.refreshRef(workspaceId, ref);
   }
 
-  async refreshRef(ref: string): Promise<unknown> {
-    if (!this.opened.has(ref)) return null;
+  async refreshRef(workspaceId: string, ref: string): Promise<unknown> {
+    const name = refResourceName(workspaceId, ref);
+    if (!this.opened.has(name)) return null;
     const snapshot = this.transport
       ? await this.transport.read(ref).catch((error: unknown) => ({
           error: error instanceof Error ? error.message : String(error),
         }))
       : null;
-    this.opened.set(ref, { ref, snapshot });
-    this.registry?.define('workspace').resource(ref).publish();
+    this.opened.set(name, { workspaceId, ref, snapshot });
+    this.registry?.define('workspace').resource(name).publish();
     return snapshot;
   }
 
-  closeRef(ref: string): void {
-    this.opened.delete(ref);
-    this.registry?.define('workspace').remove(ref);
+  closeRef(workspaceId: string, ref: string): void {
+    const name = refResourceName(workspaceId, ref);
+    this.opened.delete(name);
+    this.registry?.define('workspace').remove(name);
   }
 
   private publish(): void {
+    this.transport?.setWorkspaceRoots(
+      [...this.known.values()].map((meta) => meta.path),
+    );
     this.registry?.define('workspace').resource('registry').publish();
   }
 }
@@ -191,17 +209,31 @@ export function defineWorkspaceRegistryResource(
   });
   resource.command('openRef', {
     summary: '打开资源订阅地址',
-    args: { ref: { type: 'string', required: true } },
+    args: {
+      ref: { type: 'string', required: true },
+      workspaceId: { type: 'string' },
+    },
     run: (input) => {
-      scope.openRef(String(input.ref));
+      const workspaceId =
+        typeof input.workspaceId === 'string' && input.workspaceId
+          ? input.workspaceId
+          : (scope.current?.id ?? '');
+      scope.openRef(workspaceId, String(input.ref));
       return null;
     },
   });
   resource.command('closeRef', {
     summary: '关闭资源订阅地址',
-    args: { ref: { type: 'string', required: true } },
+    args: {
+      ref: { type: 'string', required: true },
+      workspaceId: { type: 'string' },
+    },
     run: (input) => {
-      scope.closeRef(String(input.ref));
+      const workspaceId =
+        typeof input.workspaceId === 'string' && input.workspaceId
+          ? input.workspaceId
+          : (scope.current?.id ?? '');
+      scope.closeRef(workspaceId, String(input.ref));
       return null;
     },
   });
@@ -209,33 +241,29 @@ export function defineWorkspaceRegistryResource(
 
 // ─── list ────────────────────────────────────────────────────
 
-export interface ListState {
-  snapshot: ListSnapshot | null;
+/** 工作区列表资源：每个工作区一份，地址 `workspace/<wsId>/list`。 */
+export function listResourceName(workspaceId: string): string {
+  return `${workspaceId}/list`;
 }
 
-export function createListState(): ListState {
-  return { snapshot: null };
-}
-
-export function defineListResource(
+export function defineWorkspaceListResource(
   registry: DomainRegistry,
-  state: ListState,
-  service?: import('./lists.ts').ListService,
-  context?: () => import('./lists.ts').ListProviderContext,
-  openItem?: (item: ListItem) => Promise<unknown>,
+  workspaceId: string,
+  service: import('./lists.ts').ListService,
+  context: () => import('./lists.ts').ListProviderContext,
+  openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>,
 ): void {
-  const resource = registry.define('workspace').resource('list');
-  resource.snapshot(() => state.snapshot ?? { workspaceEpoch: 0, groups: [] });
+  const resource = registry
+    .define('workspace')
+    .resource(listResourceName(workspaceId));
+  resource.snapshot(() => service.current(workspaceId));
   resource.command('refresh', {
     summary: '刷新列表投影',
     args: {},
     run: async () => {
-      if (!service) return state.snapshot;
-      state.snapshot = await service.refresh(
-        context?.() ?? { workspacePath: '', workspaceId: '' },
-      );
+      const snapshot = await service.refresh(context());
       resource.publish();
-      return state.snapshot;
+      return snapshot;
     },
   });
   resource.command('action', {
@@ -256,20 +284,28 @@ export function defineListResource(
           if (!item || typeof item !== 'object') {
             throw new CallFailure('invalid', '列表动作缺少 item');
           }
-          return openItem(item as ListItem);
+          return openItem(item as ListItem, workspaceId);
         }
-      : pending('list/action'),
+      : pending('workspace/<wsId>/list/action'),
   });
 }
 
 // ─── search ──────────────────────────────────────────────────
 
-export function defineSearchResource(
+export function searchResourceName(workspaceId: string): string {
+  return `${workspaceId}/search`;
+}
+
+export function defineWorkspaceSearchResource(
   registry: DomainRegistry,
+  workspaceId: string,
   transport: TransportRouter,
-  scope: () => { workspacePath: string; workspaceId: string },
+  pathOf: () => string,
 ): void {
-  const resource = registry.define('workspace').resource('search');
+  const resource = registry
+    .define('workspace')
+    .resource(searchResourceName(workspaceId));
+  const scope = () => ({ workspaceId, workspacePath: pathOf() });
   resource.snapshot(() => ({
     workspaceId: scope().workspaceId,
     workspacePath: scope().workspacePath,

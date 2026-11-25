@@ -171,7 +171,7 @@ Agent Layer
 ```
 
 - **Domain / Resource 是运行单位**：domain 按能力拆分（workspaces / resources / lists / plugins / shell / settings，以及 agent 下的 sessions / models / skills / thinking / extensions / tools / prompts / themes），只声明状态、命令、订阅与推送；生命周期按依赖合并为 workspace / shell / settings / agent 四个 DomainModule，不再有 Capability、controller 或单独的生命周期接口。
-- **工作区是 scope，不是 domain**：workspace-scoped resource 用 `ws:<wsId>` 作为资源路径条件（如 `resources/ws:<wsId>`、`lists/ws:<wsId>`）；内容页保留 `resources/current` 作为当前工作区别名。
+- **工作区是 scope，不是 domain**：工作区作用域的资源在 resource 名里带 wsId（如 `workspace/<wsId>/list`）；窗口与工作区 1:1，窗口按自己绑定的工作区订阅。
 - **Runtime 管框架**：DomainRegistry、Dispatcher 与存储 / 日志 / 网络适配只处理跨领域机制，不承载业务状态。
 - **DomainModule 拥有实现**：workspace module 管理资源 / URA / 列表 / 插件；shell 管理窗口 / 视图 / 布局 / 主题；settings 管理设置 / 更新；Agent 引擎在独立 Agent Layer，由 AgentDomain 持有，并拆成 sessions / models / skills / thinking / extensions / tools / prompts / themes 域。
 - **依赖显式排序**：DomainModule 声明 `dependencies`，DomainRegistry 按拓扑序 start、反向 stop；不引入 DI 容器。

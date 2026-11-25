@@ -33,7 +33,10 @@ export default defineCase({
     }, '偏好设置卡片没有更新地址栏标题');
     await ctx.expect.poll(async () => {
       const views = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'views'),
+        window.workStudio.subscribe(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+        ),
       )) as Array<{ active?: boolean; url?: string }>;
       return Boolean(
         views

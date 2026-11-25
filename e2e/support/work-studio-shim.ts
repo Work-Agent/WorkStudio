@@ -7,6 +7,7 @@
 export function installWorkStudioBridgeShim(): void {
   const scope = window as unknown as {
     workStudio?: {
+      readonly workspaceId: string | null;
       subscribe(domain: string, resource: string): Promise<unknown>;
       command(
         domain: string,
@@ -46,13 +47,19 @@ export function installWorkStudioBridgeShim(): void {
     if (path === '/views') {
       return {
         ok: true as const,
-        data: await next.subscribe('shell', 'views'),
+        data: await next.subscribe(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+        ),
       };
     }
     if (path === '/dialogs')
       return {
         ok: true as const,
-        data: await next.subscribe('shell', 'dialogs'),
+        data: await next.subscribe(
+          'shell',
+          `${String(next.workspaceId)}/dialogs`,
+        ),
       };
     if (path === '/settings/open')
       return next.command('settings', 'pages', 'open', {
@@ -66,11 +73,21 @@ export function installWorkStudioBridgeShim(): void {
       });
     if (path === '/dialogs/open') {
       const request = (value['request'] ?? value) as Record<string, unknown>;
-      return next.command('shell', 'dialogs', 'open', request);
+      return next.command(
+        'shell',
+        `${String(next.workspaceId)}/dialogs`,
+        'open',
+        request,
+      );
     }
     const site = /^\/workspaces\/[^/]+\/sites\/web\/open$/.exec(path);
     if (site) {
-      const result = await next.command('browser', 'tabs', 'open', value);
+      const result = await next.command(
+        'browser',
+        `${String(next.workspaceId)}/tabs`,
+        'open',
+        value,
+      );
       return result.ok
         ? {
             ok: true as const,
@@ -80,12 +97,17 @@ export function installWorkStudioBridgeShim(): void {
     }
     const resource = /^\/workspaces\/[^/]+\/resources\/pages\/open$/.exec(path);
     if (resource) {
-      const result = await next.command('shell', 'views', 'open', {
-        id: String(value['ref'] ?? ''),
-        type: 'page',
-        title: String(value['ref'] ?? ''),
-        url: String(value['ref'] ?? ''),
-      });
+      const result = await next.command(
+        'shell',
+        `${String(window.workStudio.workspaceId)}/views`,
+        'open',
+        {
+          id: String(value['ref'] ?? ''),
+          type: 'page',
+          title: String(value['ref'] ?? ''),
+          url: String(value['ref'] ?? ''),
+        },
+      );
       return result.ok
         ? {
             ok: true as const,
@@ -97,9 +119,19 @@ export function installWorkStudioBridgeShim(): void {
     if (view) {
       const id = decodeURIComponent(view[1]!);
       if (view[2] === 'close')
-        return next.command('shell', 'views', 'close', { id });
+        return next.command(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+          'close',
+          { id },
+        );
       if (view[2] === 'activate')
-        return next.command('shell', 'views', 'activate', { id });
+        return next.command(
+          'shell',
+          `${String(window.workStudio.workspaceId)}/views`,
+          'activate',
+          { id },
+        );
     }
     return {
       ok: false as const,

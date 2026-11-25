@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { effectiveTheme } from '../../shared/domains/appearance.ts';
+import { useWindowWorkspaceId } from '../../shared/domains/workspaces.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type {
   AgentSnapshot,
@@ -120,7 +121,12 @@ interface SessionsAggregate {
 }
 
 function useSessions(): SessionsAggregate {
-  return useResource<SessionsAggregate>('agent', 'sessions', {});
+  const workspaceId = useWindowWorkspaceId();
+  return useResource<SessionsAggregate>(
+    'agent',
+    workspaceId ? `${workspaceId}/sessions` : null,
+    {},
+  );
 }
 
 function useWorkspace(): WorkspaceMeta | null {
@@ -160,11 +166,10 @@ export function useAppShell(): AssistantShell | null {
     'appearance',
     { theme: effectiveTheme() },
   );
-  const layouts = useResource<
-    Array<{ windowId: string; scene?: { aiFloating?: boolean } }>
-  >('shell', 'layout', []);
-  const scene =
-    layouts.find((record) => record.windowId === workspace?.id)?.scene ?? null;
+  const layout = useResource<{
+    scene?: { aiFloating?: boolean };
+  } | null>('shell', workspace?.id ? `${workspace.id}/layout` : null, null);
+  const scene = layout?.scene ?? null;
 
   if (!useAppAvailable()) return null;
   const activePath = agent?.sessionFile ?? null;

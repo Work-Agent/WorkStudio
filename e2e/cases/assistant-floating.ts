@@ -11,43 +11,40 @@ export default defineCase({
   title: '助手浮动模式可拖拽并提交几何',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    const record = (await ctx.evaluate(async () => {
-      const layout = (await window.workStudio.subscribe(
-        'shell',
-        'layout',
-      )) as LayoutRecord[];
-      return layout[0] ?? null;
-    })) as LayoutRecord | null;
-    if (!record?.windowId) throw new Error('布局未就绪');
-    await ctx.evaluate(async (windowId) => {
-      await window.workStudio.command('shell', 'layout', 'scene', {
-        windowId,
+    const windowId = await ctx.evaluate(() => window.workStudio.workspaceId);
+    if (!windowId) throw new Error('窗口未绑定工作区');
+    await ctx.evaluate(async (id) => {
+      await window.workStudio.command('shell', `${id}/layout`, 'scene', {
         patch: { aiFloating: true, aiOpen: true },
       });
-      await window.workStudio.command('shell', 'layout', 'begin', {
-        windowId,
+      await window.workStudio.command('shell', `${id}/layout`, 'begin', {
         input: { type: 'view-move', target: 'assistant' },
       });
-      await window.workStudio.command('shell', 'layout', 'move', {
-        windowId,
-      });
-      await window.workStudio.command('shell', 'layout', 'end', { windowId });
-    }, record.windowId);
-    await ctx.expect.poll(async () => {
-      const layout = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      const next = layout.find((item) => item.windowId === record.windowId);
-      return (
-        next?.scene?.aiFloating === true &&
-        Boolean(next.snapshot?.assistantFloating)
-      );
-    }, '浮动助手未产生几何');
-    await ctx.evaluate(async (windowId) => {
-      await window.workStudio.command('shell', 'layout', 'scene', {
-        windowId,
+      await window.workStudio.command('shell', `${id}/layout`, 'move', {});
+      await window.workStudio.command('shell', `${id}/layout`, 'end', {});
+    }, windowId);
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(async () => {
+          const id = window.workStudio.workspaceId;
+          if (!id) return false;
+          const record = (await window.workStudio.subscribe(
+            'shell',
+            `${id}/layout`,
+          )) as LayoutRecord | null;
+          return (
+            record?.scene?.aiFloating === true &&
+            Boolean(record.snapshot?.assistantFloating)
+          );
+        }),
+      '浮动助手未产生几何',
+    );
+    await ctx.evaluate(async () => {
+      const id = window.workStudio.workspaceId;
+      if (!id) return;
+      await window.workStudio.command('shell', `${id}/layout`, 'scene', {
         patch: { aiFloating: false, floating: null },
       });
-    }, record.windowId);
+    });
   },
 });

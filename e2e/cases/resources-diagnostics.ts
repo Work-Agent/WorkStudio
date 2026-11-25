@@ -7,7 +7,10 @@ export default defineCase({
   async run(ctx) {
     await ctx.expect.poll(async () => {
       const state = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('workspace', 'search'),
+        window.workStudio.subscribe(
+          'workspace',
+          `${String(window.workStudio.workspaceId)}/search`,
+        ),
       )) as { workspaceId?: string; ready?: boolean };
       return Boolean(state?.workspaceId) && state.ready === true;
     }, '工作区搜索资源未就绪');
@@ -15,7 +18,7 @@ export default defineCase({
     const entries = await ctx.evaluate(async () => {
       const result = await window.workStudio.command<unknown[]>(
         'workspace',
-        'search',
+        `${String(window.workStudio.workspaceId)}/search`,
         'ls',
         {},
       );

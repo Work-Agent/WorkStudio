@@ -2,7 +2,7 @@ import { defineCase } from '../runner/contract.ts';
 
 export default defineCase({
   id: 'assistant.thinking',
-  title: '助手 thinking levels 来自 agent/sessions',
+  title: '助手 thinking levels 来自 agent/<wsId>/sessions',
   tags: ['dev', 'ci'],
   async run(ctx) {
     const assistant = await ctx.waitForPage(
@@ -12,7 +12,7 @@ export default defineCase({
       const levels = (await assistant.evaluate(async () => {
         const state = (await window.workStudio.subscribe(
           'agent',
-          'sessions',
+          `${String(window.workStudio.workspaceId)}/sessions`,
         )) as { thinking?: { levels?: string[] } } | null;
         return state?.thinking?.levels ?? [];
       })) as string[];

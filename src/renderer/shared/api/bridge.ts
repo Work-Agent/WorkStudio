@@ -7,15 +7,20 @@ export function workStudio(): WorkStudioBridge | undefined {
   return typeof window !== 'undefined' ? window.workStudio : undefined;
 }
 
+/** 当前窗口绑定的工作区；宿主未注入时退回当前工作区。 */
+export function useWorkspaceId(): string | null {
+  return workStudio()?.workspaceId ?? null;
+}
+
 export function useResource<T>(
   domain: string,
-  resource: string,
+  resource: string | null,
   initial: T,
 ): T {
   const [value, setValue] = useState<T>(initial);
   useEffect(() => {
     const bridge = workStudio();
-    if (!bridge) return;
+    if (!bridge || !resource) return;
     const apply = (current: T, data: unknown): T => {
       if (data === null || data === undefined) return current;
       if (Array.isArray(data)) return data as T;

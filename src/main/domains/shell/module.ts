@@ -16,22 +16,26 @@ import type { DomainModule } from '../../registry/module.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import {
   createAppearanceState,
-  createDialogState,
+  createDialogStates,
   createInteractionState,
   createLayoutState,
   createMenuState,
-  createNoticeState,
+  createNoticeStates,
   createViewState,
   createWindowState,
   defineAppearanceResource,
-  defineDialogsResource,
+  defineDialogsResources,
   defineInteractionResource,
-  defineLayoutResource,
+  defineLayoutResources,
+  layoutResourceName,
+  viewsResourceName,
   defineMenuResource,
-  defineNoticesResource,
+  defineNoticesResources,
   defineNativeResource,
   definePagesResource,
-  defineViewsResource,
+  activeWindowId,
+  defineViewsResources,
+  viewResourceName,
   defineWindowsResource,
 } from './domains.ts';
 
@@ -51,9 +55,25 @@ export class ShellModule implements DomainModule {
   private readonly appearance;
   private readonly interaction = createInteractionState();
   private readonly menu = createMenuState();
-  private readonly dialogs = createDialogState();
-  private readonly notices = createNoticeState();
+  private readonly dialogs = createDialogStates();
+  private readonly notices = createNoticeStates();
   private registry: DomainRegistry | null = null;
+  private layoutResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
+  private viewResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
+  private dialogResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
+  private noticeResources: {
+    ensure: (id: string) => void;
+    remove: (id: string) => void;
+  } | null = null;
   private readonly offs: Array<() => void> = [];
 
   constructor(private readonly options: ShellModuleOptions) {
@@ -75,21 +95,19 @@ export class ShellModule implements DomainModule {
       this.windows,
       this.options.host,
       (windowId) => {
-        void this.registry?.dispatchCommand(
-          { domain: 'shell', resource: 'layout' },
-          'ensure',
-          { windowId },
-          {
-            origin: { type: 'service', id: 'shell' },
-            changed: () => undefined,
-            log: createLog('shell'),
-          },
-        );
+        this.layoutResources?.ensure(windowId);
+        this.viewResources?.ensure(windowId);
+        this.dialogResources?.ensure(windowId);
+        this.noticeResources?.ensure(windowId);
       },
     );
-    defineViewsResource(registry, this.views, this.options.host);
+    this.viewResources = defineViewsResources(
+      registry,
+      this.views,
+      this.options.host,
+    );
     const storage = this.options.storage;
-    defineLayoutResource(
+    this.layoutResources = defineLayoutResources(
       registry,
       this.layouts,
       this.options.host,
@@ -104,8 +122,10 @@ export class ShellModule implements DomainModule {
     );
     defineNativeResource(registry, this.options.host);
     definePagesResource(registry, this.options.protocols, async (url) => {
+      const windowId = activeWindowId(registry);
+      if (!windowId) throw new CallFailure('failed', '没有活动窗口');
       const result = await registry.dispatchCommand(
-        { domain: 'shell', resource: 'views' },
+        { domain: 'shell', resource: `${windowId}/views` },
         'open',
         {
           id: url,
@@ -131,19 +151,44 @@ export class ShellModule implements DomainModule {
     );
     defineInteractionResource(registry, this.interaction);
     defineMenuResource(registry, this.menu, this.options.host);
-    defineDialogsResource(registry, this.dialogs, (visible) =>
-      this.options.host?.setSystemViewVisible('overlay', visible),
+    this.dialogResources = defineDialogsResources(
+      registry,
+      this.dialogs,
+      (windowId, visible) =>
+        this.options.host?.setWindowSystemViewVisible(
+          windowId,
+          'overlay',
+          visible,
+        ),
     );
-    defineNoticesResource(registry, this.notices);
+    this.noticeResources = defineNoticesResources(registry, this.notices);
   }
 
   start(): void {
     const host = this.options.host;
-    if (!host) return;
+    const registry = this.registry;
+    if (!host || !registry) return;
     this.offs.push(
       host.onWindowClosed((id) => {
         this.windows.records.delete(id);
+        this.layoutResources?.remove(id);
+        this.viewResources?.remove(id);
+        this.dialogResources?.remove(id);
+        this.noticeResources?.remove(id);
         this.registry?.define('shell').resource('windows').publish();
+      }),
+      // 窗口尺寸变化：按新尺寸重算布局（原生视图与 DOM 共用同一份快照）。
+      host.onWindowResized((id) => {
+        void registry.dispatchCommand(
+          { domain: 'shell', resource: layoutResourceName(id) },
+          'resize',
+          {},
+          {
+            origin: { type: 'service', id: 'shell' },
+            changed: (ref, type) => registry.changed(ref, type),
+            log: createLog('shell'),
+          },
+        );
       }),
       host.onWindowActivated((id) => {
         for (const [key, record] of this.windows.records) {
@@ -154,10 +199,15 @@ export class ShellModule implements DomainModule {
         }
         this.registry?.define('shell').resource('windows').publish();
       }),
-      host.onViewClosed((id) => {
-        this.views.records.delete(id);
-        this.registry?.define('shell').remove(`view/${id}`);
-        this.registry?.define('shell').resource('views').publish();
+      host.onViewClosed((windowId, viewId) => {
+        this.views.records.get(windowId)?.delete(viewId);
+        this.registry
+          ?.define('shell')
+          .remove(viewResourceName(windowId, viewId));
+        this.registry
+          ?.define('shell')
+          .resource(viewsResourceName(windowId))
+          .publish();
       }),
       // 跟随系统时 state.theme 只能由平台事件刷新；显式 light/dark 忽略系统变化。
       host.onSystemThemeChanged((theme) => {
@@ -171,15 +221,31 @@ export class ShellModule implements DomainModule {
 
   stop(): void {
     this.windows.records.clear();
+    for (const windowId of this.views.records.keys()) {
+      this.viewResources?.remove(windowId);
+    }
     this.views.records.clear();
+    this.viewResources = null;
+    for (const id of this.layouts.records.keys())
+      this.layoutResources?.remove(id);
     this.layouts.records.clear();
+    this.layoutResources = null;
     this.appearance.theme = 'dark';
     this.appearance.source = 'system';
     this.appearance.zoom = 1;
     this.interaction.session = null;
     this.menu.items = [];
-    this.dialogs.records.clear();
-    this.notices.notices = [];
+    for (const windowId of Array.from(this.dialogs.byWindow.keys())) {
+      this.dialogResources?.remove(windowId);
+    }
+    for (const windowId of Array.from(this.notices.byWindow.keys())) {
+      this.noticeResources?.remove(windowId);
+    }
+    this.dialogs.byWindow.clear();
+    this.notices.byWindow.clear();
+    this.dialogResources = null;
+    this.noticeResources = null;
+
     for (const off of this.offs.splice(0)) off();
     this.registry = null;
   }

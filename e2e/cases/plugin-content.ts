@@ -19,9 +19,16 @@ export default defineCase({
       writeFileSync(file, '<html><body><h1>PLUGIN CONTENT</h1></body></html>');
       const ref = `file://${file}`;
       const result = await ctx.evaluate(async (target) => {
+        const registry = (await window.workStudio.subscribe(
+          'workspace',
+          'registry',
+        )) as { current?: { id?: string } | null };
+        const workspaceId =
+          window.workStudio.workspaceId ?? registry.current?.id;
+        if (!workspaceId) return { ok: false, error: '没有当前工作区' };
         const response = await window.workStudio.command(
           'workspace',
-          'list',
+          `${workspaceId}/list`,
           'action',
           {
             action: 'open',

@@ -121,11 +121,11 @@ export class NextApp {
       ? new ShellHost({ ...options.shell, origins: this.origins })
       : null;
     this.pages = new PageRouter(this.protocols, this.plugins, {
-      openRef: (ref) => {
+      openRef: (ref, workspaceId) => {
         void this.registry.dispatchCommand(
           { domain: 'workspace', resource: 'registry' },
           'openRef',
-          { ref },
+          { ref, workspaceId },
           {
             origin: { type: 'service', id: 'page-router' },
             changed: (target, type) => this.registry.changed(target, type),
@@ -147,7 +147,7 @@ export class NextApp {
       pluginService: this.pluginService,
       appearance: this.appearance,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
-      openItem: (item) => this.openListItem(item),
+      openItem: (item, workspaceId) => this.openListItem(item, workspaceId),
       ...(options.settingsPages
         ? { settingsPages: options.settingsPages }
         : {}),
@@ -164,13 +164,10 @@ export class NextApp {
     this.ipc = ipc;
   }
 
-  private async openListItem(item: ListItem): Promise<unknown> {
-    const snapshot = this.registry.snapshot({
-      domain: 'workspace',
-      resource: 'registry',
-    }) as { current?: { id?: string } | null } | null;
-    const workspaceId = snapshot?.current?.id;
-    if (!workspaceId) throw new Error('没有当前工作区');
+  private async openListItem(
+    item: ListItem,
+    workspaceId: string,
+  ): Promise<unknown> {
     const meta = item.meta ?? {};
     const ref = typeof meta['ref'] === 'string' ? meta['ref'] : '';
     const pageId = typeof meta['pageId'] === 'string' ? meta['pageId'] : '';
@@ -199,7 +196,7 @@ export class NextApp {
       const opened = await this.registry.dispatchCommand(
         { domain: 'workspace', resource: 'registry' },
         'openRef',
-        { ref: page.ref },
+        { ref: page.ref, workspaceId },
         {
           origin: { type: 'service', id: 'page-router' },
           changed: (ref, type) => this.registry.changed(ref, type),
@@ -208,8 +205,9 @@ export class NextApp {
       );
       if (!opened.ok) throw new Error(opened.error.message);
     }
+    // 窗口与工作区 1:1：列表动作在列表所属窗口里开页面，不借用活动窗口。
     const result = await this.registry.dispatchCommand(
-      { domain: 'shell', resource: 'views' },
+      { domain: 'shell', resource: `${workspaceId}/views` },
       'open',
       {
         id: page.contentPath,
@@ -242,19 +240,16 @@ export class NextApp {
             ? 'cancel'
             : 'move';
       void this.registry.dispatchCommand(
-        { domain: 'shell', resource: 'layout' },
+        { domain: 'shell', resource: `${windowId}/layout` },
         action,
-        {
-          windowId,
-          ...(message.type === 'move'
-            ? {
-                input: {
-                  pointerX: message.clientX,
-                  pointerY: message.clientY,
-                },
-              }
-            : {}),
-        },
+        message.type === 'move'
+          ? {
+              input: {
+                pointerX: message.clientX,
+                pointerY: message.clientY,
+              },
+            }
+          : {},
         {
           origin: { type: 'service', id: 'capture' },
           changed: (ref, type) => this.registry.changed(ref, type),

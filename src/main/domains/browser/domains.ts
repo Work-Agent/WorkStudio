@@ -14,52 +14,71 @@ import type { BrowserCapability } from './capability.ts';
 
 // ─── browser ─────────────────────────────────────────────────
 
-export function defineTabsResource(
+export function tabsResourceName(windowId: string): string {
+  return `${windowId}/tabs`;
+}
+
+export function defineTabsResources(
   registry: DomainRegistry,
   browser: BrowserCapability,
-): void {
-  const resource = registry.define('browser').resource('tabs');
-  resource.snapshot(() => browser.snapshot());
-  resource.command('open', {
-    summary: '打开网页',
-    args: {
-      url: { type: 'string', required: true },
-      title: { type: 'string' },
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const define = (windowId: string): void => {
+    const domain = registry.define('browser');
+    const name = tabsResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    const resource = domain.resource(name);
+    resource.snapshot(() => browser.snapshot(windowId));
+    resource.command('open', {
+      summary: '打开网页',
+      args: {
+        url: { type: 'string', required: true },
+        title: { type: 'string' },
+      },
+      run: async (input) => {
+        const tab = await browser.openIn(
+          windowId,
+          String(input.url),
+          typeof input.title === 'string' ? input.title : undefined,
+        );
+        resource.publish();
+        return tab;
+      },
+    });
+    resource.command('navigate', {
+      summary: '导航到新地址',
+      args: {
+        id: { type: 'string', required: true },
+        url: { type: 'string', required: true },
+      },
+      run: async (input) => {
+        await browser.navigateIn(windowId, String(input.id), String(input.url));
+        resource.publish();
+        return null;
+      },
+    });
+    resource.command('evaluate', {
+      summary: '在网页中执行脚本',
+      args: {
+        id: { type: 'string', required: true },
+        script: { type: 'string', required: true },
+      },
+      run: (input) =>
+        browser.evaluateIn(windowId, String(input.id), String(input.script)),
+    });
+    resource.command('read', {
+      summary: '读取当前网页文本',
+      args: {},
+      run: () => browser.readIn(windowId),
+    });
+  };
+
+  return {
+    ensure: (windowId: string) => define(windowId),
+    remove: (windowId: string) => {
+      browser.forgetWindow(windowId);
+      registry.define('browser').remove(tabsResourceName(windowId));
     },
-    run: async (input) => {
-      const tab = await browser.open(
-        String(input.url),
-        typeof input.title === 'string' ? input.title : undefined,
-      );
-      resource.publish();
-      return tab;
-    },
-  });
-  resource.command('navigate', {
-    summary: '导航到新地址',
-    args: {
-      id: { type: 'string', required: true },
-      url: { type: 'string', required: true },
-    },
-    run: async (input) => {
-      await browser.navigate(String(input.id), String(input.url));
-      resource.publish();
-      return null;
-    },
-  });
-  resource.command('evaluate', {
-    summary: '在网页中执行脚本',
-    args: {
-      id: { type: 'string', required: true },
-      script: { type: 'string', required: true },
-    },
-    run: (input) => browser.evaluate(String(input.id), String(input.script)),
-  });
-  resource.command('read', {
-    summary: '读取当前网页文本',
-    args: {},
-    run: () => browser.read(),
-  });
+  };
 }
 
 // ─── policy ──────────────────────────────────────────────────
@@ -105,50 +124,77 @@ export interface AutomationState {
   readonly attached: Set<string>;
 }
 
-export function createAutomationState(): AutomationState {
-  return { attached: new Set() };
+/** 自动化附加是窗口级状态：`browser/<wsId>/automation`。 */
+export interface AutomationStates {
+  readonly byWindow: Map<string, AutomationState>;
 }
 
-export function defineAutomationResource(
+export function createAutomationStates(): AutomationStates {
+  return { byWindow: new Map() };
+}
+
+export function automationResourceName(windowId: string): string {
+  return `${windowId}/automation`;
+}
+
+export function defineAutomationResources(
   registry: DomainRegistry,
-  state: AutomationState,
+  states: AutomationStates,
   browser?: BrowserCapability,
-): void {
-  const resource = registry.define('browser').resource('automation');
-  resource.snapshot(() => ({ attached: [...state.attached] }));
-  resource.command('attach', {
-    summary: '附加调试协议',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      state.attached.add(String(input.id));
-      resource.publish();
-      return { attached: [...state.attached] };
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const define = (windowId: string): void => {
+    const domain = registry.define('browser');
+    const name = automationResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    let state = states.byWindow.get(windowId);
+    if (!state) {
+      state = { attached: new Set() };
+      states.byWindow.set(windowId, state);
+    }
+    const resource = domain.resource(name);
+    resource.snapshot(() => ({ attached: [...state.attached] }));
+    resource.command('attach', {
+      summary: '附加调试协议',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        state.attached.add(String(input.id));
+        resource.publish();
+        return { attached: [...state.attached] };
+      },
+    });
+    resource.command('detach', {
+      summary: '断开调试协议',
+      args: { id: { type: 'string', required: true } },
+      run: (input) => {
+        state.attached.delete(String(input.id));
+        resource.publish();
+        return { attached: [...state.attached] };
+      },
+    });
+    resource.command('execute', {
+      summary: '执行自动化脚本',
+      args: {
+        id: { type: 'string', required: true },
+        script: { type: 'string', required: true },
+      },
+      run: async (input) => {
+        if (!browser) throw new CallFailure('failed', '浏览器宿主未接入');
+        const id = String(input.id);
+        if (!state.attached.has(id)) {
+          throw new CallFailure('failed', `未附加自动化：${id}`);
+        }
+        return browser.evaluateIn(windowId, id, String(input.script));
+      },
+    });
+  };
+
+  return {
+    ensure: (windowId: string) => define(windowId),
+    remove: (windowId: string) => {
+      states.byWindow.delete(windowId);
+      registry.define('browser').remove(automationResourceName(windowId));
     },
-  });
-  resource.command('detach', {
-    summary: '断开调试协议',
-    args: { id: { type: 'string', required: true } },
-    run: (input) => {
-      state.attached.delete(String(input.id));
-      resource.publish();
-      return { attached: [...state.attached] };
-    },
-  });
-  resource.command('execute', {
-    summary: '执行自动化脚本',
-    args: {
-      id: { type: 'string', required: true },
-      script: { type: 'string', required: true },
-    },
-    run: async (input) => {
-      if (!browser) throw new CallFailure('failed', '浏览器宿主未接入');
-      const id = String(input.id);
-      if (!state.attached.has(id)) {
-        throw new CallFailure('failed', `未附加自动化：${id}`);
-      }
-      return browser.evaluate(id, String(input.script));
-    },
-  });
+  };
 }
 
 // ─── capture ─────────────────────────────────────────────────
@@ -161,34 +207,61 @@ export interface CaptureState {
   session: CaptureRecord | null;
 }
 
-export function createCaptureState(): CaptureState {
-  return { session: null };
+/** 网页采集（指针捕获）是窗口级会话：`browser/<wsId>/capture`。 */
+export interface CaptureStates {
+  readonly byWindow: Map<string, CaptureState>;
 }
 
-export function defineCaptureResource(
+export function createCaptureStates(): CaptureStates {
+  return { byWindow: new Map() };
+}
+
+export function captureResourceName(windowId: string): string {
+  return `${windowId}/capture`;
+}
+
+export function defineCaptureResources(
   registry: DomainRegistry,
-  state: CaptureState,
-): void {
-  const resource = registry.define('browser').resource('capture');
-  resource.snapshot(() => ({ session: state.session }));
-  resource.command('begin', {
-    summary: '开始指针捕获',
-    args: { target: { type: 'string', required: true } },
-    run: (input) => {
-      state.session = { target: String(input.target) };
-      resource.patch({ session: state.session });
-      return { session: state.session };
+  states: CaptureStates,
+): { ensure: (windowId: string) => void; remove: (windowId: string) => void } {
+  const define = (windowId: string): void => {
+    const domain = registry.define('browser');
+    const name = captureResourceName(windowId);
+    if (domain.resourceOf(name)) return;
+    let state = states.byWindow.get(windowId);
+    if (!state) {
+      state = { session: null };
+      states.byWindow.set(windowId, state);
+    }
+    const resource = domain.resource(name);
+    resource.snapshot(() => ({ session: state.session }));
+    resource.command('begin', {
+      summary: '开始指针捕获',
+      args: { target: { type: 'string', required: true } },
+      run: (input) => {
+        state.session = { target: String(input.target) };
+        resource.patch({ session: state.session });
+        return { session: state.session };
+      },
+    });
+    resource.command('end', {
+      summary: '结束指针捕获',
+      args: {},
+      run: () => {
+        state.session = null;
+        resource.patch({ session: null });
+        return { session: null };
+      },
+    });
+  };
+
+  return {
+    ensure: (windowId: string) => define(windowId),
+    remove: (windowId: string) => {
+      states.byWindow.delete(windowId);
+      registry.define('browser').remove(captureResourceName(windowId));
     },
-  });
-  resource.command('end', {
-    summary: '结束指针捕获',
-    args: {},
-    run: () => {
-      state.session = null;
-      resource.patch({ session: null });
-      return { session: null };
-    },
-  });
+  };
 }
 
 // ─── web（内建 Biz Domain） ──────────────────────────────────

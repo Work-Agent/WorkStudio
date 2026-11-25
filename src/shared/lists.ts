@@ -30,6 +30,8 @@ export interface ListDefinition {
   icon?: string;
   order?: number;
   sourceScope: ListSourceScope;
+  /** 聚合来源：这些资源变化时只重算本组；缺省只在工作区变化 / 显式刷新时重算。 */
+  deps?: Array<{ domain: string; resource: string }>;
   /** 侧栏主形态；缺省 = resources。 */
   section?: ListSection;
   /** 分组图标底色（Tailwind class）；缺省按 icon 语义。 */

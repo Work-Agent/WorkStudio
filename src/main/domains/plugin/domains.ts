@@ -9,6 +9,7 @@ import type { PluginService } from '../../plugin/service.ts';
 import type { CatalogEntry } from '../../plugin/catalog.ts';
 import type { PluginStore } from '../../plugin/store.ts';
 import { CallFailure, notImplemented } from '../../contract.ts';
+import { activeWindowId } from '../shell/domains.ts';
 import { pending } from '../../registry/command.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 
@@ -124,8 +125,10 @@ export function definePluginResources(
       const pkg = store.list().find((item) => item.manifest.id === id);
       if (!pkg) throw new CallFailure('not_found', `插件不存在：${id}`);
       const label = pkg.manifest.label ?? id;
+      const windowId = activeWindowId(registry);
+      if (!windowId) throw new CallFailure('failed', '没有活动窗口');
       const result = await registry.dispatchCommand(
-        { domain: 'shell', resource: 'views' },
+        { domain: 'shell', resource: `${windowId}/views` },
         'open',
         {
           id: `plugin:${id}:settings`,

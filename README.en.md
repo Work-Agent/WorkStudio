@@ -171,7 +171,7 @@ Agent layer
 ```
 
 - **Domain / Resource is the runtime unit**: domains follow capabilities (workspaces / resources / lists / plugins / shell / settings, plus sessions / models / skills / thinking / extensions / tools / prompts / themes under agent); lifecycle is grouped into four DomainModules — workspace / shell / settings / agent. There is no Capability, controller or separate lifecycle interface.
-- **Workspace is a scope, not a domain**: workspace-scoped resources use `ws:<wsId>` as a path condition (for example `resources/ws:<wsId>`, `lists/ws:<wsId>`); content pages keep `resources/current` as the active-workspace alias.
+- **Workspace is a scope, not a domain**: workspace-scoped resources carry the wsId in the resource name (for example `workspace/<wsId>/list`); windows map 1:1 to workspaces and subscribe to the workspace they are bound to.
 - **Runtime owns the framework**: DomainRegistry, Dispatcher and storage / logging / network adapters provide cross-domain mechanics and hold no business state.
 - **DomainModules own implementations**: the workspace module manages resources / URA / lists / plugins; shell manages windows / views / layout / theme; settings manages settings / updates; the agent engine lives in a separate Agent layer owned by AgentDomain, split into sessions / models / skills / thinking / extensions / tools / prompts / themes domains.
 - **Dependencies are explicit**: DomainModule declares `dependencies`; DomainRegistry starts in topological order and stops in reverse. No DI container.

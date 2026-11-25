@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import type { UiNotifyMessage } from '../../../shared/types.ts';
 import { useResource } from '../api/bridge.ts';
+import { useWindowWorkspaceId } from './workspaces.ts';
 
 export interface WorkspaceToast {
   id: string;
@@ -36,6 +37,7 @@ export const useNotificationsStore = create<NotificationsState>()((set) => ({
 
 /** 主进程通知资源 → 本地队列；每个消费方自己订阅。 */
 export function useNotices(): void {
+  const workspaceId = useWindowWorkspaceId();
   const notices = useResource<
     Array<{
       id: string;
@@ -43,7 +45,7 @@ export function useNotices(): void {
       message: string;
       source?: string;
     }>
-  >('shell', 'notices', []);
+  >('shell', workspaceId ? `${workspaceId}/notices` : null, []);
   const seen = useRef(new Set<string>());
   useEffect(() => {
     for (const notice of notices) {

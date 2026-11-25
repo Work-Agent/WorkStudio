@@ -1,5 +1,4 @@
-import type { LayoutSnapshot, UiState } from '../../../../shared/types.ts';
-import { computeLayout } from '../../../../shared/layout-engine.ts';
+import type { LayoutSnapshot } from '../../../../shared/types.ts';
 import { useResource } from '../../../shared/api/bridge.ts';
 import { useActiveWorkspaceId } from './windows.ts';
 
@@ -8,8 +7,13 @@ interface LayoutRecord {
   snapshot: LayoutSnapshot | null;
 }
 
+/** 布局按窗口订阅：`shell/<wsId>/layout`（窗口与工作区 1:1）。 */
 export function useLayout(): LayoutSnapshot | null {
   const wsId = useActiveWorkspaceId();
-  const records = useResource<LayoutRecord[]>('shell', 'layout', []);
-  return records.find((record) => record.windowId === wsId)?.snapshot ?? null;
+  const record = useResource<LayoutRecord | null>(
+    'shell',
+    wsId ? `${wsId}/layout` : null,
+    null,
+  );
+  return record?.snapshot ?? null;
 }

@@ -100,7 +100,7 @@ test('WorkStudio 已配置模型时完成一次真实 prompt / stream', async ()
     await shell.evaluate(async () => {
       const result = await window.workStudio.command(
         'agent',
-        'sessions',
+        `${String(window.workStudio.workspaceId)}/sessions`,
         'prompt',
         { text: '只回复：OK' },
       );
@@ -113,7 +113,7 @@ test('WorkStudio 已配置模型时完成一次真实 prompt / stream', async ()
           shell.evaluate(async () => {
             const state = (await window.workStudio.subscribe(
               'agent',
-              'sessions',
+              `${String(window.workStudio.workspaceId)}/sessions`,
             )) as {
               current?: { isStreaming?: boolean };
               active?: { messages?: unknown[]; stream?: { text?: string } };
@@ -131,7 +131,7 @@ test('WorkStudio 已配置模型时完成一次真实 prompt / stream', async ()
     const text = await shell.evaluate(async () => {
       const state = (await window.workStudio.subscribe(
         'agent',
-        'sessions',
+        `${String(window.workStudio.workspaceId)}/sessions`,
       )) as { active?: { stream?: { text?: string } } } | null;
       return state?.active?.stream?.text ?? '';
     });

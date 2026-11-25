@@ -296,7 +296,7 @@ export class DomainRegistry {
   /**
    * 域发变更：同一 ref 的订阅者收到同一条通知。
    *
-   * `workspace/<ref>` 是工作区资源的 watch 地址；打开的资源才订阅它，
+   * `workspace/<wsId>/<ref>` 是工作区资源的 watch 地址；打开的资源才订阅它，
    * 因此没有资源条目时这次变更不会被任何人接收。
    */
   changed(ref: string, type: ChangeType): void {

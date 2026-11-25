@@ -385,9 +385,7 @@ export async function createCdpContext(
           .filter(
             (target) => target.type === 'page' && target.webSocketDebuggerUrl,
           )
-          .filter((target) =>
-            pattern.test(`${target.title ?? ''} ${target.url}`),
-          );
+          .filter((target) => pattern.test(target.url));
         for (const target of targets) {
           const page = await openPage(target);
           if (!options?.text) return pageHandle(page);

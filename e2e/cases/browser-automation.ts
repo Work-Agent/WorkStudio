@@ -45,7 +45,7 @@ export default defineCase({
       const attached = await ctx.evaluate(async (id) => {
         const result = await window.workStudio.command(
           'browser',
-          'automation',
+          `${String(window.workStudio.workspaceId)}/automation`,
           'attach',
           { id },
         );
@@ -55,7 +55,7 @@ export default defineCase({
       const title = await ctx.evaluate(async (id) => {
         const result = await window.workStudio.command(
           'browser',
-          'automation',
+          `${String(window.workStudio.workspaceId)}/automation`,
           'execute',
           { id, script: 'document.title || document.body.innerText' },
         );

@@ -168,12 +168,12 @@ interface WorkStudioBridge {
 
 ### 3.2 地址空间
 
-| 地址                  | 谁订阅   | 载荷                                             |
-| --------------------- | -------- | ------------------------------------------------ |
-| `shell/view/<id>`     | 视图自身 | 内容、主题、动作、模式；视图上报加载、脏态、导航 |
-| `workspace/<ref>`     | 资源面板 | 快照、增量、变更事件                             |
-| `shell/<resource>`    | 壳层     | 窗口、对话框、通知、布局                         |
-| `<domain>/<resource>` | 任意视图 | 由域决定                                         |
+| 地址                     | 谁订阅   | 载荷                                             |
+| ------------------------ | -------- | ------------------------------------------------ |
+| `shell/view/<id>`        | 视图自身 | 内容、主题、动作、模式；视图上报加载、脏态、导航 |
+| `workspace/<wsId>/<ref>` | 资源面板 | 快照、增量、变更事件                             |
+| `shell/<resource>`       | 壳层     | 窗口、对话框、通知、布局                         |
+| `<domain>/<resource>`    | 任意视图 | 由域决定                                         |
 
 工具面和页面共用同一地址空间：助手 `read` 一个 `ref` 与页面 `subscribe` 同一个 `ref`，指向同一份数据。
 
@@ -206,7 +206,7 @@ interface WorkStudioBridge {
 ### 4.1 Domain 与 Resource
 
 - **Domain** 是服务边界，按地址前缀区分，例如 `shell`、`workspace`、`agent`、`docx`。它像微服务一样拥有自己的资源、命令与不变量，不是“一个能力一个 Domain”。
-- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `agent/<wsId>/session/<sessionId>`。
+- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/<wsId>/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `workspace/<wsId>/list`、`agent/<wsId>/session/<sessionId>`。
 - **Command** 是唯一的操作单位，地址为 `<domain>/<resource>/<action>`。
 
 聚合根决定一致性与事务边界：命令只修改聚合根，`snapshot` / `patch` 是它的投影；跨 Domain 只引用资源地址或注入端口，不直接拿对方的对象。这样 `agent` 不需要认识 `plugin` 的内部，`plugin` 也不需要认识会话。
@@ -228,23 +228,25 @@ web ────────→ transport / cache（由 browser 模块承载）
 
 箭头表示“依赖谁”，只表达启动顺序与调用方向；跨服务不注入对方对象，只通过资源地址、命令或端口。
 
-| Domain（服务） | 聚合根 / 主要 resource                                                                          | 读模型                                                                                                                                                 |
-| -------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `shell`        | `windows` · `view/<id>` · `appearance` · `dialogs` · `notices`                                  | `views` · `layout` · `pages` · `menu` · `interaction` · `native`                                                                                       |
-| `workspace`    | `registry`                                                                                      | `list` · `<ref>`                                                                                                                                       |
-| `plugin`       | `installed` · `task`                                                                            | `catalog`                                                                                                                                              |
-| `settings`     | `preferences` · `updates`                                                                       | `pages` · `storage`                                                                                                                                    |
-| `browser`      | `tabs` · `policy` · `capture`                                                                   | `automation`                                                                                                                                           |
-| `web`          | `web`（快照资源）                                                                               | —                                                                                                                                                      |
-| `agent`        | `<wsId>/session/<sessionId>` · `skills` · `provider/<id>` · `model/<provider>/<id>` · `context` | `sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `providers` · `models` · `tools` · `prompts` · `themes` · `extensions` |
+| Domain（服务） | 聚合根 / 主要 resource                                                                          | 读模型                                                                                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shell`        | `windows` · `appearance`                                                                        | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                     |
+| `workspace`    | `registry`                                                                                      | `<wsId>/list` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                              |
+| `plugin`       | `installed` · `task`                                                                            | `catalog`                                                                                                                                                     |
+| `settings`     | `preferences` · `updates`                                                                       | `pages` · `storage`                                                                                                                                           |
+| `browser`      | `policy`                                                                                        | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                        |
+| `web`          | `web`（快照资源）                                                                               | —                                                                                                                                                             |
+| `agent`        | `<wsId>/session/<sessionId>` · `skills` · `provider/<id>` · `model/<provider>/<id>` · `context` | `<wsId>/sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `providers` · `models` · `tools` · `prompts` · `themes` · `extensions` |
 
-聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管消息、轮次、队列和 thinking；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/sessions` 是当前工作区的集合投影；单会话聚合显式带 `wsId`（`agent/<wsId>/session/<sessionId>`）。如果未来需要同时订阅多个工作区，集合也改成 `agent/<wsId>/sessions`。
+聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管消息、轮次、队列和 thinking；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/<wsId>/sessions` 是工作区的集合投影（激活工作区为实时投影，其余为只读投影）；单会话聚合同样带 `wsId`（`agent/<wsId>/session/<sessionId>`）。
 
 System Domain 由模块持有，不读内容字节，也不出现在工具面里。模块只负责生命周期；Domain 才是服务边界，Resource 才是聚合根。例如 `skills` 是 `agent/skills`，不是独立的 `skills` Domain。
 
 ### 4.3 Biz Domain
 
 Biz Domain 由插件持有，每个插件一个，地址前缀即插件标识。它必须提供：数据接口（`ls` / `find` / `read` / `grep`）与命令（`run`）。它可以没有页面，也可以只有设置页。
+
+插件内容页通过 URL 拿到 `ref` 后，按工作区作用域订阅 `<domain>/<wsId>/<ref>`；`wsId` 由宿主注入到页面的 `workStudio.workspaceId`，插件页不自行推断当前工作区。
 
 ### 4.4 命令表
 
@@ -575,7 +577,7 @@ URA 与 v1 入口一起退役：`exports['./ura']` 不再装载。插件必须�
 
 ### 9.5 列表
 
-列表是投影：provider 产出快照，视图只消费。内置列表与插件列表共用同一条流程——注册、取数、分页、选择、动作都由框架处理，插件只提供条目与动作实现。
+列表是投影：provider 产出快照，视图只消费。每个工作区一份（`workspace/<wsId>/list`），组可以声明聚合来源（`deps`），来源资源变化时只重算受影响的组。内置列表与插件列表共用同一条流程——注册、取数、分页、选择、动作都由框架处理，插件只提供条目与动作实现。
 
 ## 十、约束与验收
 

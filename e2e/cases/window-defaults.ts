@@ -14,7 +14,7 @@ interface LayoutRecord {
 export default defineCase({
   id: 'window.defaults',
   title: '主窗口默认尺寸、标题与三栏布局',
-  tags: ['dev', 'ci'],
+  tags: ['ci', 'playwright-only'],
   async run(ctx) {
     const view = await ctx.evaluate(() => ({
       width: innerWidth,
@@ -46,10 +46,14 @@ export default defineCase({
       }
     }
     await ctx.expect.poll(async () => {
-      const records = (await ctx.evaluate(() =>
-        window.workStudio.subscribe('shell', 'layout'),
-      )) as LayoutRecord[];
-      const record = records[0];
+      const record = await ctx.evaluate(async () => {
+        const id = window.workStudio.workspaceId;
+        if (!id) return null;
+        return (await window.workStudio.subscribe(
+          'shell',
+          `${id}/layout`,
+        )) as LayoutRecord | null;
+      });
       return (
         record?.snapshot?.assistantVisible === true &&
         record.snapshot.window?.width === 1440 &&

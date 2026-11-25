@@ -12,6 +12,8 @@ import type { ToolSurface } from './tools.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import { createLog } from '../../log.ts';
+import { listSessions } from './runtime/session-list.ts';
+import type { SessionMeta } from '../../../shared/types.ts';
 import type { DialogView } from '../shell/domains.ts';
 import type { PluginManager } from '../../plugin/manager.ts';
 import { AgentHost } from './runtime/agent-host.ts';
@@ -29,7 +31,7 @@ import {
   defineExtensionsResource,
   defineModelsResources,
   definePromptsResource,
-  defineSessionsResource,
+  defineSessionsResources,
   defineSkillsResource,
   defineThemesResource,
   defineContextResource,
@@ -51,6 +53,14 @@ export class AgentModule implements DomainModule {
   readonly dependencies = ['workspace', 'browser', 'plugin'] as const;
 
   private readonly sessions: SessionsState = createSessionsState();
+  private sessionResources: {
+    ensure: (workspaceId: string) => void;
+    remove: (workspaceId: string) => void;
+    publish: () => void;
+    event: (name: string, data: unknown) => void;
+  } | null = null;
+  private readonly idleSessions = new Map<string, SessionMeta[]>();
+  private readonly registeredWorkspaces = new Set<string>();
   private readonly models: ModelsState = createModelsState();
   private modelResources: ModelResources | null = null;
   private readonly skills: SkillsState = createSkillsState();
@@ -77,12 +87,13 @@ export class AgentModule implements DomainModule {
 
   attach(registry: DomainRegistry): void {
     this.registry = registry;
-    defineSessionsResource(
+    this.sessionResources = defineSessionsResources(
       registry,
       this.sessions,
       this.context,
       this.thinking,
       () => this.host,
+      (workspaceId) => this.idleSessions.get(workspaceId) ?? [],
     );
     this.modelResources = defineModelsResources(
       registry,
@@ -123,13 +134,13 @@ export class AgentModule implements DomainModule {
           sendEvent: (frame) => {
             const agent = registry.define('agent');
             agent.resource('runtime').event('event', frame);
-            agent.resource('sessions').event('event', frame);
+            this.sessionResources?.event('event', frame);
             if (
               reduceSessionFrame(this.sessions, frame, this.host, () =>
-                agent.resource('sessions').publish(),
+                this.sessionResources?.publish(),
               )
             ) {
-              agent.resource('sessions').publish();
+              this.sessionResources?.publish();
             }
           },
           additionalSkillPaths: () => this.plugins?.skillPaths() ?? [],
@@ -189,13 +200,14 @@ export class AgentModule implements DomainModule {
       this.sessions.messages = await this.host.getMessages().catch(() => []);
       this.sessions.commands = this.host.getCommands();
       this.sessions.currentId = this.host.getSnapshot().sessionId ?? null;
-      registry.define('agent').resource('sessions').publish();
+      await this.syncSessionResources();
     }
     this.offDialogs = registry.onUpdate((update) => {
       if (
         update.domain !== 'shell' ||
-        update.resource !== 'dialogs' ||
-        (update.type !== 'snapshot' && update.type !== 'patch')
+        update.type !== 'snapshot' ||
+        !this.sessions.workspaceId ||
+        update.resource !== `${this.sessions.workspaceId}/dialogs`
       ) {
         return;
       }
@@ -255,7 +267,48 @@ export class AgentModule implements DomainModule {
     this.sessions.currentId = host.getSnapshot().sessionId ?? null;
     this.sessions.messages = await host.getMessages().catch(() => []);
     this.sessions.commands = host.getCommands();
-    registry.define('agent').resource('sessions').publish();
+    await this.syncSessionResources();
+  }
+
+  /** 每个已登记工作区一份 `<wsId>/sessions`；非激活工作区只给只读投影。 */
+  private async syncSessionResources(): Promise<void> {
+    const registry = this.registry;
+    const resources = this.sessionResources;
+    if (!registry || !resources) return;
+    const state = registry.snapshot({
+      domain: 'workspace',
+      resource: 'registry',
+    }) as {
+      current?: { id?: string } | null;
+      workspaces?: Array<{ id: string; path: string }>;
+    } | null;
+    const workspaces = state?.workspaces ?? [];
+    const known = new Set(workspaces.map((item) => item.id));
+    for (const workspaceId of Array.from(this.idleSessions.keys())) {
+      if (known.has(workspaceId)) continue;
+      this.idleSessions.delete(workspaceId);
+    }
+    for (const workspaceId of Array.from(this.registeredWorkspaces)) {
+      if (known.has(workspaceId)) continue;
+      this.registeredWorkspaces.delete(workspaceId);
+      resources.remove(workspaceId);
+    }
+    for (const meta of workspaces) {
+      if (meta.id === this.sessions.workspaceId) {
+        this.idleSessions.delete(meta.id);
+        continue;
+      }
+      const items = await listSessions(
+        meta.path,
+        this.storage.sessionsDir(meta.id),
+      ).catch(() => []);
+      this.idleSessions.set(meta.id, items);
+    }
+    for (const meta of workspaces) {
+      this.registeredWorkspaces.add(meta.id);
+      resources.ensure(meta.id);
+    }
+    resources.publish();
   }
 
   private async reloadAfterPackages(): Promise<void> {
@@ -297,8 +350,10 @@ export class AgentModule implements DomainModule {
   ): Promise<void> {
     const registry = this.registry;
     if (!registry) return;
+    const workspaceId = this.sessions.workspaceId;
+    if (!workspaceId) return;
     const result = await registry.dispatchCommand(
-      { domain: 'shell', resource },
+      { domain: 'shell', resource: `${workspaceId}/${resource}` },
       action,
       input,
       {
@@ -316,9 +371,10 @@ export class AgentModule implements DomainModule {
     const host = this.host;
     const registry = this.registry;
     if (!host || !registry) return;
+    if (!this.sessions.workspaceId) return;
     const dialogs = registry.snapshot({
       domain: 'shell',
-      resource: 'dialogs',
+      resource: `${this.sessions.workspaceId}/dialogs`,
     }) as DialogView[] | null;
     for (const dialog of dialogs ?? []) {
       if (dialog.status === 'open' || this.handledDialogs.has(dialog.id)) {
@@ -360,6 +416,14 @@ export class AgentModule implements DomainModule {
         ?.define('agent')
         .remove(`${this.sessions.workspaceId}/session/${id}`);
     }
+    for (const workspaceId of this.idleSessions.keys()) {
+      this.sessionResources?.remove(workspaceId);
+    }
+    if (this.sessions.workspaceId) {
+      this.sessionResources?.remove(this.sessions.workspaceId);
+    }
+    this.idleSessions.clear();
+    this.sessionResources = null;
     this.sessions.sessions.clear();
     this.sessions.currentId = null;
     this.sessions.items = [];
