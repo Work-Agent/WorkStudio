@@ -762,11 +762,13 @@ export function defineModelsResources(
       run: async (input) => {
         const runtime = host?.();
         if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-        await runtime.completeOAuth(providerId, String(input.state), {
-          ...(typeof input.accessToken === 'string'
+        await runtime.completeOAuth(
+          providerId,
+          String(input.state),
+          typeof input.accessToken === 'string'
             ? { accessToken: input.accessToken }
-            : {}),
-        });
+            : {},
+        );
         resource.publish();
         return null;
       },
