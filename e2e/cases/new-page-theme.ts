@@ -42,11 +42,35 @@ export default defineCase({
           background: getComputedStyle(document.documentElement)
             .backgroundColor,
           colorScheme: getComputedStyle(document.documentElement).colorScheme,
+          gate: [...document.querySelectorAll('head style')].some((style) =>
+            style.textContent?.includes('prefers-color-scheme:dark'),
+          ),
         }));
         return (
-          state.background === 'rgb(26, 28, 29)' && state.colorScheme === 'dark'
+          state.background === 'rgb(26, 28, 29)' &&
+          state.colorScheme === 'dark' &&
+          state.gate
         );
       }, '新页面没有使用深色首帧底色');
+      // 插件页由主进程协议层注入同一份首帧底色。
+      await ctx.evaluate(async () => {
+        await window.workStudio.command('plugin', 'installed', 'open', {
+          id: 'html-viewer',
+        });
+      });
+      const pluginPage = await ctx.waitForPage(
+        /^plugin:\/\/html-viewer\/settings/,
+      );
+      await ctx.expect.poll(async () => {
+        const state = await pluginPage.evaluate(() => ({
+          background: getComputedStyle(document.documentElement)
+            .backgroundColor,
+          gate: [...document.querySelectorAll('head style')].some((style) =>
+            style.textContent?.includes('prefers-color-scheme:dark'),
+          ),
+        }));
+        return state.gate && state.background === 'rgb(26, 28, 29)';
+      }, '插件页缺少深色首帧底色');
     } finally {
       if (viewId) {
         await ctx.evaluate(async (id) => {

@@ -66,6 +66,8 @@ interface ViewEntry {
   window: BrowserWindow;
   windowId: string;
   senderId: string;
+  /** 网页要等首个文档就绪再显示：Chromium 初始白底会盖住主题底色。 */
+  ready: boolean;
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -367,6 +369,7 @@ export class ShellHost {
       window: windowEntry.window,
       windowId,
       senderId,
+      ready: input.type !== 'web',
     };
     this.views.set(ShellHost.viewKey(windowId, id), entry);
     this.resizeWindow(windowEntry.record.id);
@@ -384,6 +387,17 @@ export class ShellHost {
       for (const listener of this.viewClosedListeners) listener(windowId, id);
     });
     if (input.type === 'web') {
+      // 外部网页的第一个文档是浏览器默认白底：先隐藏，dom-ready 后再显示。
+      view.webContents.on('did-start-loading', () => {
+        if (!entry.ready) return;
+        entry.ready = false;
+        this.resizeWindow(windowId);
+      });
+      view.webContents.on('dom-ready', () => {
+        if (entry.ready) return;
+        entry.ready = true;
+        this.resizeWindow(windowId);
+      });
       const onNavigate = (
         event: { preventDefault(): void },
         url: string,
@@ -470,7 +484,9 @@ export class ShellHost {
       if (other.record.type !== 'page' && other.record.type !== 'web') {
         continue;
       }
-      other.view.setVisible(key === ShellHost.viewKey(windowId, id));
+      other.view.setVisible(
+        key === ShellHost.viewKey(windowId, id) && other.ready,
+      );
     }
     entry.window.contentView.addChildView(entry.view);
     this.resizeWindow(windowId);
@@ -654,7 +670,7 @@ export class ShellHost {
       const bounds = this.boundsOf(entry, layout, windowEntry.window);
       entry.view.setBounds(bounds);
       if (entry.record.type === 'page' || entry.record.type === 'web') {
-        entry.view.setVisible(entry.record.active);
+        entry.view.setVisible(entry.record.active && entry.ready);
       } else if (entry.record.type === 'assistant') {
         entry.view.setVisible(layout.assistantVisible);
       }

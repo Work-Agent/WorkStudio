@@ -56,6 +56,25 @@ function renamePiNodeGlobals(): Plugin {
   };
 }
 
+/**
+ * 首帧底色：页面 CSS 尚未加载时先按系统深浅铺底，避免深色模式白闪。
+ * 与 `src/shared/appearance.ts` 的 THEME_GATE_STYLE 保持一致（同一份字符串）。
+ */
+function initialThemeBackground(): Plugin {
+  const style =
+    'html{background:#f4f4f5;color-scheme:light}@media (prefers-color-scheme:dark){html{background:#1a1c1d;color-scheme:dark}}';
+  return {
+    name: 'ws-initial-theme-background',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html: string) {
+        if (html.includes('prefers-color-scheme:dark')) return html;
+        return html.replace('<head>', `<head><style>${style}</style>`);
+      },
+    },
+  };
+}
+
 /** work:// 系统页从 Vite 加载开发模块，并使用同一服务的热更新连接。 */
 function workPageDevAssets(): Plugin {
   return {
@@ -127,7 +146,12 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react(), tailwindcss(), workPageDevAssets()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      workPageDevAssets(),
+      initialThemeBackground(),
+    ],
     build: {
       outDir: resolve(__dirname, 'out/renderer'),
       rolldownOptions: {

@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { net, protocol, type Session } from 'electron';
 import { existsSync } from 'node:fs';
 import { parsePluginUrl, parseWorkUrl } from '../shared/pages.ts';
+import { injectThemeGate } from '../shared/appearance.ts';
 import type { PluginPackage } from './plugin/manifest.ts';
 
 /** 系统页：work://studio/<page>。 */
@@ -173,7 +174,17 @@ async function serve(url: string, protocols: Protocols): Promise<Response> {
   if (!resolved) return notFound();
   try {
     if ('proxy' in resolved) return await net.fetch(resolved.proxy);
-    return await net.fetch(pathToFileURL(resolved.file).toString());
+    const fileUrl = pathToFileURL(resolved.file).toString();
+    // HTML 首帧底色：系统页（构建产物）与插件页都要，避免深色模式白闪。
+    if (/\.html?$/i.test(resolved.file)) {
+      const response = await net.fetch(fileUrl);
+      if (!response.ok) return response;
+      return new Response(injectThemeGate(await response.text()), {
+        status: response.status,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
+    return await net.fetch(fileUrl);
   } catch {
     return notFound();
   }
