@@ -9,7 +9,7 @@ import type {
   CallResult,
   DomainUpdate,
   WorkStudioBridge,
-} from '@workstudio/sdk';
+} from '@work-studio/sdk';
 import { BRIDGE_CHANNELS, workspaceIdOfArgv } from '../shared/channels.ts';
 
 function argvOf(): readonly string[] {

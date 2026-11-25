@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { defaultAllowedOrigins, type Plugin } from 'vite';
-import { buildPlugin } from '@workstudio/sdk/build';
+import { buildPlugin } from '@work-studio/sdk/build';
 
 /**
  * 内置插件（src/plugins：manifest + 静态页面）不参与打包，直接拷贝到 out/plugins。
@@ -23,7 +23,7 @@ function copyBuiltinPlugins(): Plugin {
           const root = resolve(to, name);
           if (!statSync(root).isDirectory()) continue;
           const sdkSource = resolve(__dirname, 'packages/sdk');
-          const sdkTarget = resolve(root, 'node_modules/@workstudio/sdk');
+          const sdkTarget = resolve(root, 'node_modules/@work-studio/sdk');
           rmSync(sdkTarget, { recursive: true, force: true });
           cpSync(sdkSource, sdkTarget, { recursive: true });
           await buildPlugin(root);

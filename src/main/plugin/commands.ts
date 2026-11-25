@@ -1,7 +1,7 @@
 /** 插件静态命令描述：扫描期产物，激活时与动态实现合并。 */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CommandDescriptor } from '@workstudio/sdk';
+import type { CommandDescriptor } from '@work-studio/sdk';
 import type { PluginPackage } from './manifest.ts';
 
 export function readStaticCommands(pkg: PluginPackage): CommandDescriptor[] {

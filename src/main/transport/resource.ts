@@ -1,11 +1,11 @@
 /**
- * 资源适配器：唯一事实源在 @workstudio/sdk。
+ * 资源适配器：唯一事实源在 @work-studio/sdk。
  *
  * 框架只做路由：ref → 域 → adapter；这里的 matchesClaim 是宿主侧
  * 的认领匹配，不进入插件 SDK。
  */
 
-import type { Claim } from '@workstudio/sdk';
+import type { Claim } from '@work-studio/sdk';
 
 export type {
   Claim,
@@ -15,7 +15,7 @@ export type {
   Locator,
   ReadOptions,
   ResourceAdapter,
-} from '@workstudio/sdk';
+} from '@work-studio/sdk';
 
 export function matchesClaim(ref: string, claim: Claim): boolean {
   if (claim.prefixes?.some((prefix) => ref.startsWith(prefix))) return true;

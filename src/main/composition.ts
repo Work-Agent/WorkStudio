@@ -46,6 +46,7 @@ export interface SystemModulesOptions {
   pluginService: PluginService;
   pluginFiles: PluginFiles;
   lists: ListService;
+  builtinPluginIds?: ReadonlySet<string>;
   appearance: AppearanceStore;
   shellHost?: ShellHost;
   openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>;
@@ -108,6 +109,7 @@ export function registerSystemModules(
       options.pluginStore,
       options.pluginService,
       options.lifecycle,
+      options.builtinPluginIds ?? new Set(),
     ),
   );
   registry.registerModule(

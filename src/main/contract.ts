@@ -1,18 +1,18 @@
 /**
  * 主进程跨层契约：结果、变更、来源。
  *
- * 线级类型来自 @workstudio/sdk；
+ * 线级类型来自 @work-studio/sdk；
  * 具体传输（ipcMain / preload / net）不进入契约。
  */
 
-import type { CallErrorCode, CallResult, ChangeType } from '@workstudio/sdk';
+import type { CallErrorCode, CallResult, ChangeType } from '@work-studio/sdk';
 export type {
   CallError,
   CallErrorCode,
   CallResult,
   ChangeType,
   DomainUpdate,
-} from '@workstudio/sdk';
+} from '@work-studio/sdk';
 
 /** 系统视图种类：内容页统一归 page。 */
 export type ViewType =

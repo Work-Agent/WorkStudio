@@ -374,32 +374,42 @@ plugin-docx.zip
 └── node_modules/        # 可选；依赖由插件自己 bundle
 ```
 
-| 来源     | 写法                                | 落盘                                |
-| -------- | ----------------------------------- | ----------------------------------- |
-| 远程 zip | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
-| 本地 zip | `~/Downloads/plugin.zip`            | `<appData>/plugins/installed/<id>/` |
-| 本地目录 | 绝对路径 / `./plugins/csv`          | 原地加载，不复制                    |
+| 来源     | 写法                                         | 落盘                                 |
+| -------- | -------------------------------------------- | ------------------------------------ |
+| 远程 zip | `https://.../plugin.zip#sha256=...`          | `<appData>/plugins/installed/<id>/`  |
+| 本地 zip | `~/Downloads/plugin.zip`                     | `<appData>/plugins/installed/<id>/`  |
+| 本地目录 | 绝对路径                                     | 复制到 `installed/<id>/`，源目录不动 |
+| 注册表   | `catalog:<id>`，由清单条目给出 URL 与 sha256 | `<appData>/plugins/installed/<id>/`  |
 
-**可安装清单是随源码维护的 Markdown 文件**（[PLUGINS.md](PLUGINS.md)），一行一条来源；构建时解析为静态列表，内联进主进程与插件设置页，运行期不再读 Markdown：
+**可安装清单是独立注册表**（Work Studio Plugin Registry），不再随应用源码维护：
 
-```markdown
-# 可安装插件
+- 一个插件一个条目 JSON，CI 校验字段、id、版本与 sha256，合并后生成 `index.json`；
+- 条目字段：`id` / `name` / `description` / `version` / `source` / `sha256` / `repo` / `tags` / `category`；`source` 必须是自包含 zip，`sha256` 固定具体产物；
+- 应用启动只读缓存；打开插件设置页或手动刷新时才拉取 `index.json`；请求带条件头，失败回退缓存并标记 `stale`；
+- 清单只负责发现：安装仍以 zip 内的 manifest 为准，清单 id 与 manifest id 必须一致；
+- 内置插件随应用分发，不进注册表，其 id 保留，外部包不可覆盖；
+- 无自动更新：目录版本高于已安装版本时显示「可更新」，用户点击后才安装。
 
-- [Word 文档](https://github.com/acme/plugin-docx/releases/download/v0.3.1/plugin-docx.zip#sha256=9f2c...)
-- [表格](https://github.com/acme/plugin-xlsx/releases/download/v0.2.0/plugin-xlsx.zip#sha256=41ab...)
-- ./plugins/csv
+注册表契约见 [`docs/plugin-registry.md`](./docs/plugin-registry.md)。
+
+安装流水线：
+
+```text
+source（catalog:<id> / URL / zip / 目录）
+  ─► 下载 ─► 校验 sha256 ─► 解包 ─► 校验 manifest / 入口 / commands.json
+  ─► staging ─► 原子替换 installed/<id> ─► 激活
 ```
 
-- **清单是编译期资产**：增删插件 = 改清单后重新构建；运行期不解析、不改写清单，清单写错则构建失败。
-- **页面直出**：插件设置页拿到的是构建期内联的数据，不依赖运行时读 Markdown。
-- **安装与加载分别报告**：安装完成表示文件和安装记录已提交；加载完成表示插件能力注册成功。加载失败保留安装记录，可单独重新加载；卸载保留可安装清单条目。
-- **临时安装只记状态**：手动 URL / 拖入 zip 或文件夹 / 社区目录安装记在本机安装索引，不进清单。
-- **插件目录统一**：`<appData>/plugins/` 下放 `installed/`、`staging/`、`installed.json`；与工作区无关，和 `agent/` 下的 pi 资源分开。
-- **远程必须带 sha256**：下载到 `staging/` → 校验 → 解压 → 验证 manifest / 入口 / `commands.json` → 原子替换 `installed/<id>`；本地 zip 走同一套解压流程（无远程哈希可比对，仅记录内容哈希）。
-- **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm。
-- **无自动更新**：改清单 URL / hash 后重新构建并重装；不静默更新。
-- **启动装配，运行期热装卸**：启动时扫描本地路径与 `installed/` → import `./engine.js` → 注册 → 建页面；安装 / 卸载即时生效——卸载按归属撤销注册面并关闭插件页面；ESM 模块本体留在进程内存，属已知限制。
-- **本地来源不复制**：开发时原地加载，改完重新安装即生效（无需重启）。
+- **目录即真相**：不维护 `installed.json`；启动扫描 `installed/<id>/package.json`，id、版本与页面都从包内读取；
+- **坏包可见**：解析失败或目录名与 manifest id 不一致时保留为 `broken`，仍可卸载；
+- **安装与加载分别报告**：提交完成代表包已原子换入 `installed/<id>`；激活失败保留包并记录错误，可重载或卸载；安装失败回滚旧版本；
+- **原子替换**：旧包先移入 `recovery/`，新包换入后再清理；启动时恢复中断的替换；
+- **远程必须带 sha256**：注册表条目显式给出；手动 URL 用 `#sha256=`；本地 zip 只计算不比对；
+- **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm；
+- **插件目录统一**：`<appData>/plugins/` 下只有 `installed/`、`staging/`、`recovery/`、`tmp/`、`data/`、`catalog/`；与工作区无关，和 `agent/` 下的 pi 资源分开；
+- **卸载**：撤销注册、关闭插件页面、删除包目录；配置默认保留，显式清除才删 `data/<id>`；
+- **任务只属于当前进程**：下载字节进度、校验、提交、激活分阶段报告；取消只在提交前生效，不承诺重启续传；
+- **热装卸**：安装 / 卸载即时生效；ESM 模块本体留在进程内存，重载通过新的模块地址拿到新实例，属已知限制。
 
 ### 5.4 设置：只占页面出口
 
@@ -516,8 +526,8 @@ node node_modules/electron/install.js
 │   │   └── shared/                # 跨页面 API、domain 与样式
 │   ├── plugins/                   # 内置插件（随应用分发）
 │   └── shared/                    # 主/渲染共享类型与样式
-├── PLUGINS.md                     # 可安装插件清单（构建期解析进主进程）
-├── docs/                          # 系统化设计（architecture）
+├── RELEASING.md                   # 发版与 SDK 发布规则
+├── docs/                          # 系统化设计（architecture / plugin-registry）
 ├── electron.vite.config.ts        # 三端构建配置（main / preload / renderer）
 ├── electron-builder.yml           # 打包配置（目标平台、fuses、签名）
 └── tsconfig.json
@@ -541,7 +551,9 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-workflow 先跑与 CI 相同的 verify（typecheck / lint / build），通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
+workflow 先跑与 CI 相同的 verify（typecheck / lint / build），并判定 SDK 是否需要发布；通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
+
+SDK 只在其版本随 release bump 时发布；没有变化的 release 跳过 npm。发布判定、版本规则与 npm 认证见 [RELEASING.md](RELEASING.md)。
 
 macOS 构建需要仓库配置以下 Actions secrets：
 
@@ -552,6 +564,7 @@ macOS 构建需要仓库配置以下 Actions secrets：
 | `APPLE_ID`                    | Apple ID 邮箱（公证用）                          |
 | `APPLE_APP_SPECIFIC_PASSWORD` | appleid.apple.com 生成的 App 专用密码（公证用）  |
 | `APPLE_TEAM_ID`               | Team ID（公证用）                                |
+| `NPM_TOKEN`                   | 发布 `@work-studio/sdk` 的 npm granular token    |
 
 CI 在打包之后会验证签名身份（Developer ID Application）与 Gatekeeper 放行结果：公证凭据缺失或签名回退为 ad-hoc 时构建直接失败，避免发出无法静默更新的安装包。本地手动打包不注入公证凭据，因此只完成签名、不做公证。
 

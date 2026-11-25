@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { ListItem } from '../../../../../shared/lists.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
-import type { Entry } from '@workstudio/sdk';
+import type { Entry } from '@work-studio/sdk';
 import { command } from '../../../../shared/api/bridge.ts';
 import { openListItem } from '../../../../shared/domains/lists.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';

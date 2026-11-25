@@ -1,9 +1,9 @@
 /**
- * @workstudio/sdk
+ * @work-studio/sdk
  *
  * 插件作者只需要两个入口：
  *   - 引擎：`definePlugin` / `locator` / 契约类型
- *   - 页面：`import '@workstudio/sdk/global'`，直接使用 window.workStudio
+ *   - 页面：`import '@work-studio/sdk/global'`，直接使用 window.workStudio
  */
 export type {
   CallError,

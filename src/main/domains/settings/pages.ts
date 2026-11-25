@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS_PAGES: SettingsPage[] = [
   {
     id: 'plugins',
     label: '文档插件',
-    desc: 'zip 安装 · 固定安装路径',
+    desc: '注册表安装 · 本地 zip / 目录',
     icon: 'package',
   },
   {

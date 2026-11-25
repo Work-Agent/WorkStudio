@@ -236,17 +236,23 @@ function pluginsGroup(deps: SystemListDeps): ListGroup[] {
     'plugin',
     'installed',
   );
-  const items: ListItem[] = (installed ?? []).map((plugin) => ({
-    key: String(plugin['id'] ?? ''),
-    itemType: 'plugin',
-    title: String(plugin['label'] ?? plugin['id'] ?? ''),
-    subtitle: `v${String(plugin['version'] ?? '')}`,
-    meta: {
-      pluginId: plugin['id'],
-      version: plugin['version'],
-      hasConfig: plugin['hasConfig'] === true,
-    },
-  }));
+  const items: ListItem[] = (installed ?? []).map((plugin) => {
+    const stage = String(plugin['stage'] ?? '');
+    const suffix =
+      stage === 'broken' ? ' · 包损坏' : stage === 'error' ? ' · 加载失败' : '';
+    return {
+      key: String(plugin['id'] ?? ''),
+      itemType: 'plugin',
+      title: String(plugin['label'] ?? plugin['id'] ?? ''),
+      subtitle: `v${String(plugin['version'] ?? '')}${suffix}`,
+      meta: {
+        pluginId: plugin['id'],
+        version: plugin['version'],
+        stage,
+        hasConfig: plugin['hasConfig'] === true,
+      },
+    };
+  });
   return [groupOf(pluginsDefinition, items)];
 }
 

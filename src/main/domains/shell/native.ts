@@ -257,6 +257,16 @@ export class ShellHost {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   }
 
+  async pickFile(extensions: string[] = []): Promise<string | null> {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      ...(extensions.length > 0
+        ? { filters: [{ name: '文件', extensions }] }
+        : {}),
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+
   async openPath(path: string): Promise<void> {
     await shell.openPath(path);
   }
@@ -414,6 +424,20 @@ export class ShellHost {
         // 系统页：正式包只走 work://；开发模式下页面地址是 dev server。
         return url.startsWith('work://') || (dev && /^https?:/i.test(url));
       },
+      // 网页的 target=_blank / window.open 留在应用内，开临时标签。
+      ...(input.type === 'web'
+        ? {
+            onWindowOpen: (url: string): boolean => {
+              if (!/^https?:/i.test(url)) return true;
+              this.openView(windowEntry.record.id, {
+                type: 'web',
+                title: url,
+                url,
+              });
+              return true;
+            },
+          }
+        : {}),
     });
     view.webContents.on('destroyed', () => {
       this.options.origins.remove(senderId);
@@ -476,6 +500,7 @@ export class ShellHost {
     );
     if (!entry || entry.view.webContents.isDestroyed()) return;
     entry.view.setVisible(true);
+    this.raiseSystemViews(entry.window);
     entry.view.webContents.focus();
     entry.view.webContents.send('workstudio:capture', {
       type: 'cursor',
@@ -494,10 +519,24 @@ export class ShellHost {
     if (!window.isDestroyed()) window.webContents.focus();
   }
 
+  /** 诊断：窗口原生视图从底到顶的顺序。 */
+  viewOrder(windowId: string): Array<{ id: string; type: ViewType }> {
+    const window = this.windows.get(windowId)?.window;
+    if (!window || window.isDestroyed()) return [];
+    const byView = new Map<unknown, ViewEntry>(
+      [...this.views.values()].map((entry) => [entry.view, entry]),
+    );
+    return window.contentView.children.flatMap((view) => {
+      const entry = byView.get(view);
+      return entry ? [{ id: entry.record.id, type: entry.record.type }] : [];
+    });
+  }
+
   setSystemViewVisible(type: 'assistant' | 'overlay', visible: boolean): void {
     for (const entry of this.views.values()) {
       if (entry.record.type !== type) continue;
       if (!entry.view.webContents.isDestroyed()) entry.view.setVisible(visible);
+      this.raiseSystemViews(entry.window);
     }
   }
 
@@ -510,6 +549,7 @@ export class ShellHost {
     for (const entry of this.views.values()) {
       if (entry.windowId !== windowId || entry.record.type !== type) continue;
       if (!entry.view.webContents.isDestroyed()) entry.view.setVisible(visible);
+      this.raiseSystemViews(entry.window);
     }
   }
 
@@ -711,6 +751,24 @@ export class ShellHost {
         entry.view.setVisible(entry.record.active && entry.ready);
       } else if (entry.record.type === 'assistant') {
         entry.view.setVisible(layout.assistantVisible);
+      }
+    }
+    // 页面激活会把 WebContentsView 移到最上层；浮动助手、对话框与捕获层
+    // 必须重新抬回，否则浮在资源面板上的助手会被页面整块盖住。
+    this.raiseSystemViews(windowEntry.window);
+  }
+
+  /** 系统视图固定压在页面视图之上，顺序：assistant → overlay → capture。 */
+  private raiseSystemViews(window: BrowserWindow): void {
+    if (window.isDestroyed()) return;
+    for (const entry of this.views.values()) {
+      if (entry.window !== window) continue;
+      if (
+        entry.record.type === 'assistant' ||
+        entry.record.type === 'overlay' ||
+        entry.record.type === 'capture'
+      ) {
+        window.contentView.addChildView(entry.view);
       }
     }
   }

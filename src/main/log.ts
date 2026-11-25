@@ -1,8 +1,8 @@
 /**
- * 日志：类型来自 @workstudio/sdk，宿主只提供写入实现。
+ * 日志：类型来自 @work-studio/sdk，宿主只提供写入实现。
  */
 
-import type { Log } from '@workstudio/sdk';
+import type { Log } from '@work-studio/sdk';
 
 export type { Log };
 

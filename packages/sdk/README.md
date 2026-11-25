@@ -1,15 +1,24 @@
-# @workstudio/sdk
+# @work-studio/sdk
 
 WorkStudio 插件 SDK。插件在独立仓库开发，通过 npm 安装本包，与宿主共用同一份契约。
 
 ## 安装
 
 ```bash
-pnpm add @workstudio/sdk
+pnpm add @work-studio/sdk
 ```
 
+### 版本策略
+
+- SDK 版本跟随 WorkStudio release：**只在该 SDK 最后一次变化的那次 release 发布**；
+- 没有变化的 release 不发布 SDK，所以版本会跳号；
+- 预发布 tag（`-beta` / `-rc`）不发布 SDK；
+- 插件应锁定当前验证过的版本（例如 `@work-studio/sdk@0.3.3`），不要假设每个 app release 都有对应的 SDK 版本；
+- 宿主 app 的 release notes 会标注它对应的 SDK 版本；
+- 1.0 之前不承诺独立 semver；SDK 兼容性以 WorkStudio 实际支持的契约为准。
+
 公共入口导出 `definePlugin` / `locator`、`window.workStudio` 的 `WorkStudioBridge` 类型，以及插件契约类型（`ResourceAdapter` / `PluginContext` 等）。
-页面只使用 `import '@workstudio/sdk/global'`，直接调用 `window.workStudio`；不再提供 `createPage` 页面封装。
+页面只使用 `import '@work-studio/sdk/global'`，直接调用 `window.workStudio`；不再提供 `createPage` 页面封装。
 
 ## 1. 静态清单（package.json）
 
@@ -34,7 +43,7 @@ pnpm add @workstudio/sdk
 ## 2. 动态引擎
 
 ```ts
-import { definePlugin, locator } from '@workstudio/sdk';
+import { definePlugin, locator } from '@work-studio/sdk';
 
 export const workstudio = definePlugin({
   resources: {
@@ -77,7 +86,7 @@ export const workstudio = definePlugin({
 ## 4. 页面
 
 ```ts
-import '@workstudio/sdk/global';
+import '@work-studio/sdk/global';
 
 const ref = new URLSearchParams(location.search).get('ref') ?? '';
 await window.workStudio.subscribe('workspace', ref);
@@ -87,7 +96,7 @@ await window.workStudio.command('docx', 'docx', 'insert', {
 });
 ```
 
-页面入口只有 `@workstudio/sdk/global`。资源订阅、设置订阅和保存都直接用 `window.workStudio` 的 `subscribe / command / onUpdate`。
+页面入口只有 `@work-studio/sdk/global`。资源订阅、设置订阅和保存都直接用 `window.workStudio` 的 `subscribe / command / onUpdate`。
 
 地址约定由 SDK 生成，页面不能指定目标：
 
@@ -102,7 +111,7 @@ await window.workStudio.command('docx', 'docx', 'insert', {
 页面入口只需要全局类型声明：
 
 ```ts
-import '@workstudio/sdk/global';
+import '@work-studio/sdk/global';
 
 const off = window.workStudio.onUpdate((update) => {
   if (update.domain === 'workspace' && update.resource === 'file:///demo.md') {
@@ -123,14 +132,14 @@ window.workStudio.unsubscribe('workspace', 'file:///demo.md');
 | 看板                          | SDK / 宿主位置                                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | ① package.json 静态声明       | `WorkStudioManifest` + 本 README                                                                  |
-| ② engine.js 的 `definePlugin` | `@workstudio/sdk` 根入口                                                                          |
+| ② engine.js 的 `definePlugin` | `@work-studio/sdk` 根入口                                                                         |
 | ③ 构建拆分                    | `workstudio-plugin` → `commands.json` / `api.json` / `api.d.ts`；`engine.js` 由插件自己的构建产出 |
 | ④ 两条入口，一份实现          | 命令表：页面 `window.workStudio.command` / 助手 `command` / `bash`；宿主统一分发                  |
-| ⑤ 数据接口                    | `ResourceAdapter`（`@workstudio/sdk`）                                                            |
+| ⑤ 数据接口                    | `ResourceAdapter`（`@work-studio/sdk`）                                                           |
 | ⑥ 条目与 locator              | `Item` / `locator`                                                                                |
 | ⑦ 路由归属                    | 宿主 `TransportRouter`：ref → 域 → adapter                                                        |
 | ⑧ 生命周期                    | 宿主 `DomainRegistry` + `PluginLifecycle`                                                         |
-| ⑨ 页面入口                    | `@workstudio/sdk/global` 的 `window.workStudio`                                                   |
+| ⑨ 页面入口                    | `@work-studio/sdk/global` 的 `window.workStudio`                                                  |
 | ⑩ 上下文                      | `PluginContext` 类型                                                                              |
 | ⑪ 清单规则                    | `WorkStudioManifest` + `buildPlugin` 校验                                                         |
 

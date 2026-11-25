@@ -14,4 +14,4 @@ export type {
   ListSection,
   ListSnapshot,
   ListSourceScope,
-} from '@workstudio/sdk';
+} from '@work-studio/sdk';

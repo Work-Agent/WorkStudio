@@ -39,7 +39,7 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@26.6.4)(jiti@2.7.0)(yaml@2.9.0))
-      '@workstudio/sdk':
+      '@work-studio/sdk':
         specifier: workspace:*
         version: link:packages/sdk
       electron:

@@ -2,9 +2,10 @@
  * 插件六阶段：install → resolve → activate → ready → deactivate → uninstall。
  *
  * 装载失败只影响该插件：已登记的贡献被撤销，其它插件继续。
+ * 失败原因单独记录，供投影展示；阶段本身不表达错误。
  */
 
-import type { PluginContribution } from '@workstudio/sdk';
+import type { PluginContribution } from '@work-studio/sdk';
 import type { Protocols } from '../protocols.ts';
 import type { PluginManager } from './manager.ts';
 import type { PluginPackage } from './manifest.ts';
@@ -17,8 +18,14 @@ export type PluginStage =
   | 'deactivate'
   | 'uninstall';
 
+export interface PluginStatus {
+  stage: PluginStage | null;
+  error: string | null;
+}
+
 export class PluginLifecycle {
   private readonly stages = new Map<string, PluginStage>();
+  private readonly errors = new Map<string, string>();
 
   constructor(
     private readonly manager: PluginManager,
@@ -27,6 +34,7 @@ export class PluginLifecycle {
 
   async install(pkg: PluginPackage): Promise<void> {
     this.stages.set(pkg.manifest.id, 'install');
+    this.errors.delete(pkg.manifest.id);
   }
 
   /** 校验清单身份与内容页；失败则拒绝装载。 */
@@ -55,7 +63,9 @@ export class PluginLifecycle {
       // 运行时已就绪：插件列表第一次取数放在这里。
       this.manager.touchLists(pkg.manifest.id);
       this.stages.set(pkg.manifest.id, 'activate');
+      this.errors.delete(pkg.manifest.id);
     } catch (error) {
+      this.errors.set(pkg.manifest.id, messageOf(error));
       // 激活中途失败：先让插件释放已创建的运行时，再撤销注册。
       const scope = this.manager.scopeOf(pkg.manifest.id);
       if (scope) {
@@ -72,6 +82,14 @@ export class PluginLifecycle {
   /** 域可路由、命令入表、页面可开。 */
   ready(pluginId: string): void {
     this.stages.set(pluginId, 'ready');
+    this.errors.delete(pluginId);
+  }
+
+  /** 激活失败但包保留在 installed，供重载或卸载。 */
+  fail(pluginId: string, error: unknown): void {
+    const message = messageOf(error);
+    this.errors.set(pluginId, message);
+    this.stages.set(pluginId, 'activate');
   }
 
   async deactivate(pluginId: string): Promise<void> {
@@ -85,6 +103,7 @@ export class PluginLifecycle {
       await this.manager.revoke(pluginId);
       this.protocols.unregisterPlugin(pluginId);
       this.stages.set(pluginId, 'deactivate');
+      this.errors.delete(pluginId);
     }
   }
 
@@ -93,9 +112,21 @@ export class PluginLifecycle {
       await this.deactivate(pluginId);
     }
     this.stages.set(pluginId, 'uninstall');
+    this.errors.delete(pluginId);
   }
 
   stageOf(pluginId: string): PluginStage | null {
     return this.stages.get(pluginId) ?? null;
   }
+
+  statusOf(pluginId: string): PluginStatus {
+    return {
+      stage: this.stages.get(pluginId) ?? null,
+      error: this.errors.get(pluginId) ?? null,
+    };
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

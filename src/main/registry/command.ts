@@ -5,13 +5,13 @@
  * 参数校验、argv 解析与退出码归一由框架完成，插件只实现 run。
  */
 
-import type { ArgSpec, CommandDecl } from '@workstudio/sdk';
+import type { ArgSpec, CommandDecl } from '@work-studio/sdk';
 import type { ChangeType, Origin } from '../contract.ts';
 import { notImplemented } from '../contract.ts';
 import type { Log } from '../log.ts';
 import type { Address } from './address.ts';
 
-export type { ArgSpec, CommandDecl } from '@workstudio/sdk';
+export type { ArgSpec, CommandDecl } from '@work-studio/sdk';
 
 export type CommandInput = { ref?: string } & Record<string, unknown>;
 

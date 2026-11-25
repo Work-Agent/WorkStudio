@@ -1,7 +1,7 @@
-import '@workstudio/sdk/global';
+import '@work-studio/sdk/global';
 /** workStudio 访问与资源订阅：每个模块只订阅自己消费的资源。 */
 import { useEffect, useState } from 'react';
-import type { WorkStudioBridge, DomainUpdate } from '@workstudio/sdk';
+import type { WorkStudioBridge, DomainUpdate } from '@work-studio/sdk';
 
 export function workStudio(): WorkStudioBridge | undefined {
   return typeof window !== 'undefined' ? window.workStudio : undefined;

@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -45,21 +45,6 @@ function seedTestPlugin(dataDir: string): void {
   const target = join(dataDir, 'plugins', 'installed', 'html-viewer');
   mkdirSync(join(dataDir, 'plugins', 'installed'), { recursive: true });
   cpSync(source, target, { recursive: true });
-  writeFileSync(
-    join(dataDir, 'plugins', 'installed.json'),
-    `${JSON.stringify(
-      {
-        'html-viewer': {
-          id: 'html-viewer',
-          version: '2.0.0',
-          source: 'local',
-          installedAt: Date.now(),
-        },
-      },
-      null,
-      2,
-    )}\n`,
-  );
 }
 
 export async function windowByUrl(

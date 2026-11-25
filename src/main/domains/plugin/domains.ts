@@ -1,109 +1,101 @@
 /**
- * plugin 模块的 System Domain：安装清单、目录与任务。
+ * plugin 模块的 System Domain：可安装目录、已安装投影与任务。
  *
- * 已安装清单来自 PluginStore（未激活也算已安装）；阶段来自生命周期。
+ * 已安装清单来自 installed/<id>/package.json 的实时扫描；没有索引。
+ * 目录与任务状态分别归 PluginCatalogService / PluginService。
  */
 
-import type { PluginLifecycle, PluginStage } from '../../plugin/lifecycle.ts';
-import type { PluginService } from '../../plugin/service.ts';
+import type { PluginLifecycle } from '../../plugin/lifecycle.ts';
+import type { PluginService, PluginTask } from '../../plugin/service.ts';
 import type { CatalogEntry } from '../../plugin/catalog.ts';
+import { compareVersions } from '../../plugin/catalog.ts';
 import type { PluginStore } from '../../plugin/store.ts';
-import { CallFailure, notImplemented } from '../../contract.ts';
-import { activeWindowId } from '../shell/domains.ts';
-import { pending } from '../../registry/command.ts';
+import { CallFailure } from '../../contract.ts';
+import { activeWindowId, type ViewRecord } from '../shell/domains.ts';
+import type { CommandContext } from '../../registry/command.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
+
+export type PluginInstalledStage = 'installed' | 'ready' | 'error' | 'broken';
 
 export interface PluginViewState {
   id: string;
   label: string;
   version: string;
-  stage: PluginStage | 'installed';
+  stage: PluginInstalledStage;
+  error?: string;
+  builtin: boolean;
   hasConfig: boolean;
 }
 
-export type PluginCatalogEntry = CatalogEntry;
-
-export interface PluginTaskState {
-  id: string;
-  status: string;
-  progress?: number;
-  message?: string;
+export interface CatalogItemView extends CatalogEntry {
+  state: 'available' | 'installed' | 'update';
+  installedVersion?: string;
+  builtin: boolean;
 }
 
-export interface PluginState {
-  catalog: PluginCatalogEntry[];
-  task: PluginTaskState | null;
+export interface PluginCatalogView {
+  entries: CatalogItemView[];
+  url: string;
+  fetchedAt: number | null;
+  stale: boolean;
+  error: string | null;
+  warnings: string[];
 }
 
-export function createPluginState(): PluginState {
-  return { catalog: [], task: null };
-}
+export type PluginTaskView = PluginTask;
 
 export function definePluginResources(
   registry: DomainRegistry,
-  state: PluginState,
   store: PluginStore,
   service: PluginService,
   lifecycle: PluginLifecycle,
+  builtinIds: ReadonlySet<string>,
 ): void {
   const installed = registry.define('plugin').resource('installed');
-  installed.snapshot((): PluginViewState[] =>
-    store.list().map((pkg) => ({
-      id: pkg.manifest.id,
-      label: pkg.manifest.label ?? pkg.manifest.id,
-      version: pkg.version,
-      stage: lifecycle.stageOf(pkg.manifest.id) ?? 'installed',
-      hasConfig: Boolean(pkg.settingsPage),
-    })),
-  );
-  installed.command('refresh', {
-    summary: '刷新插件投影',
-    args: {},
-    run: () => {
-      installed.publish();
-      return null;
-    },
+  installed.snapshot((): PluginViewState[] => {
+    return store.scan().map((item) => {
+      const status = lifecycle.statusOf(item.id);
+      const message = item.error ?? status.error;
+      return {
+        id: item.id,
+        label: item.package?.manifest.label ?? item.id,
+        version: item.package?.version ?? item.version,
+        stage: item.error
+          ? 'broken'
+          : status.stage === 'ready'
+            ? 'ready'
+            : message
+              ? 'error'
+              : 'installed',
+        ...(message ? { error: message } : {}),
+        builtin: builtinIds.has(item.id),
+        hasConfig: Boolean(item.package?.settingsPage),
+      };
+    });
   });
   installed.command('install', {
     summary: '安装插件',
     args: { source: { type: 'string', required: true } },
     run: async (input) => {
-      const source = String(input.source);
-      state.task = {
-        id: source,
-        status: 'installing',
-        progress: 0,
-        message: '正在安装',
-      };
-      task.publish();
-      try {
-        const pkg = await service.install(source);
-        await service.activate(pkg.manifest.id);
-        state.task = {
-          id: pkg.manifest.id,
-          status: 'ready',
-          progress: 100,
-          message: '安装完成',
-        };
-        installed.publish();
-        return pkg.manifest.id;
-      } catch (error) {
-        state.task = {
-          id: source,
-          status: 'error',
-          message: error instanceof Error ? error.message : String(error),
-        };
-        throw error;
-      } finally {
-        task.publish();
-      }
+      const id = await service.install(String(input.source));
+      installed.publish();
+      return id;
     },
   });
   installed.command('remove', {
     summary: '卸载插件',
-    args: { id: { type: 'string', required: true } },
+    args: {
+      id: { type: 'string', required: true },
+      purgeData: { type: 'boolean' },
+    },
     run: async (input) => {
-      await service.uninstall(String(input.id));
+      const id = String(input.id);
+      try {
+        await closePluginViews(registry, id);
+      } catch {
+        /* 页面关闭失败不阻塞卸载 */
+      }
+      await service.uninstall(id, input.purgeData === true);
       installed.publish();
       return null;
     },
@@ -122,8 +114,11 @@ export function definePluginResources(
     args: { id: { type: 'string', required: true } },
     run: async (input) => {
       const id = String(input.id);
-      const pkg = store.list().find((item) => item.manifest.id === id);
-      if (!pkg) throw new CallFailure('not_found', `插件不存在：${id}`);
+      const pkg = store.read(id);
+      if (!pkg) throw new CallFailure('not_found', `插件不存在或已损坏：${id}`);
+      if (!pkg.settingsPage) {
+        throw new CallFailure('not_found', `插件没有设置页：${id}`);
+      }
       const label = pkg.manifest.label ?? id;
       const windowId = activeWindowId(registry);
       if (!windowId) throw new CallFailure('failed', '没有活动窗口');
@@ -136,58 +131,157 @@ export function definePluginResources(
           title: `${label} 设置`,
           url: `plugin://${id}/settings`,
         },
-        {
-          origin: { type: 'service', id: 'plugin' },
-          changed: (ref, type) => registry.changed(ref, type),
-          log: {
-            info: () => undefined,
-            warn: () => undefined,
-            error: () => undefined,
-          },
-        },
+        serviceContext(registry),
       );
       if (!result.ok)
         throw new CallFailure(result.error.code, result.error.message);
       return result.data;
     },
   });
-  installed.command('activate', {
-    summary: '按需激活插件',
+  installed.command('reveal', {
+    summary: '在文件管理器中打开插件目录',
     args: { id: { type: 'string', required: true } },
     run: async (input) => {
-      await service.activate(String(input.id));
-      installed.publish();
+      const id = String(input.id);
+      if (!store.read(id) && !store.scan().some((item) => item.id === id)) {
+        throw new CallFailure('not_found', `插件不存在：${id}`);
+      }
+      const result = await registry.dispatchCommand(
+        { domain: 'shell', resource: 'native' },
+        'openPath',
+        { path: store.pathOf(id) },
+        serviceContext(registry),
+      );
+      if (!result.ok)
+        throw new CallFailure(result.error.code, result.error.message);
       return null;
     },
   });
 
   const catalog = registry.define('plugin').resource('catalog');
-  catalog.snapshot(() => service.catalog()?.entries ?? state.catalog);
+  catalog.snapshot(
+    (): PluginCatalogView => catalogView(store, service, builtinIds),
+  );
   catalog.command('refresh', {
     summary: '刷新插件目录',
     args: {},
     run: async () => {
       const result = await service.refreshCatalog();
-      state.catalog = result.entries;
       catalog.publish();
-      return result.entries;
+      return result;
+    },
+  });
+  catalog.command('setSource', {
+    summary: '设置插件目录地址',
+    args: { url: { type: 'string' } },
+    run: async (input) => {
+      const url = typeof input.url === 'string' ? input.url : '';
+      const result = await service.setCatalogUrl(url);
+      catalog.publish();
+      return result;
     },
   });
 
   const task = registry.define('plugin').resource('task');
-  task.snapshot(() => state.task);
+  task.snapshot(() => service.task);
   task.command('cancel', {
     summary: '取消安装任务',
     args: {},
-    run: () => {
-      state.task = null;
-      task.publish();
+    run: async () => {
+      await service.cancel();
       return null;
     },
   });
+  task.command('clear', {
+    summary: '清除已结束的安装任务',
+    args: {},
+    run: () => {
+      service.clearTask();
+      return null;
+    },
+  });
+
+  service.onChange((type) => {
+    if (type === 'task') {
+      task.publish();
+      return;
+    }
+    if (type === 'installed') {
+      installed.publish();
+      catalog.publish();
+      return;
+    }
+    catalog.publish();
+  });
 }
 
-/** 占位：插件域尚未提供列表贡献；系统列表只在 workspace 内。 */
-export function pluginNotImplemented(name: string): never {
-  return notImplemented(name);
+function catalogView(
+  store: PluginStore,
+  service: PluginService,
+  builtinIds: ReadonlySet<string>,
+): PluginCatalogView {
+  const versions = new Map(
+    store
+      .scan()
+      .map((item) => [item.id, item.package?.version ?? item.version]),
+  );
+  const result = service.catalog();
+  return {
+    entries: result.entries.map((entry) => {
+      const installedVersion = versions.get(entry.id);
+      return {
+        ...entry,
+        ...(installedVersion ? { installedVersion } : {}),
+        state: !installedVersion
+          ? 'available'
+          : compareVersions(installedVersion, entry.version) >= 0
+            ? 'installed'
+            : 'update',
+        builtin: builtinIds.has(entry.id),
+      };
+    }),
+    url: result.url,
+    fetchedAt: result.fetchedAt,
+    stale: result.stale,
+    error: result.error ?? null,
+    warnings: result.warnings ?? [],
+  };
+}
+
+function serviceContext(registry: DomainRegistry): CommandContext {
+  return {
+    origin: { type: 'service', id: 'plugin' },
+    changed: (ref, type) => registry.changed(ref, type),
+    log: {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    },
+  };
+}
+
+async function closePluginViews(
+  registry: DomainRegistry,
+  pluginId: string,
+): Promise<void> {
+  const prefix = `plugin://${pluginId}/`;
+  const state = registry.snapshot({
+    domain: 'shell',
+    resource: 'windows',
+  }) as { windows?: Array<{ id: string }> } | null;
+  for (const window of state?.windows ?? []) {
+    const views = registry.snapshot({
+      domain: 'shell',
+      resource: `${window.id}/views`,
+    }) as ViewRecord[] | null;
+    for (const view of views ?? []) {
+      if (!view.url?.startsWith(prefix)) continue;
+      await registry.dispatchCommand(
+        { domain: 'shell', resource: `${window.id}/views` },
+        'close',
+        { id: view.id },
+        serviceContext(registry),
+      );
+    }
+  }
 }

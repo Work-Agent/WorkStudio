@@ -888,6 +888,23 @@ export function defineNativeResource(
     args: {},
     run: () => host?.pickDirectory() ?? null,
   });
+  resource.command('viewOrder', {
+    summary: '读取窗口原生视图层级（诊断）',
+    args: { windowId: { type: 'string', required: true } },
+    run: (input) => host?.viewOrder(String(input.windowId)) ?? [],
+  });
+  resource.command('pickFile', {
+    summary: '选择文件',
+    args: { extensions: { type: 'string' } },
+    run: (input) => {
+      const raw = typeof input.extensions === 'string' ? input.extensions : '';
+      const extensions = raw
+        .split(',')
+        .map((item) => item.trim().replace(/^\./, ''))
+        .filter(Boolean);
+      return host?.pickFile(extensions) ?? null;
+    },
+  });
   resource.command('openPath', {
     summary: '在系统文件管理器中打开路径',
     args: { path: { type: 'string', required: true } },

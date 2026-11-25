@@ -14,7 +14,7 @@ import type {
   ParsedMessage,
   SessionMeta,
 } from '../../../shared/types.ts';
-import type { DomainUpdate } from '@workstudio/sdk';
+import type { DomainUpdate } from '@work-studio/sdk';
 import type { SessionTask } from '../../../shared/session-task.ts';
 
 interface SessionListItem {

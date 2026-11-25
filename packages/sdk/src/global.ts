@@ -2,7 +2,7 @@
  * 页面全局类型：preload 注入 window.workStudio。
  *
  * 页面只写：
- *   import '@workstudio/sdk/global';
+ *   import '@work-studio/sdk/global';
  *   await window.workStudio.command(...);
  *
  * 不再提供 createPage / page-core。

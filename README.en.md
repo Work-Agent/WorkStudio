@@ -375,32 +375,42 @@ plugin-docx.zip
 └── node_modules/        # optional; the plugin bundles its own dependencies
 ```
 
-| Source       | Syntax                              | Where it lands                      |
-| ------------ | ----------------------------------- | ----------------------------------- |
-| Remote zip   | `https://.../plugin.zip#sha256=...` | `<appData>/plugins/installed/<id>/` |
-| Local zip    | `~/Downloads/plugin.zip`            | `<appData>/plugins/installed/<id>/` |
-| Local folder | Absolute path / `./plugins/csv`     | Loaded in place, not copied         |
+| Source       | Syntax                                             | Where it lands                                |
+| ------------ | -------------------------------------------------- | --------------------------------------------- |
+| Remote zip   | `https://.../plugin.zip#sha256=...`                | `<appData>/plugins/installed/<id>/`           |
+| Local zip    | `~/Downloads/plugin.zip`                           | `<appData>/plugins/installed/<id>/`           |
+| Local folder | Absolute path                                      | Copied to `installed/<id>/`; source untouched |
+| Registry     | `catalog:<id>`, with URL and sha256 from the entry | `<appData>/plugins/installed/<id>/`           |
 
-**The install catalog is a Markdown file kept in source** ([PLUGINS.md](PLUGINS.md)), one source per line; it is parsed at build time into a static list inlined into the main process and the plugin settings page, and Markdown is no longer read at runtime:
+**The install catalog is a separate registry** (Work Studio Plugin Registry), no longer kept in the app source tree:
 
-```markdown
-# Installable plugins
+- One JSON entry per plugin; CI validates fields, id, version and sha256, then generates `index.json` on merge;
+- Entry fields: `id` / `name` / `description` / `version` / `source` / `sha256` / `repo` / `tags` / `category`; `source` must be a self-contained zip and `sha256` pins the exact artifact;
+- The app reads only its cache at startup; it fetches `index.json` when the plugin settings page opens or on manual refresh, with conditional requests and a stale-cache fallback;
+- The catalog is for discovery only: installation always trusts the zip manifest, and the catalog id must match the manifest id;
+- Built-in plugins ship with the app, stay out of the registry, and reserve their ids; external packages cannot replace them;
+- No auto-update: when the catalog version is newer than the installed version the UI shows "update"; installation only happens when the user clicks.
 
-- [Word documents](https://github.com/acme/plugin-docx/releases/download/v0.3.1/plugin-docx.zip#sha256=9f2c...)
-- [Spreadsheets](https://github.com/acme/plugin-xlsx/releases/download/v0.2.0/plugin-xlsx.zip#sha256=41ab...)
-- ./plugins/csv
+The registry contract is in [`docs/plugin-registry.md`](./docs/plugin-registry.md).
+
+Install pipeline:
+
+```text
+source (catalog:<id> / URL / zip / directory)
+  ─► download ─► verify sha256 ─► unpack ─► validate manifest / entry / commands.json
+  ─► staging ─► atomically replace installed/<id> ─► activate
 ```
 
-- **The catalog is a compile-time asset**: adding or removing a plugin means editing this file and rebuilding; the runtime neither parses nor rewrites it, and an invalid catalog fails the build.
-- **Rendered from build data**: the plugin settings page receives the catalog inlined at build time and never reads Markdown at runtime.
-- **Installation and loading are distinct**: installed means files and installation records have been committed; loaded means capability registration succeeded. A loading failure keeps the installation record and supports a separate reload. Uninstalling retains the installable catalog entry.
-- **Ad-hoc installs only record state**: manual URLs, dragged-in zips or folders, and community-catalog installs are recorded in the local install index, not in the catalog.
-- **One plugin directory**: `<appData>/plugins/` holds `installed/`, `staging/`, and `installed.json`; it is independent of workspaces and separate from pi resources under `agent/`.
-- **Remote zips must carry sha256**: download to `staging/` → verify → extract → validate manifest / entry / `commands.json` → atomically replace `installed/<id>`; local zips follow the same extraction flow (nothing to compare a remote hash against, so only the content hash is recorded).
-- **Zip is self-contained**: dependencies are bundled into `dist` or shipped inside the zip as `node_modules`; nothing runs npm at install time.
-- **No auto-update**: change the catalog URL / hash, rebuild and reinstall; updates are never silent.
-- **Assembly at startup, hot install at runtime**: at startup scan local paths and `installed/` → import `./engine.js` → register → build pages; install / uninstall take effect immediately — uninstall revokes registrations by owner and closes plugin pages; the ESM module body stays in process memory, a known limitation.
-- **Local sources are not copied**: loaded in place during development; reinstalling the source makes changes effective without a restart.
+- **The directory is the source of truth**: no `installed.json`; startup scans `installed/<id>/package.json` and reads id, version and pages from the package;
+- **Broken packages stay visible**: parse failures or a manifest id mismatch are kept as `broken` and can still be uninstalled;
+- **Install and load are reported separately**: commit means the package has been atomically swapped into `installed/<id>`; an activation failure keeps the package with an error and supports reload or uninstall; a failed install restores the previous version;
+- **Atomic replacement**: the old package moves to `recovery/` before the new one is swapped in; interrupted swaps are restored at startup;
+- **Remote artifacts must pin sha256**: registry entries carry it, manual URLs use `#sha256=`, local zips are hashed but not compared;
+- **Zip is self-contained**: dependencies are bundled into `dist` or shipped as `node_modules`; nothing runs npm at install time;
+- **One plugin directory**: `<appData>/plugins/` holds only `installed/`, `staging/`, `recovery/`, `tmp/`, `data/`, `catalog/`; independent of workspaces and separate from pi resources under `agent/`;
+- **Uninstall**: revoke registrations, close plugin pages, delete the package directory; configuration is kept by default and removed only with an explicit purge;
+- **Tasks belong to the current process**: byte progress, verification, commit and activation are reported by phase; cancellation only applies before commit; no resume across restarts;
+- **Hot install/uninstall**: changes take effect immediately; the ESM module body stays in process memory, and reload uses a new module URL to obtain a fresh instance — a known limitation.
 
 ### 5.4 Settings: endpoint only
 
@@ -517,8 +527,8 @@ node node_modules/electron/install.js
 │   │   └── shared/                # cross-page API, domains and styles
 │   ├── plugins/                   # built-in plugins (shipped with the app)
 │   └── shared/                    # types and styles shared by main / renderer
-├── PLUGINS.md                     # installable plugin catalog (parsed at build time)
-├── docs/                          # systematic design (architecture)
+├── RELEASING.md                   # release and SDK publishing rules
+├── docs/                          # systematic design (architecture / plugin-registry)
 ├── electron.vite.config.ts        # build config for main / preload / renderer
 ├── electron-builder.yml           # packaging config (targets, fuses, signing)
 └── tsconfig.json

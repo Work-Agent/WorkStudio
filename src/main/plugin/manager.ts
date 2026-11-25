@@ -11,7 +11,7 @@ import type {
   PluginContext,
   PluginScope,
   PluginSettings,
-} from '@workstudio/sdk';
+} from '@work-studio/sdk';
 import type { CallResult, ChangeType } from '../contract.ts';
 import { createLog } from '../log.ts';
 import type { TransportRouter } from '../transport/router.ts';

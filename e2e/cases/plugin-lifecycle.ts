@@ -9,7 +9,7 @@ interface Installed {
 
 export default defineCase({
   id: 'plugin.lifecycle',
-  title: '内置插件已安装、可打开设置并重载',
+  title: '插件已安装、可打开设置并重载',
   tags: ['dev', 'ci'],
   async run(ctx) {
     await ensureHtmlFixture(ctx);

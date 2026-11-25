@@ -14,11 +14,18 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify (typecheck / lint / build)
+    name: Verify (typecheck / lint / sdk / build)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      sdk_publish: ${{ steps.sdk_policy.outputs.publish }}
+      sdk_version: ${{ steps.sdk_policy.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # release-sdk.mjs 需要完整历史与 tag 来比较 SDK 变化。
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: pnpm/action-setup@v6
         with:
@@ -32,14 +39,104 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Compare tag with package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match package.json version $APP_VERSION."
+            exit 1
+          fi
+
+      - name: Check SDK release policy
+        id: sdk_policy
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/release-sdk.mjs
+
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: SDK typecheck
+        run: pnpm sdk:typecheck
 
       - name: Lint
         run: pnpm lint
 
       - name: Build
         run: pnpm build
+
+  sdk:
+    name: Publish SDK
+    if: startsWith(github.ref, 'refs/tags/v')
+    # 等三平台安装包都成功再发 npm，避免 app 发布失败但 npm 已经出现新版本。
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      # npm provenance 需要；即使暂时不用，也便于后续打开。
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        if: needs.verify.outputs.sdk_publish == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish to npm
+        if: needs.verify.outputs.sdk_publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SDK_VERSION: ${{ needs.verify.outputs.sdk_version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SDK_VERSION" ]; then
+            echo "::error::SDK publish 被标记为 true，但 sdk_version 为空。"
+            exit 1
+          fi
+          if npm view "@work-studio/sdk@$SDK_VERSION" version >/dev/null 2>&1; then
+            echo "::notice::@work-studio/sdk@$SDK_VERSION 已存在，跳过 npm publish。"
+            exit 0
+          fi
+          pnpm sdk:build
+          cd packages/sdk
+          # 公共仓库可加 --provenance；如果仓库仍是私有，先保持普通发布。
+          npm publish --access public
+
+      - name: Attach SDK tarball to release
+        if: needs.verify.outputs.sdk_publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pnpm sdk:build
+          cd packages/sdk
+          npm pack --silent > /tmp/sdk-pack.txt
+          TARBALL="$(tail -n 1 /tmp/sdk-pack.txt)"
+          cd ../..
+          sha256sum "packages/sdk/$TARBALL" | awk '{print $1}' > "packages/sdk/$TARBALL.sha256"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "$TAG" --generate-notes || true
+          fi
+          gh release upload "$TAG" "packages/sdk/$TARBALL" "packages/sdk/$TARBALL.sha256" --clobber
+
+      - name: Summary
+        run: |
+          echo "SDK publish: ${{ needs.verify.outputs.sdk_publish }}"
+          echo "SDK version: ${{ needs.verify.outputs.sdk_version }}"
 
   build:
     name: Build ${{ matrix.name }}
@@ -214,7 +311,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [verify, build, sdk]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -226,8 +323,24 @@ jobs:
           # 该 job 不 checkout 仓库，gh 无法从 git remote 推断仓库，必须显式指定。
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          SDK_VERSION: ${{ needs.verify.outputs.sdk_version }}
+          SDK_PUBLISH: ${{ needs.verify.outputs.sdk_publish }}
         run: |
           set -euo pipefail
+          if [[ -n "$SDK_VERSION" ]]; then
+            BODY="$(gh release view "$TAG" --json body --jq .body)"
+            if [[ "$TAG" == *-* ]]; then
+              SDK_LINE="SDK: not published for prerelease"
+            elif [[ "$SDK_PUBLISH" == "true" ]]; then
+              SDK_LINE="SDK: \`@work-studio/sdk@$SDK_VERSION\` (published to npm)"
+            else
+              SDK_LINE="SDK: \`@work-studio/sdk@$SDK_VERSION\` (unchanged)"
+            fi
+            if ! grep -q '^SDK: ' <<<"$BODY"; then
+              printf '%s\n\n---\n%s\n' "$BODY" "$SDK_LINE" > "$RUNNER_TEMP/release-notes.md"
+              gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+            fi
+          fi
           if [[ "$TAG" == *-* ]]; then
             gh release edit "$TAG" --draft=false --prerelease
           else

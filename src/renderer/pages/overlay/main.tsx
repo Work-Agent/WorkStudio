@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { DomainUpdate } from '@workstudio/sdk';
+import type { DomainUpdate } from '@work-studio/sdk';
 import type { UiDialogRequest } from '../../../shared/types.ts';
 import '../../shared/styles/index.css';
 

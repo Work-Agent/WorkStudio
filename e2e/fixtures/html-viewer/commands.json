@@ -1,6 +1,22 @@
 {
   "commands": [
     {
+      "name": "html-viewer.read",
+      "summary": "读取 HTML 内容",
+      "args": {
+        "ref": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "exitCodes": {
+        "ok": 0,
+        "failed": 1,
+        "invalid": 2,
+        "notFound": 3
+      }
+    },
+    {
       "name": "html-viewer.save",
       "summary": "保存 HTML 内容",
       "args": {

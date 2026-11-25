@@ -221,6 +221,8 @@ export class AgentModule implements DomainModule {
       this.syncSkills();
       await this.syncSessionResources();
       await this.ensureCurrentSession(current.id);
+      // 会话创建时 pi 才装载技能；创建完成后再同步一次清单。
+      this.syncSkills();
     }
     this.offDialogs = registry.onUpdate((update) => {
       if (
@@ -352,6 +354,7 @@ export class AgentModule implements DomainModule {
     this.syncSkills();
     await this.syncSessionResources();
     await this.ensureCurrentSession(workspaceId);
+    this.syncSkills();
   }
 
   /** 当前工作区还没有活动会话时，建一个草稿会话供助手使用。 */

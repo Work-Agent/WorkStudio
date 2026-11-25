@@ -10,42 +10,37 @@ import type { DomainRegistry } from '../../registry/registry.ts';
 import type { PluginLifecycle } from '../../plugin/lifecycle.ts';
 import type { PluginService } from '../../plugin/service.ts';
 import type { PluginStore } from '../../plugin/store.ts';
-import {
-  createPluginState,
-  definePluginResources,
-  type PluginState,
-} from './domains.ts';
+import { definePluginResources } from './domains.ts';
 
 export class PluginModule implements DomainModule {
   readonly id = 'plugin';
   readonly dependencies = ['workspace'] as const;
 
-  private readonly state: PluginState = createPluginState();
-
   constructor(
     private readonly store: PluginStore,
     private readonly service: PluginService,
     private readonly lifecycle: PluginLifecycle,
+    private readonly builtinIds: ReadonlySet<string>,
   ) {}
 
   attach(registry: DomainRegistry): void {
     definePluginResources(
       registry,
-      this.state,
       this.store,
       this.service,
       this.lifecycle,
+      this.builtinIds,
     );
   }
 
   async start(): Promise<void> {
-    this.store.ensure();
     await this.service.start();
-    for (const pkg of this.store.list()) {
+    for (const item of this.store.scan()) {
+      if (!item.package) continue;
       try {
-        await this.service.activate(pkg.manifest.id);
+        await this.service.activate(item.id);
       } catch (error) {
-        console.warn(`[plugin] activate failed: ${pkg.manifest.id}`, error);
+        console.warn(`[plugin] activate failed: ${item.id}`, error);
       }
     }
   }
@@ -56,7 +51,5 @@ export class PluginModule implements DomainModule {
         await this.service.deactivate(pkg.manifest.id);
       }
     }
-    this.state.catalog = [];
-    this.state.task = null;
   }
 }

@@ -1,7 +1,16 @@
 {
-  "name": "@workstudio/sdk",
+  "name": "@work-studio/sdk",
   "version": "0.1.0",
   "description": "WorkStudio plugin SDK: engine, page and manifest contracts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Work-Agent/WorkStudio.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/Work-Agent/WorkStudio/tree/main/packages/sdk",
+  "bugs": {
+    "url": "https://github.com/Work-Agent/WorkStudio/issues"
+  },
   "keywords": [
     "workstudio",
     "plugin",
@@ -33,7 +42,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

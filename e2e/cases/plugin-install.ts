@@ -20,7 +20,7 @@ export default defineCase({
       writeFileSync(
         join(root, 'package.json'),
         JSON.stringify({
-          name: `@workstudio/${id}`,
+          name: `@work-studio/${id}`,
           version: '1.0.0',
           type: 'module',
           workstudio: {

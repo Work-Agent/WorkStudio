@@ -15,8 +15,8 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
-      "@workstudio/sdk": ["./packages/sdk/src/index.ts"],
-      "@workstudio/sdk/*": ["./packages/sdk/src/*"]
+      "@work-studio/sdk": ["./packages/sdk/src/index.ts"],
+      "@work-studio/sdk/*": ["./packages/sdk/src/*"]
     }
   },
   "include": ["src/**/*", "e2e/**/*", "*.ts", "*.mts"]

@@ -9,7 +9,7 @@
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { safeStorage } from 'electron';
-import type { SecretsAvailability } from '@workstudio/sdk';
+import type { SecretsAvailability } from '@work-studio/sdk';
 
 interface SecretsFile {
   version: 1;

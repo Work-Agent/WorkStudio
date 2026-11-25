@@ -1,8 +1,9 @@
 /**
- * 插件安装存储：运行期只认 plugins/installed。
+ * 插件安装存储：目录即真相源。
  *
- * 内置插件作为构建态资产播种到同一目录；安装记录只描述来源与版本，
- * 不参与运行期路径解析。没有 appRoot、没有第二扫描根。
+ * 运行期只认 plugins/installed/<id>；id、版本、来源都从包内 package.json
+ * 现场读取，不再维护中心索引。staging 只承接未提交的包，recovery 只用于
+ * 原子替换的失败恢复。
  */
 
 import {
@@ -10,29 +11,19 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  writeFileSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { unzipSync } from 'fflate';
-import type { WorkStudioManifest } from '@workstudio/sdk';
+import type { WorkStudioManifest } from '@work-studio/sdk';
 import type { StorageLayout } from '../platform/paths.ts';
 import { readJson, writeJson } from '../platform/json.ts';
-import type { PluginPackage } from './manifest.ts';
-
-export interface InstalledPluginRecord {
-  id: string;
-  version: string;
-  source: 'builtin' | 'zip' | 'local' | 'catalog';
-  builtin?: boolean;
-  hash?: string;
-  installedAt?: number;
-}
-
-export type PluginIndex = Record<string, InstalledPluginRecord>;
+import { isReservedPluginId, type PluginPackage } from './manifest.ts';
 
 export interface BuiltinPackage {
   id: string;
@@ -40,7 +31,26 @@ export interface BuiltinPackage {
   sourceDir: string;
 }
 
-/** 安装根只暴露这三个路径。 */
+/** 扫描 installed 的结果：坏包保留目录名与错误，仍可卸载。 */
+export interface InstalledPlugin {
+  id: string;
+  version: string;
+  package: PluginPackage | null;
+  error: string | null;
+}
+
+/** 已复制到 staging、尚未提交的插件包。 */
+export interface StagedPlugin {
+  package: PluginPackage;
+  /** 本次 staging 的清理根；提交成功后整棵删除。 */
+  cleanupRoot: string;
+}
+
+const ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
+const MAX_ZIP_BYTES = 64 * 1024 * 1024;
+const MAX_UNPACKED_BYTES = 256 * 1024 * 1024;
+const MAX_ZIP_FILES = 20_000;
+
 export class PluginStore {
   constructor(private readonly layout: StorageLayout) {}
 
@@ -51,8 +61,28 @@ export class PluginStore {
       this.layout.pluginsTmpRoot,
       this.layout.pluginsStagingRoot,
       this.layout.pluginsRecoveryRoot,
+      this.layout.pluginsCatalogRoot,
     ]) {
       mkdirSync(path, { recursive: true });
+    }
+  }
+
+  /** 启动时恢复中断的替换：target 缺失则把最新的 recovery 放回。 */
+  recover(): void {
+    this.ensure();
+    for (const id of readdirSync(this.layout.pluginsRecoveryRoot)) {
+      const root = join(this.layout.pluginsRecoveryRoot, id);
+      if (!statSync(root).isDirectory()) {
+        rmSync(root, { force: true });
+        continue;
+      }
+      const target = this.pathOf(id);
+      if (!existsSync(target)) {
+        const stamps = readdirSync(root).sort().reverse();
+        const stamp = stamps[0];
+        if (stamp) renameSync(join(root, stamp), target);
+      }
+      rmSync(root, { recursive: true, force: true });
     }
   }
 
@@ -60,7 +90,13 @@ export class PluginStore {
     return this.layout.pluginsInstalledRoot;
   }
 
+  pathOf(pluginId: string): string {
+    assertPluginId(pluginId);
+    return join(this.layout.pluginsInstalledRoot, pluginId);
+  }
+
   dataRootOf(pluginId: string): string {
+    assertPluginId(pluginId);
     return join(this.layout.pluginsDataRoot, pluginId);
   }
 
@@ -80,198 +116,277 @@ export class PluginStore {
     writeJson(this.settingsFileOf(pluginId), value);
   }
 
-  index(): PluginIndex {
-    const raw = readJson(this.layout.pluginsIndexFile);
-    const result: PluginIndex = {};
-    for (const [id, value] of Object.entries(raw)) {
-      if (typeof value !== 'object' || value === null) continue;
-      const record = value as Partial<InstalledPluginRecord>;
-      if (!record.id || !record.version || !record.source) continue;
-      result[id] = {
-        id: record.id,
-        version: record.version,
-        source: record.source,
-        ...(record.builtin ? { builtin: true } : {}),
-        ...(record.hash ? { hash: record.hash } : {}),
-        ...(record.installedAt ? { installedAt: record.installedAt } : {}),
-      };
-    }
-    return result;
-  }
-
-  writeIndex(index: PluginIndex): void {
-    writeJson(this.layout.pluginsIndexFile, index);
-  }
-
-  /** 扫描 installed；清单无效的目录跳过，由诊断域展示。 */
-  list(): PluginPackage[] {
+  /** 扫描全部目录；坏包也保留，供诊断与卸载。 */
+  scan(): InstalledPlugin[] {
     this.ensure();
-    const result: PluginPackage[] = [];
-    for (const id of readdirSync(this.layout.pluginsInstalledRoot)) {
-      const pkg = this.read(id);
-      if (pkg) result.push(pkg);
+    const result: InstalledPlugin[] = [];
+    for (const entry of readdirSync(this.layout.pluginsInstalledRoot, {
+      withFileTypes: true,
+    })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const id = entry.name;
+      if (!ID_RE.test(id)) continue;
+      const root = join(this.layout.pluginsInstalledRoot, id);
+      try {
+        const pkg = this.inspectAt(root, id);
+        result.push({
+          id,
+          version: pkg.version,
+          package: pkg,
+          error: null,
+        });
+      } catch (error) {
+        result.push({
+          id,
+          version: readVersion(root),
+          package: null,
+          error: messageOf(error),
+        });
+      }
     }
-    return result;
+    return result.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** 只返回可装载的包。 */
+  list(): PluginPackage[] {
+    return this.scan().flatMap((item) => (item.package ? [item.package] : []));
   }
 
   read(pluginId: string): PluginPackage | null {
-    return this.readAt(join(this.layout.pluginsInstalledRoot, pluginId));
+    try {
+      return this.inspectAt(this.pathOf(pluginId), pluginId);
+    } catch {
+      return null;
+    }
   }
 
-  /** 安装本地目录：复制进 installed，保留 plugins/data。 */
-  installDirectory(
-    sourceDir: string,
-    sourceType: 'local' | 'zip' = 'local',
-    hash?: string,
-  ): PluginPackage {
+  /** 本地目录 / zip 解包后的统一入口：先复制到 staging 并校验。 */
+  stageDirectory(sourceDir: string): StagedPlugin {
     this.ensure();
     if (!statSync(sourceDir).isDirectory()) {
       throw new Error('插件来源必须是目录');
     }
-    const pkg = this.readAt(sourceDir);
-    if (!pkg) throw new Error('插件清单无效');
-    const id = pkg.manifest.id;
-    const staging = join(this.layout.pluginsStagingRoot, `${id}.install`);
-    const target = join(this.layout.pluginsInstalledRoot, id);
-    rmSync(staging, { recursive: true, force: true });
-    cpSync(sourceDir, staging, { recursive: true });
-    rmSync(target, { recursive: true, force: true });
-    cpSync(staging, target, { recursive: true });
-    rmSync(staging, { recursive: true, force: true });
-    const index = this.index();
-    index[id] = {
-      id,
-      version: readVersion(target),
-      source: sourceType,
-      ...(hash ? { hash } : {}),
-      installedAt: Date.now(),
-    };
-    this.writeIndex(index);
-    const installed = this.read(id);
-    if (!installed) throw new Error(`插件安装后不可读：${id}`);
-    return installed;
+    const cleanupRoot = join(
+      this.layout.pluginsStagingRoot,
+      `stage-${randomUUID()}`,
+    );
+    rmSync(cleanupRoot, { recursive: true, force: true });
+    cpSync(sourceDir, cleanupRoot, { recursive: true });
+    try {
+      const pkg = this.inspectAt(cleanupRoot);
+      return { package: pkg, cleanupRoot };
+    } catch (error) {
+      rmSync(cleanupRoot, { recursive: true, force: true });
+      throw error;
+    }
   }
 
-  private readAt(root: string): PluginPackage | null {
-    const manifest = readManifest(root);
-    if (!manifest) return null;
-    const entry = resolveExport(root, manifest, './workstudio');
-    const contentPage = resolveRelative(root, manifest.pages?.content);
-    if (!entry || !contentPage) return null;
-    if (!existsSync(entry) || !existsSync(contentPage)) return null;
-    const settingsPage = resolveRelative(root, manifest.pages?.settings);
-    if (settingsPage && !existsSync(settingsPage)) return null;
-    const version = readVersion(root);
+  stageZip(bytes: Uint8Array): StagedPlugin {
+    this.ensure();
+    if (bytes.byteLength > MAX_ZIP_BYTES) {
+      throw new Error('插件包超过 64MB');
+    }
+    const cleanupRoot = join(
+      this.layout.pluginsStagingRoot,
+      `zip-${randomUUID()}`,
+    );
+    rmSync(cleanupRoot, { recursive: true, force: true });
+    mkdirSync(cleanupRoot, { recursive: true });
+    try {
+      let rejected: string | null = null;
+      let count = 0;
+      let total = 0;
+      const files = unzipSync(bytes, {
+        filter: (file) => {
+          count += 1;
+          if (count > MAX_ZIP_FILES) {
+            rejected ??= '文件数量过多';
+            return false;
+          }
+          const normalized = file.name.replace(/\\/g, '/').replace(/^\.\//, '');
+          if (!normalized) {
+            rejected ??= '包含空路径';
+            return false;
+          }
+          if (normalized.endsWith('/')) return false;
+          if (
+            normalized.startsWith('/') ||
+            normalized.includes(':') ||
+            normalized.split('/').includes('..')
+          ) {
+            rejected ??= `包含非法路径：${file.name}`;
+            return false;
+          }
+          if (total + file.originalSize > MAX_UNPACKED_BYTES) {
+            rejected ??= '解压后超过 256MB';
+            return false;
+          }
+          total += file.originalSize;
+          return true;
+        },
+      });
+      if (rejected) throw new Error(`插件包${rejected}`);
+      for (const [name, data] of Object.entries(files)) {
+        const normalized = name.replace(/\\/g, '/').replace(/^\.\//, '');
+        if (!normalized || normalized.endsWith('/')) continue;
+        const file = join(cleanupRoot, normalized);
+        mkdirSync(join(file, '..'), { recursive: true });
+        writeFileSync(file, data);
+      }
+      const root = findPackageRoot(cleanupRoot);
+      if (!root) throw new Error('zip 中缺少 package.json');
+      const pkg = this.inspectAt(root);
+      return { package: pkg, cleanupRoot };
+    } catch (error) {
+      rmSync(cleanupRoot, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /** 原子替换：旧包进 recovery，失败恢复；成功后清理。 */
+  commit(staged: StagedPlugin): PluginPackage {
+    const id = staged.package.manifest.id;
+    const target = this.pathOf(id);
+    const recoveryRoot = join(this.layout.pluginsRecoveryRoot, id);
+    const recovery = join(recoveryRoot, String(Date.now()));
+    let moved = false;
+    try {
+      if (existsSync(target)) {
+        mkdirSync(recoveryRoot, { recursive: true });
+        renameSync(target, recovery);
+        moved = true;
+      }
+      renameSync(staged.package.root, target);
+      const installed = this.read(id);
+      if (!installed) throw new Error(`插件提交后不可读：${id}`);
+      if (moved) rmSync(recoveryRoot, { recursive: true, force: true });
+      return installed;
+    } catch (error) {
+      rmSync(target, { recursive: true, force: true });
+      if (moved && existsSync(recovery)) {
+        renameSync(recovery, target);
+      }
+      throw error;
+    } finally {
+      rmSync(staged.cleanupRoot, { recursive: true, force: true });
+    }
+  }
+
+  discard(staged: StagedPlugin): void {
+    rmSync(staged.cleanupRoot, { recursive: true, force: true });
+  }
+
+  /** 内置包播种：同版本跳过，新版本替换包体，保留 plugins/data。 */
+  seedBuiltin(builtin: BuiltinPackage): boolean {
+    this.ensure();
+    const current = this.read(builtin.id);
+    if (
+      current &&
+      readVersion(builtin.sourceDir) === current.version &&
+      current.version !== '0.0.0'
+    ) {
+      return false;
+    }
+    const staged = this.stageDirectory(builtin.sourceDir);
+    try {
+      this.commit(staged);
+    } catch (error) {
+      this.discard(staged);
+      throw error;
+    }
+    return true;
+  }
+
+  remove(pluginId: string, removeData = true): void {
+    rmSync(this.pathOf(pluginId), { recursive: true, force: true });
+    // v2 文件导入会复制到 tmp；卸载时一并清掉。
+    rmSync(this.tempDirOf(pluginId), { recursive: true, force: true });
+    if (removeData) {
+      rmSync(this.dataRootOf(pluginId), { recursive: true, force: true });
+    }
+  }
+
+  /** 读取并校验一个包目录；expectedId 用于 installed/<id> 的目录名核对。 */
+  private inspectAt(root: string, expectedId?: string): PluginPackage {
+    const pkgFile = join(root, 'package.json');
+    if (!existsSync(pkgFile)) throw new Error('缺少 package.json');
+    const raw = readFileSync(pkgFile, 'utf-8');
+    let pkg: {
+      version?: unknown;
+      exports?: string | Record<string, unknown>;
+      workstudio?: unknown;
+      workStudio?: unknown;
+    };
+    try {
+      pkg = JSON.parse(raw) as typeof pkg;
+    } catch {
+      throw new Error('package.json 无法解析');
+    }
+    const manifest = (pkg.workstudio ?? pkg.workStudio) as
+      | WorkStudioManifest
+      | undefined;
+    if (!manifest || typeof manifest !== 'object') {
+      throw new Error('缺少 workstudio 清单');
+    }
+    if (typeof manifest.id !== 'string' || !ID_RE.test(manifest.id)) {
+      throw new Error('插件 id 非法');
+    }
+    if (isReservedPluginId(manifest.id)) {
+      throw new Error(`插件 id 保留：${manifest.id}`);
+    }
+    if (expectedId && manifest.id !== expectedId) {
+      throw new Error(`清单 id 与目录名不一致：${manifest.id} ≠ ${expectedId}`);
+    }
+    if (!manifest.pages?.content) {
+      throw new Error('缺少内容页');
+    }
+    const entry = resolveExport(root, pkg.exports);
+    if (!entry || !existsSync(entry)) {
+      throw new Error("缺少 exports['./workstudio'] 入口");
+    }
+    const contentPage = join(root, manifest.pages.content);
+    if (!existsSync(contentPage)) {
+      throw new Error('内容页文件不存在');
+    }
+    const settingsPage = manifest.pages.settings
+      ? join(root, manifest.pages.settings)
+      : null;
+    if (settingsPage && !existsSync(settingsPage)) {
+      throw new Error('设置页文件不存在');
+    }
+    const commandsFile = join(root, 'commands.json');
+    if (!existsSync(commandsFile)) {
+      throw new Error('缺少 commands.json');
+    }
+    try {
+      JSON.parse(readFileSync(commandsFile, 'utf-8'));
+    } catch {
+      throw new Error('commands.json 无法解析');
+    }
     return {
       manifest,
-      version,
+      version: typeof pkg.version === 'string' ? pkg.version : '0.0.0',
       root,
       entry,
       contentPage,
       ...(settingsPage ? { settingsPage } : {}),
     };
   }
-
-  /** 内置包播种：同版本跳过，新版本替换包体，保留 plugins/data。 */
-  seedBuiltin(builtin: BuiltinPackage): boolean {
-    this.ensure();
-    const target = join(this.layout.pluginsInstalledRoot, builtin.id);
-    const index = this.index();
-    const current = index[builtin.id];
-    if (
-      current?.builtin &&
-      current.version === readVersion(builtin.sourceDir)
-    ) {
-      return false;
-    }
-    const staging = join(this.layout.pluginsStagingRoot, `${builtin.id}.seed`);
-    rmSync(staging, { recursive: true, force: true });
-    cpSync(builtin.sourceDir, staging, { recursive: true });
-    rmSync(target, { recursive: true, force: true });
-    cpSync(staging, target, { recursive: true });
-    rmSync(staging, { recursive: true, force: true });
-    index[builtin.id] = {
-      id: builtin.id,
-      version: readVersion(target),
-      source: 'builtin',
-      builtin: true,
-      installedAt: Date.now(),
-    };
-    this.writeIndex(index);
-    return true;
-  }
-
-  /** zip 先解到 staging，再走统一目录安装。 */
-  installZip(bytes: Uint8Array): PluginPackage {
-    this.ensure();
-    const hash = createHash('sha256').update(bytes).digest('hex');
-    const staging = join(this.layout.pluginsStagingRoot, `zip-${Date.now()}`);
-    rmSync(staging, { recursive: true, force: true });
-    mkdirSync(staging, { recursive: true });
-    try {
-      const files = unzipSync(bytes);
-      for (const [name, data] of Object.entries(files)) {
-        const normalized = name.replace(/\\/g, '/').replace(/^\.\//, '');
-        if (
-          !normalized ||
-          normalized.endsWith('/') ||
-          normalized.startsWith('/') ||
-          normalized.includes('..')
-        ) {
-          continue;
-        }
-        const file = join(staging, normalized);
-        mkdirSync(join(file, '..'), { recursive: true });
-        writeFileSync(file, data);
-      }
-      const root = findPackageRoot(staging);
-      if (!root) throw new Error('zip 中缺少 package.json');
-      return this.installDirectory(root, 'zip', hash);
-    } finally {
-      rmSync(staging, { recursive: true, force: true });
-    }
-  }
-
-  remove(pluginId: string, removeData = true): void {
-    rmSync(join(this.layout.pluginsInstalledRoot, pluginId), {
-      recursive: true,
-      force: true,
-    });
-    rmSync(this.tempDirOf(pluginId), { recursive: true, force: true });
-    if (removeData) {
-      rmSync(this.dataRootOf(pluginId), { recursive: true, force: true });
-    }
-    const index = this.index();
-    delete index[pluginId];
-    this.writeIndex(index);
-  }
 }
 
-function readManifest(root: string): WorkStudioManifest | null {
-  const file = join(root, 'package.json');
-  if (!existsSync(file)) return null;
-  try {
-    const pkg = JSON.parse(readFileSync(file, 'utf-8')) as {
-      workstudio?: unknown;
-      workStudio?: unknown;
-    };
-    const raw = pkg.workstudio ?? pkg.workStudio;
-    if (typeof raw !== 'object' || raw === null) return null;
-    const manifest = raw as WorkStudioManifest;
-    if (typeof manifest.id !== 'string' || !manifest.id) return null;
-    return manifest;
-  } catch {
-    return null;
-  }
+function assertPluginId(pluginId: string): void {
+  if (!ID_RE.test(pluginId)) throw new Error(`插件 id 非法：${pluginId}`);
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function readVersion(root: string): string {
   try {
     const pkg = JSON.parse(
       readFileSync(join(root, 'package.json'), 'utf-8'),
-    ) as {
-      version?: unknown;
-    };
+    ) as { version?: unknown };
     return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
   } catch {
     return '0.0.0';
@@ -280,31 +395,17 @@ function readVersion(root: string): string {
 
 function resolveExport(
   root: string,
-  manifest: WorkStudioManifest,
-  key: string,
+  exportsValue: string | Record<string, unknown> | undefined,
 ): string | null {
-  const file = join(root, 'package.json');
-  try {
-    const pkg = JSON.parse(readFileSync(file, 'utf-8')) as {
-      exports?: string | Record<string, unknown>;
-    };
-    const value = pkg.exports;
-    if (typeof value === 'string') return resolveRelative(root, value);
-    const entry = value?.[key] ?? value?.[key.replace('./', '')];
-    if (typeof entry === 'string') return resolveRelative(root, entry);
-    if (typeof entry === 'object' && entry !== null) {
-      const fallback = (entry as { default?: unknown }).default;
-      if (typeof fallback === 'string') return resolveRelative(root, fallback);
-    }
-  } catch {
-    /* ignore */
+  const key = './workstudio';
+  if (typeof exportsValue === 'string') return join(root, exportsValue);
+  const entry = exportsValue?.[key] ?? exportsValue?.['workstudio'];
+  if (typeof entry === 'string') return join(root, entry);
+  if (typeof entry === 'object' && entry !== null) {
+    const fallback = (entry as { default?: unknown }).default;
+    if (typeof fallback === 'string') return join(root, fallback);
   }
   return null;
-}
-
-function resolveRelative(root: string, value?: string): string | null {
-  if (!value) return null;
-  return join(root, value);
 }
 
 function findPackageRoot(root: string): string | null {

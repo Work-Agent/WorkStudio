@@ -39,6 +39,25 @@ export default defineCase({
         }),
       '浮动助手未产生几何',
     );
+
+    const order = (await ctx.evaluate(async (id) => {
+      const result = await window.workStudio.command(
+        'shell',
+        'native',
+        'viewOrder',
+        { windowId: id },
+      );
+      return result.ok ? result.data : [];
+    }, windowId)) as Array<{ id: string; type: string }>;
+    const assistantIndex = order.findIndex((item) => item.type === 'assistant');
+    let pageIndex = -1;
+    order.forEach((item, index) => {
+      if (item.type === 'page' || item.type === 'web') pageIndex = index;
+    });
+    if (assistantIndex < 0) throw new Error('浮动助手视图不存在');
+    if (pageIndex >= 0 && assistantIndex < pageIndex) {
+      throw new Error('浮动助手被页面视图覆盖');
+    }
     await ctx.evaluate(async () => {
       const id = window.workStudio.workspaceId;
       if (!id) return;

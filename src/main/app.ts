@@ -41,9 +41,8 @@ import { PluginLifecycle } from './plugin/lifecycle.ts';
 import { PluginManager } from './plugin/manager.ts';
 import { DomainRegistry } from './registry/registry.ts';
 import { createLog } from './log.ts';
-import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
 
 export interface NextAppOptions {
   dataRoot: string;
@@ -63,17 +62,23 @@ export interface NextAppOptions {
   shell?: Omit<ShellHostOptions, 'origins'>;
 }
 
-function seedBuiltins(store: PluginStore, root: string | undefined): void {
-  if (!root || !existsSync(root)) return;
+function seedBuiltins(
+  store: PluginStore,
+  root: string | undefined,
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  if (!root || !existsSync(root)) return ids;
   for (const name of readdirSync(root)) {
     const sourceDir = join(root, name);
     if (!statSync(sourceDir).isDirectory()) continue;
+    ids.add(name);
     try {
       store.seedBuiltin({ id: name, sourceDir });
     } catch (error) {
       console.warn('[plugin] seed builtin failed', name, error);
     }
   }
+  return ids;
 }
 
 export class NextApp {
@@ -88,6 +93,7 @@ export class NextApp {
   readonly lifecycle: PluginLifecycle;
   readonly pluginStore: PluginStore;
   readonly pluginService: PluginService;
+  readonly builtinPluginIds: ReadonlySet<string>;
   readonly pages: PageRouter;
   readonly shellHost: ShellHost | null;
   readonly dispatcher: Dispatcher;
@@ -108,7 +114,10 @@ export class NextApp {
     this.transport.register('files', files, [{ prefixes: ['file://'] }]);
 
     this.pluginStore = new PluginStore(this.storage);
-    seedBuiltins(this.pluginStore, options.builtinPluginsRoot);
+    this.builtinPluginIds = seedBuiltins(
+      this.pluginStore,
+      options.builtinPluginsRoot,
+    );
     const pluginFiles = new PluginFiles(this.storage.pluginsTmpRoot);
     const pluginSecrets = new SecretsService(this.storage.pluginsDataRoot);
     const lists = new ListService();
@@ -124,6 +133,7 @@ export class NextApp {
       lifecycle: this.lifecycle,
       catalog: new PluginCatalogService(this.storage),
       files: pluginFiles,
+      isBuiltin: (id) => this.builtinPluginIds.has(id),
     });
     this.shellHost = options.shell
       ? new ShellHost({ ...options.shell, origins: this.origins })
@@ -155,6 +165,7 @@ export class NextApp {
       pluginService: this.pluginService,
       pluginFiles,
       lists,
+      builtinPluginIds: this.builtinPluginIds,
       appearance: this.appearance,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
       openItem: (item, workspaceId) => this.openListItem(item, workspaceId),
