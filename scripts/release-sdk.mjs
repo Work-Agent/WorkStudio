@@ -64,6 +64,31 @@ function npmLatest() {
   }
 }
 
+/** 已发布包对应的提交：以 npm 的 gitHead 作为变化比较基线。 */
+function npmGitHead(version) {
+  try {
+    const raw = run('npm', [
+      'view',
+      `${NPM_NAME}@${version}`,
+      'gitHead',
+      '--json',
+    ]);
+    const value = JSON.parse(raw);
+    return typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasCommit(ref) {
+  const result = spawnSync('git', ['cat-file', '-e', `${ref}^{commit}`], {
+    stdio: 'ignore',
+  });
+  return result.status === 0;
+}
+
 /** 上一个稳定 tag（不含 -beta / -rc），SDK 只在稳定版发布。 */
 function previousStableTag(tag) {
   let output;
@@ -151,13 +176,22 @@ if (latest === null) {
   process.exit(0);
 }
 
-const previous = previousStableTag(tag);
-const changed = changedSince(tag, previous);
+const publishedFrom = latest ? npmGitHead(latest) : null;
+const baseline =
+  publishedFrom && hasCommit(publishedFrom)
+    ? publishedFrom
+    : previousStableTag(tag);
+if (publishedFrom && !hasCommit(publishedFrom)) {
+  console.warn(
+    `::warning::npm ${NPM_NAME}@${latest} 的 gitHead ${publishedFrom} 不在当前历史中，回退到上一个稳定 tag。`,
+  );
+}
+const changed = changedSince(tag, baseline);
 
 if (sdkVersion === latest) {
   if (changed) {
     fail(
-      `SDK 自 ${previous ?? '首个版本'} 以来有变化，但版本仍是 ${sdkVersion}；请 bump 到 ${tagVersion}`,
+      `SDK 自 ${baseline ? baseline.slice(0, 7) : '首个版本'} 以来有变化，但版本仍是 ${sdkVersion}；请 bump 到 ${tagVersion}`,
     );
   }
   output({
