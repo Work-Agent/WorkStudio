@@ -266,6 +266,29 @@ export function defineWorkspaceListResource(
       return snapshot;
     },
   });
+  resource.command('open', {
+    summary: '按 ref 打开列表项',
+    args: {
+      ref: { type: 'string', required: true },
+      title: { type: 'string' },
+    },
+    run: openItem
+      ? (input) => {
+          const ref = String(input.ref);
+          const title =
+            typeof input.title === 'string' && input.title ? input.title : ref;
+          return openItem(
+            {
+              key: ref,
+              itemType: 'document',
+              title,
+              meta: { ref },
+            },
+            workspaceId,
+          );
+        }
+      : pending('workspace/<wsId>/list/open'),
+  });
   resource.command('action', {
     summary: '执行列表动作',
     args: {

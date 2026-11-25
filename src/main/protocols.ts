@@ -127,7 +127,9 @@ export class Protocols {
     }
     if (kind === 'assets' && rest.length > 0) {
       const tail = rest.join('/');
+      // 页面入口既可能自带 assets 目录，也可能用构建器拆到上一级 assets。
       const candidates = [
+        join(dirname(entry.content), 'assets', tail),
         join(dirname(entry.content), '..', 'assets', tail),
         join(entry.root, 'assets', tail),
         join(entry.root, 'dist', 'assets', tail),

@@ -24,6 +24,7 @@ import {
   TITLEBAR_OVERLAY_COLORS,
 } from '../../../shared/titlebar.ts';
 import { hardenWebContents } from '../../platform/policy.ts';
+import { parsePluginUrl } from '../../../shared/pages.ts';
 import { WORKSPACE_ARG } from '../../../shared/channels.ts';
 import type { ViewRecord, WindowRecord } from './domains.ts';
 
@@ -260,6 +261,28 @@ export class ShellHost {
     await shell.openPath(path);
   }
 
+  /** 保存对话框：只返回用户选定的目标路径，是否真的写入由调用方决定。 */
+  async showSaveDialog(defaultName?: string): Promise<string | null> {
+    const options = {
+      title: '保存文件',
+      ...(defaultName ? { defaultPath: defaultName } : {}),
+    };
+    const window =
+      BrowserWindow.getFocusedWindow() ??
+      [...this.windows.values()].find((entry) => !entry.window.isDestroyed())
+        ?.window;
+    const result = window
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+    return result.canceled ? null : (result.filePath ?? null);
+  }
+
+  /** 仅 http(s)：file/work/plugin 等协议一律不交给系统浏览器。 */
+  async openExternal(url: string): Promise<void> {
+    if (!/^https?:\/\//i.test(url)) throw new Error('只允许打开网页链接');
+    await shell.openExternal(url);
+  }
+
   popupMenu(
     items: Array<{ id: string; label: string; disabled?: boolean }>,
   ): Promise<string | null> {
@@ -373,10 +396,24 @@ export class ShellHost {
     };
     this.views.set(ShellHost.viewKey(windowId, id), entry);
     this.resizeWindow(windowEntry.record.id);
+    // 插件页身份只从 URL 推导；页面自身与页面来源都改不了它。
+    const pluginId = input.url ? parsePluginUrl(input.url)?.id : undefined;
     this.options.origins.register(senderId, {
       type: 'view',
       viewId: id,
       viewType: input.type,
+      workspaceId: windowEntry.record.workspaceId,
+      ...(pluginId ? { pluginId } : {}),
+    });
+    hardenWebContents(view.webContents, {
+      allowNavigation: (url) => {
+        if (input.type === 'web') {
+          return /^https?:/i.test(url) || url.startsWith('work://studio/oauth');
+        }
+        if (pluginId) return parsePluginUrl(url)?.id === pluginId;
+        // 系统页：正式包只走 work://；开发模式下页面地址是 dev server。
+        return url.startsWith('work://') || (dev && /^https?:/i.test(url));
+      },
     });
     view.webContents.on('destroyed', () => {
       this.options.origins.remove(senderId);
@@ -657,6 +694,7 @@ export class ShellHost {
       type: 'view',
       viewId: `shell:${workspaceId}`,
       viewType: 'shell',
+      workspaceId,
     });
   }
 

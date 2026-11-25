@@ -7,8 +7,9 @@
  */
 
 import type { CallResult, ChangeType, DomainUpdate } from '../contract.ts';
-import { errorResult } from '../contract.ts';
+import { errorResult, failure } from '../contract.ts';
 import type { Address } from './address.ts';
+import { commandDenialOf } from './authorization.ts';
 import {
   coerceCommandInput,
   commandKey,
@@ -279,6 +280,9 @@ export class DomainRegistry {
         },
       };
     }
+
+    const denial = commandDenialOf(ctx.origin, entry);
+    if (denial) return failure('denied', denial);
 
     const coerced = coerceCommandInput(entry.decl, input);
     const invalid = validateCommandInput(entry.decl, coerced);

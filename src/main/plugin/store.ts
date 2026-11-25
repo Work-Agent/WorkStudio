@@ -48,6 +48,7 @@ export class PluginStore {
     for (const path of [
       this.layout.pluginsInstalledRoot,
       this.layout.pluginsDataRoot,
+      this.layout.pluginsTmpRoot,
       this.layout.pluginsStagingRoot,
       this.layout.pluginsRecoveryRoot,
     ]) {
@@ -61,6 +62,10 @@ export class PluginStore {
 
   dataRootOf(pluginId: string): string {
     return join(this.layout.pluginsDataRoot, pluginId);
+  }
+
+  tempDirOf(pluginId: string): string {
+    return join(this.layout.pluginsTmpRoot, pluginId);
   }
 
   settingsFileOf(pluginId: string): string {
@@ -232,6 +237,7 @@ export class PluginStore {
       recursive: true,
       force: true,
     });
+    rmSync(this.tempDirOf(pluginId), { recursive: true, force: true });
     if (removeData) {
       rmSync(this.dataRootOf(pluginId), { recursive: true, force: true });
     }

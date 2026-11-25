@@ -8,6 +8,7 @@
 import { readScenes, writeScene } from '../../platform/ui-state.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import type { AppearanceStore } from '../../platform/appearance.ts';
+import type { PluginFiles } from '../../plugin/files.ts';
 import type { Protocols } from '../../protocols.ts';
 import type { ShellHost } from './native.ts';
 import { createLog } from '../../log.ts';
@@ -43,6 +44,8 @@ export interface ShellModuleOptions {
   protocols: Protocols;
   appearance: AppearanceStore;
   host?: ShellHost;
+  /** 插件文件服务：保存对话框签发 token 用。 */
+  files?: PluginFiles;
   storage?: StorageLayout;
 }
 
@@ -120,7 +123,7 @@ export class ShellModule implements DomainModule {
           }
         : {},
     );
-    defineNativeResource(registry, this.options.host);
+    defineNativeResource(registry, this.options.host, this.options.files);
     definePagesResource(registry, this.options.protocols, async (url) => {
       const windowId = activeWindowId(registry);
       if (!windowId) throw new CallFailure('failed', '没有活动窗口');

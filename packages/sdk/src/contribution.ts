@@ -7,17 +7,27 @@
 
 import type { CommandDecl } from './command.ts';
 import type { PluginContext } from './context.ts';
+import type { PluginList } from './list.ts';
 import type { ResourceAdapter } from './resource.ts';
+import type { PluginScope } from './scope.ts';
 
 export type PluginCommandInput = { ref: string } & Record<string, unknown>;
 
+/** 命令的调用面控制；助手默认看不到插件命令。 */
+export interface PluginCommandExposure {
+  /** 是否暴露给助手命令表；缺省 false。 */
+  agent?: boolean;
+}
+
 export interface PluginCommand extends CommandDecl {
   run(input: PluginCommandInput, ctx: PluginContext): Promise<unknown>;
+  expose?: PluginCommandExposure;
 }
 
 export interface PluginLifecycle {
-  activate?(): void | Promise<void>;
-  deactivate?(): void | Promise<void>;
+  /** 激活：创建跨命令的运行时；scope 在 deactivate 后失效。 */
+  activate?(scope: PluginScope): void | Promise<void>;
+  deactivate?(scope: PluginScope): void | Promise<void>;
 }
 
 export interface PluginContribution {
@@ -25,6 +35,10 @@ export interface PluginContribution {
   resources: Record<string, ResourceAdapter>;
   /** 命令键 `<domain>.<action>`；插件不解析 argv。 */
   commands: Record<string, PluginCommand>;
+  /** 插件列表：定义 + 现取数据；owner 由宿主编排。 */
+  lists?: readonly PluginList[];
+  /** 是否创建 `<pluginId>/events` 事件资源。 */
+  events?: boolean;
   lifecycle?: PluginLifecycle;
 }
 

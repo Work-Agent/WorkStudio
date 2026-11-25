@@ -8,6 +8,7 @@
 import { ipcMain, webContents } from 'electron';
 import type { DomainUpdate } from '../contract.ts';
 import { BRIDGE_CHANNELS } from '../../shared/channels.ts';
+import type { PluginFiles } from '../plugin/files.ts';
 import type { Dispatcher } from './dispatcher.ts';
 import type { Origins } from './origins.ts';
 
@@ -17,6 +18,7 @@ export class IpcChannel {
   constructor(
     private readonly dispatcher: Dispatcher,
     private readonly origins: Origins,
+    private readonly files: PluginFiles,
   ) {}
 
   attach(): void {
@@ -75,6 +77,23 @@ export class IpcChannel {
         );
       },
     );
+    ipcMain.handle(
+      BRIDGE_CHANNELS.fileToken,
+      (event, path: unknown, name?: unknown) => {
+        // 只有宿主登记过的插件视图能导入文件；导入件留在插件临时区。
+        const senderId = String(event.sender.id);
+        const origin = this.origins.of(senderId);
+        const pluginId = origin?.type === 'view' ? origin.pluginId : undefined;
+        if (!pluginId) throw new Error('当前页面不能导入文件');
+        if (typeof path !== 'string' || !path)
+          throw new Error('文件路径不可用');
+        return this.files.importFile(
+          pluginId,
+          path,
+          typeof name === 'string' ? name : undefined,
+        );
+      },
+    );
   }
 
   detach(): void {
@@ -84,6 +103,7 @@ export class IpcChannel {
     ipcMain.removeAllListeners(BRIDGE_CHANNELS.unsubscribe);
     ipcMain.removeHandler(BRIDGE_CHANNELS.command);
     ipcMain.removeAllListeners(BRIDGE_CHANNELS.notify);
+    ipcMain.removeHandler(BRIDGE_CHANNELS.fileToken);
   }
 
   /** Dispatcher 的投递出口：viewId → 对应的 webContents。 */

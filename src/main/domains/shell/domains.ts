@@ -12,6 +12,7 @@ import { resolveAppearance } from '../../../shared/appearance.ts';
 import type { ViewType } from '../../contract.ts';
 import { CallFailure } from '../../contract.ts';
 import type { Protocols } from '../../protocols.ts';
+import type { PluginFiles } from '../../plugin/files.ts';
 import type { ShellHost, ViewOpenInput } from './native.ts';
 import type {
   InteractionPreview,
@@ -850,9 +851,38 @@ function isRect(value: unknown): value is NonNullable<SceneState['floating']> {
 export function defineNativeResource(
   registry: DomainRegistry,
   host?: ShellHost,
+  files?: PluginFiles,
 ): void {
   const resource = registry.define('shell').resource('native');
   resource.snapshot(() => ({ available: Boolean(host) }));
+  resource.command('saveFile', {
+    summary: '弹出保存对话框',
+    args: { name: { type: 'string' } },
+    run: async (input, ctx) => {
+      const target = await host?.showSaveDialog(
+        typeof input.name === 'string' ? input.name : '',
+      );
+      if (!target) return { cancelled: true };
+      // 插件来源只拿到一次性 token，绝对路径不出主进程。
+      const pluginId =
+        ctx.origin.type === 'view' ? ctx.origin.pluginId : undefined;
+      if (!pluginId) return { cancelled: false, path: target };
+      if (!files) throw new CallFailure('failed', '插件文件服务不可用');
+      return { cancelled: false, ...files.issueSaveToken(pluginId, target) };
+    },
+  });
+  resource.command('openExternal', {
+    summary: '用系统浏览器打开网页',
+    args: { url: { type: 'string', required: true } },
+    run: async (input) => {
+      const url = String(input.url);
+      if (!/^https?:\/\//i.test(url)) {
+        throw new CallFailure('invalid', '只允许打开 http(s) 链接');
+      }
+      await host?.openExternal(url);
+      return null;
+    },
+  });
   resource.command('pickDirectory', {
     summary: '选择目录',
     args: {},

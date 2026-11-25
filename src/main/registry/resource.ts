@@ -52,6 +52,8 @@ export class Resource {
       action,
       decl: { summary: spec.summary, args: spec.args ?? {} },
       owner: this.owner,
+      // 可选字段原样透传；未声明时保持「缺省暴露」，不改变既有命令行为。
+      agentExposed: spec.agentExposed,
       run: spec.run,
     });
   }

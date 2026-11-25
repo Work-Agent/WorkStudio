@@ -30,6 +30,8 @@ export type CommandRun = (
 export interface CommandSpec {
   summary: string;
   args?: Record<string, ArgSpec>;
+  /** 是否暴露给助手命令表；缺省 true。 */
+  agentExposed?: boolean;
   run: CommandRun;
 }
 
@@ -39,6 +41,8 @@ export interface CommandEntry {
   decl: CommandDecl;
   /** 实现归属：系统模块 id 或插件 id，撤销注册时按它清理。 */
   owner: string;
+  /** 是否暴露给助手命令表；缺省 true。 */
+  agentExposed?: boolean;
   run: CommandRun;
 }
 

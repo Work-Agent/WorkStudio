@@ -1,11 +1,17 @@
 /**
  * 系统列表投影：provider → ListGroup → 每个工作区一份 ListSnapshot。
  *
- * 列表定义归 App/Workspace，数据由 provider 现取；插件列表暂不开放，
- * 这里只承载 docs/temp/sessions/plugins/settings 五类系统 provider。
+ * 列表定义归 App/Workspace，数据由 provider 现取；系统与插件列表共用
+ * 同一注册表，插件定义以插件 id 为 owner，撤销时按 owner 清理。
  */
 
 import type {
+  ListDefinition,
+  ListGroup,
+  ListSnapshot,
+} from '../../../shared/lists.ts';
+
+export type {
   ListDefinition,
   ListGroup,
   ListSnapshot,
@@ -28,7 +34,12 @@ interface ListEntry {
 
 export class ListRegistry {
   private readonly entries = new Map<string, ListEntry>();
+  private readonly listeners = new Set<(ids: string[]) => void>();
 
+  /**
+   * 登记定义与取数实现。注册本身不代表数据可算：系统列表在模块启动时
+   * 全量刷新，插件列表在 runtime 就绪后由 `touch` 触发。
+   */
   register(
     definition: ListDefinition,
     provider: ListProvider | undefined,
@@ -37,10 +48,44 @@ export class ListRegistry {
     this.entries.set(definition.id, { definition, provider, owner });
   }
 
-  revokeOwner(owner: string): void {
+  has(id: string): boolean {
+    return this.entries.has(id);
+  }
+
+  idsOfOwner(owner: string): string[] {
+    const ids: string[] = [];
     for (const [id, entry] of this.entries) {
-      if (entry.owner === owner) this.entries.delete(id);
+      if (entry.owner === owner) ids.push(id);
     }
+    return ids;
+  }
+
+  revokeOwner(owner: string): void {
+    const removed: string[] = [];
+    for (const [id, entry] of this.entries) {
+      if (entry.owner !== owner) continue;
+      this.entries.delete(id);
+      removed.push(id);
+    }
+    if (removed.length) this.notify(removed);
+  }
+
+  /** 订阅定义集合变化：返回本次受影响的列表 id。 */
+  onChange(listener: (ids: string[]) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /** 归属方完成一轮注册后主动触发重算。 */
+  touch(owner: string): void {
+    const ids = this.idsOfOwner(owner);
+    if (ids.length) this.notify(ids);
+  }
+
+  private notify(ids: string[]): void {
+    for (const listener of this.listeners) listener(ids);
   }
 
   definitions(): ListDefinition[] {
@@ -49,15 +94,17 @@ export class ListRegistry {
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
-  /** 来源资源命中：哪些组需要随它重算。 */
-  definitionsOf(domain: string, resource: string): string[] {
+  /** 来源资源命中：哪些组需要随它重算；事件级依赖同时比对事件名。 */
+  definitionsOf(domain: string, resource: string, event?: string): string[] {
     const matched: string[] = [];
     for (const [id, entry] of this.entries) {
       const deps = entry.definition.deps ?? [];
       const hit = deps.some(
         (dep) =>
           dep.domain === domain &&
-          (dep.resource === resource || resource.endsWith(`/${dep.resource}`)),
+          (dep.resource === resource ||
+            resource.endsWith(`/${dep.resource}`)) &&
+          (dep.event === undefined || dep.event === event),
       );
       if (hit) matched.push(id);
     }
@@ -107,7 +154,9 @@ export class ListService {
       }
     }
     const kept = (previous?.groups ?? []).filter(
-      (group) => !refreshed.has(group.definitionId),
+      (group) =>
+        !refreshed.has(group.definitionId) &&
+        this.registry.has(group.definitionId),
     );
     const groups = [...kept, ...[...refreshed.values()].flat()].sort(
       (a, b) =>

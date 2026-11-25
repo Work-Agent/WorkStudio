@@ -27,6 +27,9 @@ import {
 import { PluginStore } from './plugin/store.ts';
 import { PluginService } from './plugin/service.ts';
 import { PluginCatalogService } from './plugin/catalog.ts';
+import { PluginFiles } from './plugin/files.ts';
+import { SecretsService } from './plugin/secrets.ts';
+import { ListService } from './domains/workspace/lists.ts';
 import { PageRouter, type PageTarget } from './page-router.ts';
 import { ShellHost, type ShellHostOptions } from './domains/shell/native.ts';
 import { Dispatcher } from './ipc/dispatcher.ts';
@@ -106,16 +109,21 @@ export class NextApp {
 
     this.pluginStore = new PluginStore(this.storage);
     seedBuiltins(this.pluginStore, options.builtinPluginsRoot);
-    this.plugins = new PluginManager(
-      this.registry,
-      this.transport,
-      this.pluginStore,
-    );
+    const pluginFiles = new PluginFiles(this.storage.pluginsTmpRoot);
+    const pluginSecrets = new SecretsService(this.storage.pluginsDataRoot);
+    const lists = new ListService();
+    this.plugins = new PluginManager(this.registry, this.transport, {
+      store: this.pluginStore,
+      lists,
+      files: pluginFiles,
+      secrets: pluginSecrets,
+    });
     this.lifecycle = new PluginLifecycle(this.plugins, this.protocols);
     this.pluginService = new PluginService({
       store: this.pluginStore,
       lifecycle: this.lifecycle,
       catalog: new PluginCatalogService(this.storage),
+      files: pluginFiles,
     });
     this.shellHost = options.shell
       ? new ShellHost({ ...options.shell, origins: this.origins })
@@ -145,6 +153,8 @@ export class NextApp {
       lifecycle: this.lifecycle,
       pluginStore: this.pluginStore,
       pluginService: this.pluginService,
+      pluginFiles,
+      lists,
       appearance: this.appearance,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
       openItem: (item, workspaceId) => this.openListItem(item, workspaceId),
@@ -160,7 +170,7 @@ export class NextApp {
         options.sendUpdate ??
         ((viewId, update) => ipc?.sendUpdate(viewId, update)),
     });
-    ipc = new IpcChannel(this.dispatcher, this.origins);
+    ipc = new IpcChannel(this.dispatcher, this.origins, pluginFiles);
     this.ipc = ipc;
   }
 
@@ -212,7 +222,9 @@ export class NextApp {
       {
         id: page.contentPath,
         type: page.type === 'web' ? 'web' : 'page',
-        title: page.title,
+        // 资源页标签用列表项标题（如邮件主题），其余沿用页面标题。
+        title:
+          target.type === 'resource' && item.title ? item.title : page.title,
         url: page.url,
       },
       {

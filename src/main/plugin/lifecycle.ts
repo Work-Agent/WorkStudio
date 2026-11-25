@@ -50,9 +50,19 @@ export class PluginLifecycle {
       this.manager.register(pkg, contribution);
       this.protocols.registerPlugin(pkg);
       await this.manager.activate(pkg.manifest.id);
-      await contribution.lifecycle?.activate?.();
+      const scope = this.manager.scopeOf(pkg.manifest.id);
+      if (scope) await contribution.lifecycle?.activate?.(scope);
+      // 运行时已就绪：插件列表第一次取数放在这里。
+      this.manager.touchLists(pkg.manifest.id);
       this.stages.set(pkg.manifest.id, 'activate');
     } catch (error) {
+      // 激活中途失败：先让插件释放已创建的运行时，再撤销注册。
+      const scope = this.manager.scopeOf(pkg.manifest.id);
+      if (scope) {
+        await Promise.resolve(
+          contribution.lifecycle?.deactivate?.(scope),
+        ).catch(() => undefined);
+      }
       await this.manager.revoke(pkg.manifest.id);
       this.protocols.unregisterPlugin(pkg.manifest.id);
       throw error;
@@ -66,8 +76,11 @@ export class PluginLifecycle {
 
   async deactivate(pluginId: string): Promise<void> {
     const registration = this.manager.get(pluginId);
+    const scope = this.manager.scopeOf(pluginId);
     try {
-      await registration?.contribution.lifecycle?.deactivate?.();
+      if (scope) {
+        await registration?.contribution.lifecycle?.deactivate?.(scope);
+      }
     } finally {
       await this.manager.revoke(pluginId);
       this.protocols.unregisterPlugin(pluginId);

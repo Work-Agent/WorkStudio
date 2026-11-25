@@ -5,6 +5,7 @@ export const BRIDGE_CHANNELS = {
   command: 'workstudio:command',
   notify: 'workstudio:notify',
   update: 'workstudio:update',
+  fileToken: 'workstudio:file-token',
 } as const;
 
 /** 窗口 → 渲染层的工作区绑定；窗口与工作区 1:1，值即该窗口的 wsId。 */

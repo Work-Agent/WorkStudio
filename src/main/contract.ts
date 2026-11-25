@@ -25,7 +25,15 @@ export type ViewType =
 
 /** 请求来源：由主进程按发送方判定，页面不能自行声明。 */
 export type Origin =
-  | { type: 'view'; viewId: string; viewType: ViewType }
+  | {
+      type: 'view';
+      viewId: string;
+      viewType: ViewType;
+      /** 视图所属工作区；由 ShellHost 按窗口登记，页面不能声明。 */
+      workspaceId?: string;
+      /** 插件视图所属插件；由 URL（plugin://<id>/...）推导，不读取入参。 */
+      pluginId?: string;
+    }
   | { type: 'service'; id: string }
   | { type: 'tool'; name: string };
 

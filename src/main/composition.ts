@@ -23,10 +23,12 @@ import type { ShellHost } from './domains/shell/native.ts';
 import { WorkspaceModule } from './domains/workspace/module.ts';
 import { WorkspaceRepository } from './domains/workspace/repo.ts';
 import type { Protocols } from './protocols.ts';
+import type { PluginFiles } from './plugin/files.ts';
 import type { PluginLifecycle } from './plugin/lifecycle.ts';
 import type { PluginManager } from './plugin/manager.ts';
 import type { PluginService } from './plugin/service.ts';
 import type { PluginStore } from './plugin/store.ts';
+import type { ListService } from './domains/workspace/lists.ts';
 import type { DomainRegistry } from './registry/registry.ts';
 import { createLog } from './log.ts';
 
@@ -42,6 +44,8 @@ export interface SystemModulesOptions {
   lifecycle: PluginLifecycle;
   pluginStore: PluginStore;
   pluginService: PluginService;
+  pluginFiles: PluginFiles;
+  lists: ListService;
   appearance: AppearanceStore;
   shellHost?: ShellHost;
   openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>;
@@ -87,11 +91,17 @@ export function registerSystemModules(
       protocols: options.protocols,
       appearance: options.appearance,
       storage: options.storage,
+      files: options.pluginFiles,
       ...(options.shellHost ? { host: options.shellHost } : {}),
     }),
   );
   registry.registerModule(
-    new WorkspaceModule(repo, options.transport, options.openItem),
+    new WorkspaceModule(
+      repo,
+      options.transport,
+      options.lists,
+      options.openItem,
+    ),
   );
   registry.registerModule(
     new PluginModule(

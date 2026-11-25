@@ -4,7 +4,7 @@
  * 不提供 call / send / watch 兼容面；切换时 renderer 直接使用原三动词。
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   CallResult,
   DomainUpdate,
@@ -49,6 +49,13 @@ const bridge: WorkStudioBridge = {
   notify: (domain, resource, action, value) => {
     ipcRenderer.send(BRIDGE_CHANNELS.notify, domain, resource, action, value);
   },
+
+  fileToken: (file) =>
+    ipcRenderer.invoke(
+      BRIDGE_CHANNELS.fileToken,
+      webUtils.getPathForFile(file),
+      file.name,
+    ),
 
   onUpdate: (listener) => {
     const handler = (_event: unknown, update: DomainUpdate): void => {

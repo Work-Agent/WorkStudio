@@ -105,13 +105,16 @@ export class ToolSurface {
     summary: string;
     args: unknown;
   }> {
-    return this.registry.commandTable().map((entry) => ({
-      domain: entry.address.domain,
-      resource: entry.address.resource,
-      action: entry.action,
-      summary: entry.decl.summary,
-      args: entry.decl.args,
-    }));
+    return this.registry
+      .commandTable()
+      .filter((entry) => entry.agentExposed !== false)
+      .map((entry) => ({
+        domain: entry.address.domain,
+        resource: entry.address.resource,
+        action: entry.action,
+        summary: entry.decl.summary,
+        args: entry.decl.args,
+      }));
   }
 
   async command(

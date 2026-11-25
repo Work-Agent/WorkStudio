@@ -11,6 +11,7 @@ import { createLog } from '../log.ts';
 import { parseAddress } from '../registry/address.ts';
 import type { CommandContext, CommandInput } from '../registry/command.ts';
 import type { DomainRegistry } from '../registry/registry.ts';
+import { subscriptionDenialOf } from '../registry/authorization.ts';
 import type { Origins } from './origins.ts';
 
 export interface DispatcherOptions {
@@ -64,15 +65,24 @@ export class Dispatcher {
   /** 绑定订阅并返回首次快照；后续 patch / event 由 deliver 推送。 */
   watch(senderId: string, addr: string): CallResult<unknown> {
     const started = Date.now();
-    const viewId = this.viewIdOf(senderId);
+    const origin = this.origins.of(senderId);
+    const viewId = origin?.type === 'view' ? origin.viewId : null;
     const address = parseAddress(addr);
-    if (!viewId) {
+    if (!origin || !viewId) {
       this.write('watch', senderId, addr, '', started, 'missing', '未知来源');
       return failure('invalid', '未知来源');
     }
     if (!address) {
       this.write('watch', senderId, addr, '', started, 'missing', '地址非法');
       return failure('invalid', `地址非法：${addr}`);
+    }
+    const denial = subscriptionDenialOf(
+      origin,
+      `${address.domain}/${address.resource}`,
+    );
+    if (denial) {
+      this.write('watch', senderId, addr, '', started, 'error', denial, 1);
+      return failure('denied', denial);
     }
     const target = this.registry.resolve(address);
     if (!target) {

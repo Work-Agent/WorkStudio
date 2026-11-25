@@ -28,11 +28,11 @@ export class WorkspaceModule implements DomainModule {
   readonly dependencies = ['shell'] as const;
 
   private readonly scope: WorkspaceScope;
-  readonly lists = new ListService();
   private readonly listWorkspaces = new Set<string>();
   private registry: DomainRegistry | null = null;
   private offWorkspace: (() => void) | null = null;
   private offLists: (() => void) | null = null;
+  private offListDefs: (() => void) | null = null;
   private listTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingLists = new Set<string>();
   private readonly log = createLog('workspace');
@@ -40,6 +40,7 @@ export class WorkspaceModule implements DomainModule {
   constructor(
     repo: WorkspaceRepository,
     private readonly transport: TransportRouter,
+    readonly lists: ListService,
     private readonly openItem?: (
       item: ListItem,
       workspaceId: string,
@@ -80,9 +81,14 @@ export class WorkspaceModule implements DomainModule {
         const ids = this.lists.registry.definitionsOf(
           update.domain,
           update.resource,
+          update.type === 'event' ? update.event : undefined,
         );
         if (ids.length > 0) this.scheduleListRefresh(ids);
       });
+      // 插件列表注册 / 撤销：重算对应定义。
+      this.offListDefs = this.lists.registry.onChange((ids) =>
+        this.scheduleListRefresh(ids),
+      );
     }
     await this.syncWorkspaceResources();
     await this.openWindow(this.scope.current);
@@ -93,6 +99,8 @@ export class WorkspaceModule implements DomainModule {
     this.offWorkspace = null;
     this.offLists?.();
     this.offLists = null;
+    this.offListDefs?.();
+    this.offListDefs = null;
     if (this.listTimer) clearTimeout(this.listTimer);
     this.listTimer = null;
     this.pendingLists.clear();

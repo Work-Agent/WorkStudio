@@ -10,6 +10,8 @@ import { join, resolve } from 'node:path';
 export const PLUGINS_DIR = 'plugins';
 export const INSTALLED_DIR = 'installed';
 export const PLUGIN_DATA_DIR = 'data';
+/** 插件临时区：与 data 同级，卸载时一起清理。 */
+export const PLUGIN_TMP_DIR = 'tmp';
 export const STAGING_DIR = 'staging';
 export const RECOVERY_DIR = 'recovery';
 export const INSTALLED_FILE = 'installed.json';
@@ -23,6 +25,7 @@ export interface StorageLayout {
   readonly pluginsRoot: string;
   readonly pluginsInstalledRoot: string;
   readonly pluginsDataRoot: string;
+  readonly pluginsTmpRoot: string;
   readonly pluginsStagingRoot: string;
   readonly pluginsRecoveryRoot: string;
   readonly pluginsIndexFile: string;
@@ -47,6 +50,7 @@ export function createStorageLayout(dataRoot: string): StorageLayout {
     pluginsRoot,
     pluginsInstalledRoot: join(pluginsRoot, INSTALLED_DIR),
     pluginsDataRoot: join(pluginsRoot, PLUGIN_DATA_DIR),
+    pluginsTmpRoot: join(pluginsRoot, PLUGIN_TMP_DIR),
     pluginsStagingRoot: join(pluginsRoot, STAGING_DIR),
     pluginsRecoveryRoot: join(pluginsRoot, RECOVERY_DIR),
     pluginsIndexFile: join(pluginsRoot, INSTALLED_FILE),

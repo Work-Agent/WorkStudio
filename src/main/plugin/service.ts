@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import type { PluginContribution } from '@workstudio/sdk';
 import { mergeStaticCommands } from './commands.ts';
 import { notImplemented } from '../contract.ts';
+import type { PluginFiles } from './files.ts';
 import type { PluginLifecycle, PluginStage } from './lifecycle.ts';
 import type { PluginPackage } from './manifest.ts';
 import type { PluginCatalogService, CatalogResult } from './catalog.ts';
@@ -26,6 +27,7 @@ export interface PluginServiceOptions {
   store: PluginStore;
   lifecycle: PluginLifecycle;
   catalog: PluginCatalogService;
+  files: PluginFiles;
 }
 
 export class PluginService {
@@ -86,6 +88,8 @@ export class PluginService {
 
   async uninstall(pluginId: string): Promise<void> {
     await this.options.lifecycle.uninstall(pluginId);
+    // 先清内存 token 与导入复制件，再删安装 / 数据目录。
+    await this.options.files.removePlugin(pluginId);
     this.options.store.remove(pluginId);
   }
 

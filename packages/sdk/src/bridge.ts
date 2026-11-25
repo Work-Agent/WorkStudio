@@ -44,9 +44,18 @@ export type DomainUpdate =
       data: unknown;
     };
 
+/** 页面选择本地文件后得到的导入凭证；页面永远拿不到绝对路径。 */
+export interface FileToken {
+  token: string;
+  name: string;
+  size: number;
+}
+
 export interface WorkStudioBridge {
   /** 当前窗口绑定的工作区（窗口与工作区 1:1）；宿主未注入时为 null。 */
   readonly workspaceId: string | null;
+  /** 把用户选择的 File 交给宿主托管，返回逻辑层可解析的 token。 */
+  fileToken(file: File): Promise<FileToken>;
   subscribe(domain: string, resource: string): Promise<unknown>;
   unsubscribe(domain: string, resource: string): void;
   command<T = unknown>(

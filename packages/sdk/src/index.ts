@@ -11,6 +11,7 @@ export type {
   CallResult,
   ChangeType,
   DomainUpdate,
+  FileToken,
   WorkStudioBridge,
 } from './bridge.ts';
 export type { ArgSpec, CommandDecl, CommandDescriptor } from './command.ts';
@@ -22,10 +23,23 @@ export type {
 } from './context.ts';
 export type {
   PluginCommand,
+  PluginCommandExposure,
   PluginCommandInput,
   PluginContribution,
   PluginLifecycle,
 } from './contribution.ts';
+export type {
+  ListActionSpec,
+  ListDefinition,
+  ListFieldSpec,
+  ListGroup,
+  ListItem,
+  ListProviderContext,
+  ListSection,
+  ListSnapshot,
+  ListSourceScope,
+  PluginList,
+} from './list.ts';
 export type { WorkStudioManifest } from './manifest.ts';
 export type {
   Claim,
@@ -36,5 +50,13 @@ export type {
   ReadOptions,
   ResourceAdapter,
 } from './resource.ts';
+export type {
+  PluginEvents,
+  PluginFiles,
+  PluginScope,
+  PluginScopeSettings,
+  PluginSecrets,
+  SecretsAvailability,
+} from './scope.ts';
 export { locator } from './command.ts';
 export { definePlugin } from './contribution.ts';
