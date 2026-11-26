@@ -412,8 +412,14 @@ export class AgentModule implements DomainModule {
   private refreshAppModels(): void {
     const app = this.app;
     if (!app) return;
-    this.models.providers = app.getProviderCatalog([]);
-    this.models.models = app.getModelCatalog();
+    const view = app.getModelsView() as {
+      providers: ModelsState['providers'];
+      catalog: ModelsState['models'];
+      config: ModelsState['config'];
+    };
+    this.models.providers = view.providers;
+    this.models.models = view.catalog;
+    this.models.config = view.config;
     this.modelResources?.sync();
   }
 
@@ -524,6 +530,7 @@ export class AgentModule implements DomainModule {
     this.sessionsByWorkspace.clear();
     this.models.providers = [];
     this.models.models = [];
+    this.models.config = { providers: {} };
     this.modelResources = null;
     this.skills.active = new Set();
     this.skills.disabled = new Set();

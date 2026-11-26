@@ -15,6 +15,7 @@ import type { SessionAgent } from './runtime/session-agent.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
 import type {
   ModelCatalogItem,
+  ModelsConfigView,
   ParsedMessage,
   PiEventFrame,
   ProviderInfoView,
@@ -761,6 +762,7 @@ export function defineSessionsResources(
 export interface ModelsState {
   providers: ProviderInfoView[];
   models: ModelCatalogItem[];
+  config: ModelsConfigView;
 }
 
 export interface ModelResources {
@@ -768,7 +770,7 @@ export interface ModelResources {
 }
 
 export function createModelsState(): ModelsState {
-  return { providers: [], models: [] };
+  return { providers: [], models: [], config: { providers: {} } };
 }
 
 export function defineModelsResources(
@@ -783,6 +785,9 @@ export function defineModelsResources(
 
   const models = domain.resource('models');
   models.snapshot(() => state.models);
+
+  const config = domain.resource('modelsConfig');
+  config.snapshot(() => state.config);
 
   const ensureProvider = (providerId: string) => {
     const name = providerResourceName(providerId);
@@ -942,6 +947,7 @@ export function defineModelsResources(
     }
     providers.publish();
     models.publish();
+    config.publish();
   };
 
   providers.command('refresh', {
@@ -958,6 +964,78 @@ export function defineModelsResources(
     run: () => {
       sync();
       return state.models;
+    },
+  });
+  providers.command('save', {
+    summary: '保存供应商配置',
+    args: { providerId: { type: 'string', required: true } },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.saveProvider(String(input.providerId), input.config);
+      sync();
+      return state.providers;
+    },
+  });
+  providers.command('delete', {
+    summary: '删除供应商配置',
+    args: { providerId: { type: 'string', required: true } },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.deleteProvider(String(input.providerId));
+      sync();
+      return null;
+    },
+  });
+  models.command('save', {
+    summary: '保存模型条目',
+    args: {
+      providerId: { type: 'string', required: true },
+      modelId: { type: 'string', required: true },
+    },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.saveModel(String(input.providerId), {
+        id: String(input.modelId),
+        ...(typeof input.config === 'object' && input.config !== null
+          ? input.config
+          : {}),
+      });
+      sync();
+      return state.models;
+    },
+  });
+  models.command('delete', {
+    summary: '删除模型条目',
+    args: {
+      providerId: { type: 'string', required: true },
+      modelId: { type: 'string', required: true },
+    },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.deleteModel(
+        String(input.providerId),
+        String(input.modelId),
+      );
+      sync();
+      return null;
+    },
+  });
+  models.command('setDefault', {
+    summary: '设为当前模型',
+    args: {
+      providerId: { type: 'string', required: true },
+      modelId: { type: 'string', required: true },
+    },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.setModel(String(input.providerId), String(input.modelId));
+      sync();
+      return null;
     },
   });
 

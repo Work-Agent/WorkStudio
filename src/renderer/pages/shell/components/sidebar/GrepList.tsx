@@ -212,14 +212,6 @@ export function GrepList() {
   );
 }
 
-function splitLocator(
-  value: string,
-): { ref: string; line: number | null } | null {
-  const match = /^(.*)#L(\d+)$/.exec(value);
-  if (!match) return value ? { ref: value, line: null } : null;
-  return { ref: match[1]!, line: Number(match[2]) };
-}
-
 function nameOf(ref: string): string {
   try {
     const path = decodeURIComponent(ref.replace(/^file:\/\//, ''));

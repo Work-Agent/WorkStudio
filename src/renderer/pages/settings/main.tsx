@@ -667,10 +667,17 @@ function SessionsCard() {
 function ModelsCard() {
   const providerList = useResource<ProviderView[]>('agent', 'providers', []);
   const catalog = useResource<ModelView[]>('agent', 'models', []);
+  const configValue = useResource<{
+    providers: Record<
+      string,
+      { baseUrl?: string; name?: string; models?: ModelConfig[] }
+    >;
+  }>('agent', 'modelsConfig', { providers: {} });
+  const config = configValue ?? { providers: {} };
   const models: ModelsView = {
     providers: providerList,
     catalog,
-    config: { providers: {} },
+    config,
   };
   const providerAddress = (id: string): string =>
     `provider/${encodeURIComponent(id)}`;
@@ -681,26 +688,60 @@ function ModelsCard() {
   const [modelProvider, setModelProvider] = useState('');
   const [modelId, setModelId] = useState('');
   const [modelName, setModelName] = useState('');
+  const [authFor, setAuthFor] = useState<string | null>(null);
+  const [keyFor, setKeyFor] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
   const session = useResource<{ current?: AgentSnapshot | null }>(
     'agent',
     'sessions',
     { current: null },
   );
   const current = session.current ?? null;
-  const login = async (provider: ProviderView): Promise<void> => {
+
+  const report = (reason: unknown): void =>
+    notifyError(
+      reason instanceof Error ? reason.message : String(reason),
+      'models',
+    );
+
+  const login = (provider: ProviderView, type: 'api_key' | 'oauth'): void => {
+    if (type === 'api_key' && !apiKey.trim()) return;
+    setBusy(provider.id);
+    void run('agent', providerAddress(provider.id), 'login', {
+      type,
+      ...(type === 'api_key' ? { apiKey: apiKey.trim() } : {}),
+    })
+      .then(() => {
+        setAuthFor(null);
+        setKeyFor(null);
+        setApiKey('');
+      })
+      .catch(report)
+      .finally(() => setBusy(null));
+  };
+
+  const startLogin = (provider: ProviderView): void => {
+    if (provider.canApiKeyLogin && provider.canOAuthLogin) {
+      setAuthFor(provider.id);
+      return;
+    }
     if (provider.canApiKeyLogin) {
-      const apiKey = window.prompt(`输入 ${provider.name} 的 API Key`);
-      if (!apiKey) return;
-      await run('agent', providerAddress(provider.id), 'login', {
-        type: 'api_key',
-        apiKey,
-      });
-    } else if (provider.canOAuthLogin) {
-      await run('agent', providerAddress(provider.id), 'login', {
-        type: 'oauth',
-      });
+      setAuthFor(null);
+      setKeyFor(provider.id);
+      setApiKey('');
+      return;
+    }
+    if (provider.canOAuthLogin) {
+      setAuthFor(null);
+      setKeyFor(null);
+      login(provider, 'oauth');
     }
   };
+
+  const inputClass =
+    'min-w-0 rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]';
+
   return (
     <Panel>
       <Section title="新增 / 更新自定义供应商">
@@ -718,20 +759,57 @@ function ModelsCard() {
             className="min-w-0 flex-[2] rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
           />
           <Button
-            disabled={!providerId.trim() || !baseUrl.trim()}
+            disabled={!providerId.trim() || !baseUrl.trim() || busy !== null}
             onClick={() =>
-              void run('agent', providerAddress(providerId.trim()), 'save', {
+              void run('agent', 'providers', 'save', {
+                providerId: providerId.trim(),
                 config: { baseUrl: baseUrl.trim() },
-              }).then(() => {
-                setProviderId('');
-                setBaseUrl('');
               })
+                .then(() => {
+                  setProviderId('');
+                  setBaseUrl('');
+                })
+                .catch(report)
             }
           >
             保存
           </Button>
         </div>
+        <div className="mt-2 space-y-1">
+          {Object.entries(config.providers).map(([id, provider]) => (
+            <div
+              key={id}
+              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono">
+                {id}
+                {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
+              </span>
+              <Button
+                onClick={() => {
+                  setProviderId(id);
+                  setBaseUrl(provider.baseUrl ?? '');
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                onClick={() =>
+                  void run('agent', 'providers', 'delete', {
+                    providerId: id,
+                  }).catch(report)
+                }
+              >
+                删除
+              </Button>
+            </div>
+          ))}
+          {Object.keys(config.providers).length === 0 && (
+            <p className="text-[11px] text-zinc-500">暂无自定义供应商</p>
+          )}
+        </div>
       </Section>
+
       <Section title="新增 / 更新模型">
         <div className="flex gap-2">
           <input
@@ -755,100 +833,186 @@ function ModelsCard() {
           <Button
             disabled={!modelProvider.trim() || !modelId.trim()}
             onClick={() =>
-              void run(
-                'agent',
-                modelAddress(modelProvider.trim(), modelId.trim()),
-                'save',
-                {
-                  config: {
-                    name: modelName.trim() || undefined,
-                  },
-                },
-              ).then(() => {
-                setModelId('');
-                setModelName('');
+              void run('agent', 'models', 'save', {
+                providerId: modelProvider.trim(),
+                modelId: modelId.trim(),
+                config: { name: modelName.trim() || undefined },
               })
+                .then(() => {
+                  setModelId('');
+                  setModelName('');
+                })
+                .catch(report)
             }
           >
             保存
           </Button>
         </div>
         <div className="mt-2 space-y-1">
-          {Object.entries(models.config?.providers ?? {}).flatMap(
-            ([provider, config]) =>
-              (config.models ?? []).map((model) => (
-                <div
-                  key={`${provider}/${model.id}`}
-                  className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
+          {Object.entries(config.providers).flatMap(([provider, cfg]) =>
+            (cfg.models ?? []).map((model) => (
+              <div
+                key={`${provider}/${model.id}`}
+                className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono">
+                  {provider}/{model.id}
+                  {model.name ? ` · ${model.name}` : ''}
+                </span>
+                <Button
+                  onClick={() => {
+                    setModelProvider(provider);
+                    setModelId(model.id);
+                    setModelName(model.name ?? '');
+                  }}
                 >
-                  <span className="min-w-0 flex-1 font-mono">
-                    {provider}/{model.id}
-                  </span>
-                  <Button
-                    onClick={() =>
-                      void run(
-                        'agent',
-                        modelAddress(provider, model.id),
-                        'delete',
-                      )
-                    }
-                  >
-                    删除
-                  </Button>
-                </div>
-              )),
-          )}
-        </div>
-      </Section>
-      <Section title="供应商">
-        <div className="space-y-1">
-          {models.providers.map((provider) => (
-            <div
-              key={provider.id}
-              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[12px] dark:border-[#2c3039]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{provider.name}</div>
-                <div className="truncate text-[10px] text-zinc-400">
-                  {provider.configured
-                    ? `已连接 · ${provider.authLabel ?? ''}`
-                    : '未连接'}
-                  {' · '}
-                  {provider.modelCount} 个模型
-                </div>
-              </div>
-              {!provider.builtin && (
+                  编辑
+                </Button>
                 <Button
                   onClick={() =>
-                    void run('agent', providerAddress(provider.id), 'delete')
+                    void run('agent', 'models', 'delete', {
+                      providerId: provider,
+                      modelId: model.id,
+                    }).catch(report)
                   }
                 >
                   删除
                 </Button>
-              )}
-              {provider.configured ? (
-                <Button
-                  onClick={() =>
-                    void run('agent', providerAddress(provider.id), 'logout')
-                  }
-                >
-                  退出
-                </Button>
-              ) : (
-                <Button
-                  disabled={!provider.canApiKeyLogin && !provider.canOAuthLogin}
-                  onClick={() => void login(provider)}
-                >
-                  {provider.canOAuthLogin ? 'OAuth 登录' : '填写 Key'}
-                </Button>
-              )}
-            </div>
-          ))}
+              </div>
+            )),
+          )}
+          {Object.values(config.providers).every(
+            (provider) => !provider.models?.length,
+          ) && <p className="text-[11px] text-zinc-500">暂无自定义模型</p>}
+        </div>
+      </Section>
+
+      <Section title="供应商">
+        <div className="space-y-1">
+          {models.providers.map((provider) => {
+            const canLogin = provider.canApiKeyLogin || provider.canOAuthLogin;
+            const choosing = authFor === provider.id;
+            const enteringKey = keyFor === provider.id;
+            return (
+              <div
+                key={provider.id}
+                className="flex flex-wrap items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[12px] dark:border-[#2c3039]"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{provider.name}</div>
+                  <div className="truncate text-[10px] text-zinc-400">
+                    {provider.configured
+                      ? `已连接 · ${provider.authLabel ?? ''}`
+                      : '未连接'}
+                    {' · '}
+                    {provider.modelCount} 个模型
+                  </div>
+                </div>
+                {enteringKey ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      autoFocus
+                      type="password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') login(provider, 'api_key');
+                        if (event.key === 'Escape') {
+                          setKeyFor(null);
+                          setApiKey('');
+                        }
+                      }}
+                      placeholder="API Key"
+                      className={`${inputClass} w-40`}
+                    />
+                    <Button
+                      disabled={!apiKey.trim() || busy !== null}
+                      onClick={() => login(provider, 'api_key')}
+                    >
+                      保存
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setKeyFor(null);
+                        setApiKey('');
+                      }}
+                    >
+                      取消
+                    </Button>
+                  </div>
+                ) : choosing ? (
+                  <div className="flex items-center gap-1">
+                    {provider.canApiKeyLogin && (
+                      <Button
+                        onClick={() => {
+                          setAuthFor(null);
+                          setKeyFor(provider.id);
+                          setApiKey('');
+                        }}
+                      >
+                        API Key
+                      </Button>
+                    )}
+                    {provider.canOAuthLogin && (
+                      <Button
+                        disabled={busy !== null}
+                        onClick={() => login(provider, 'oauth')}
+                      >
+                        OAuth
+                      </Button>
+                    )}
+                    <Button onClick={() => setAuthFor(null)}>取消</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    {!provider.builtin && (
+                      <Button
+                        onClick={() =>
+                          void run('agent', 'providers', 'delete', {
+                            providerId: provider.id,
+                          }).catch(report)
+                        }
+                      >
+                        删除
+                      </Button>
+                    )}
+                    {provider.configured && (
+                      <Button
+                        onClick={() =>
+                          void run(
+                            'agent',
+                            providerAddress(provider.id),
+                            'logout',
+                          ).catch(report)
+                        }
+                      >
+                        退出
+                      </Button>
+                    )}
+                    {canLogin && (
+                      <Button
+                        disabled={busy !== null}
+                        onClick={() => startLogin(provider)}
+                      >
+                        {provider.configured ? '重新登录' : '连接'}
+                      </Button>
+                    )}
+                    {!canLogin && !provider.configured && (
+                      <span className="text-[10px] text-zinc-400">
+                        仅使用环境变量
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {models.providers.length === 0 && (
             <p className="text-[12px] text-zinc-500">暂无供应商目录</p>
           )}
         </div>
       </Section>
+
       <Section title="可用模型">
         <div className="space-y-1">
           {models.catalog
@@ -872,10 +1036,10 @@ function ModelsCard() {
                     active={active}
                     disabled={active}
                     onClick={() =>
-                      void run('agent', sessionsResource(), 'setModel', {
-                        provider: model.provider,
-                        model: model.modelId,
-                      })
+                      void run('agent', 'models', 'setDefault', {
+                        providerId: model.provider,
+                        modelId: model.modelId,
+                      }).catch(report)
                     }
                   >
                     {active ? '当前' : '使用'}
