@@ -10,10 +10,12 @@ import type { WebCache } from '../../transport/web-cache.ts';
 import type { DomainModule } from '../../registry/module.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
+import { session } from 'electron';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  readUserPreferences,
   readWorkspacePolicy,
   writeWorkspacePolicy,
 } from '../../platform/preferences.ts';
@@ -57,6 +59,8 @@ export class BrowserModule implements DomainModule {
   private registry: DomainRegistry | null = null;
   private offWorkspace: (() => void) | null = null;
   private offWindows: (() => void) | null = null;
+  private offPreferences: (() => void) | null = null;
+  private appliedProxy: string | null = null;
 
   constructor(
     readonly capability: BrowserCapability,
@@ -85,6 +89,9 @@ export class BrowserModule implements DomainModule {
     const registry = this.registry;
     if (registry) {
       this.loadPolicy();
+      if (this.layout) {
+        this.applyProxy(readUserPreferences(this.layout).proxy);
+      }
       this.offWorkspace = registry.onUpdate((update) => {
         if (
           update.domain === 'workspace' &&
@@ -112,7 +119,28 @@ export class BrowserModule implements DomainModule {
         resource: 'windows',
       }) as { windows?: Array<{ id: string }> } | null;
       this.syncWindows(windows?.windows ?? []);
+      // 代理改动立即对内置浏览器生效（登录授权页、网页标签同会话）。
+      this.offPreferences = registry.onUpdate((update) => {
+        if (update.domain !== 'settings' || update.resource !== 'preferences') {
+          return;
+        }
+        const proxy = (update.data as { proxy?: string | null } | null)?.proxy;
+        this.applyProxy(typeof proxy === 'string' ? proxy : null);
+      });
     }
+  }
+
+  /** 内置浏览器跟随全局代理偏好；未配置时用系统代理。 */
+  private applyProxy(value: string | null): void {
+    if (!this.layout) return;
+    const proxy = value?.trim() ? value.trim() : null;
+    if (proxy === this.appliedProxy) return;
+    this.appliedProxy = proxy;
+    void session.defaultSession
+      .setProxy(proxy ? { proxyRules: proxy } : { mode: 'system' })
+      .catch((error: unknown) => {
+        console.warn('[browser] 代理设置失败', proxy, error);
+      });
   }
 
   stop(): void {
@@ -120,6 +148,9 @@ export class BrowserModule implements DomainModule {
     this.offWorkspace = null;
     this.offWindows?.();
     this.offWindows = null;
+    this.offPreferences?.();
+    this.offPreferences = null;
+    this.appliedProxy = null;
     unregisterWebAdapter(this.transport);
     for (const windowId of Array.from(this.windowResources)) {
       this.tabResources?.remove(windowId);

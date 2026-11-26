@@ -9,6 +9,7 @@ import {
   useResourceForest,
 } from '../../shared/domains/resources.ts';
 import { notifyError } from '../../shared/domains/notices.ts';
+import { ToastHost } from '../../shared/domains/toast-host.tsx';
 import { createRoot } from 'react-dom/client';
 import {
   BookOpen,
@@ -99,13 +100,16 @@ interface ModelView {
   available?: boolean;
 }
 
+type ProviderAuthType = 'oauth' | 'api_key' | 'environment';
+
 interface ProviderView {
   id: string;
   name: string;
   configured: boolean;
   builtin: boolean;
-  canApiKeyLogin: boolean;
-  canOAuthLogin: boolean;
+  authTypes: ProviderAuthType[];
+  loginUrl?: string;
+  authType?: ProviderAuthType;
   authLabel?: string;
   modelCount: number;
 }
@@ -687,18 +691,8 @@ function ModelsCard() {
     `provider/${encodeURIComponent(id)}`;
   const [providerId, setProviderId] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [modelProvider, setModelProvider] = useState('');
-  const [modelId, setModelId] = useState('');
-  const [modelName, setModelName] = useState('');
-  const [modelContext, setModelContext] = useState('');
-  const [modelMaxTokens, setModelMaxTokens] = useState('');
-  const [modelReasoning, setModelReasoning] = useState(false);
-  const [modelInput, setModelInput] = useState<Array<'text' | 'image'>>([
-    'text',
-  ]);
   const [providerQuery, setProviderQuery] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [authFor, setAuthFor] = useState<string | null>(null);
   const [keyFor, setKeyFor] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -714,20 +708,26 @@ function ModelsCard() {
       reason instanceof Error ? reason.message : String(reason),
       'models',
     );
-  const positiveNumber = (value: string): number | undefined => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+
+  /** 有登录页就走页面流程（新标签页），否则回落到内置交互登录。 */
+  const login = (provider: ProviderView): void => {
+    setBusy(provider.id);
+    const action = provider.loginUrl
+      ? run('agent', 'providers', 'openLogin', { providerId: provider.id })
+      : run('agent', providerAddress(provider.id), 'login');
+    void action
+      .then(() => setExpanded(provider.id))
+      .catch(report)
+      .finally(() => setBusy(null));
   };
 
-  const login = (provider: ProviderView, type: 'api_key' | 'oauth'): void => {
-    if (type === 'api_key' && !apiKey.trim()) return;
+  const saveApiKey = (provider: ProviderView): void => {
+    if (!apiKey.trim()) return;
     setBusy(provider.id);
-    void run('agent', providerAddress(provider.id), 'login', {
-      type,
-      ...(type === 'api_key' ? { apiKey: apiKey.trim() } : {}),
+    void run('agent', providerAddress(provider.id), 'completeLogin', {
+      accessToken: apiKey.trim(),
     })
       .then(() => {
-        setAuthFor(null);
         setKeyFor(null);
         setApiKey('');
         setExpanded(provider.id);
@@ -736,22 +736,14 @@ function ModelsCard() {
       .finally(() => setBusy(null));
   };
 
-  const startLogin = (provider: ProviderView): void => {
-    if (provider.canApiKeyLogin && provider.canOAuthLogin) {
-      setAuthFor(provider.id);
-      return;
-    }
-    if (provider.canApiKeyLogin) {
-      setAuthFor(null);
-      setKeyFor(provider.id);
-      setApiKey('');
-      return;
-    }
-    if (provider.canOAuthLogin) {
-      setAuthFor(null);
-      setKeyFor(null);
-      login(provider, 'oauth');
-    }
+  /** 状态文案按路线区分：OAuth 是登录，API Key 只是配置。 */
+  const statusOf = (provider: ProviderView): string => {
+    const detail = provider.authLabel ? ` · ${provider.authLabel}` : '';
+    if (!provider.configured) return '未配置';
+    if (provider.authType === 'oauth') return `已登录${detail}`;
+    if (provider.authType === 'api_key') return `已配置 API Key${detail}`;
+    if (provider.authType === 'environment') return `环境变量${detail}`;
+    return `已配置${detail}`;
   };
 
   const inputClass =
@@ -825,145 +817,6 @@ function ModelsCard() {
         </div>
       </Section>
 
-      <Section title="新增 / 更新模型">
-        <div className="flex gap-2">
-          <input
-            value={modelProvider}
-            onChange={(event) => setModelProvider(event.target.value)}
-            placeholder="provider id"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={modelId}
-            onChange={(event) => setModelId(event.target.value)}
-            placeholder="model id"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={modelName}
-            onChange={(event) => setModelName(event.target.value)}
-            placeholder="展示名"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <Button
-            disabled={!modelProvider.trim() || !modelId.trim()}
-            onClick={() =>
-              void run('agent', 'models', 'save', {
-                providerId: modelProvider.trim(),
-                modelId: modelId.trim(),
-                config: {
-                  name: modelName.trim() || undefined,
-                  ...(positiveNumber(modelContext) !== undefined
-                    ? { contextWindow: positiveNumber(modelContext) }
-                    : {}),
-                  ...(positiveNumber(modelMaxTokens) !== undefined
-                    ? { maxTokens: positiveNumber(modelMaxTokens) }
-                    : {}),
-                  ...(modelReasoning ? { reasoning: true } : {}),
-                  ...(modelInput.length > 0 ? { input: modelInput } : {}),
-                },
-              })
-                .then(() => {
-                  setModelId('');
-                  setModelName('');
-                  setModelContext('');
-                  setModelMaxTokens('');
-                  setModelReasoning(false);
-                  setModelInput(['text']);
-                })
-                .catch(report)
-            }
-          >
-            保存
-          </Button>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
-          <input
-            value={modelContext}
-            onChange={(event) => setModelContext(event.target.value)}
-            inputMode="numeric"
-            placeholder="contextWindow"
-            className={`${inputClass} w-32`}
-          />
-          <input
-            value={modelMaxTokens}
-            onChange={(event) => setModelMaxTokens(event.target.value)}
-            inputMode="numeric"
-            placeholder="maxTokens"
-            className={`${inputClass} w-28`}
-          />
-          <label className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={modelReasoning}
-              onChange={(event) => setModelReasoning(event.target.checked)}
-            />
-            reasoning
-          </label>
-          {(['text', 'image'] as const).map((kind) => (
-            <label key={kind} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={modelInput.includes(kind)}
-                onChange={(event) =>
-                  setModelInput((current) =>
-                    event.target.checked
-                      ? [...new Set([...current, kind])]
-                      : current.filter((item) => item !== kind),
-                  )
-                }
-              />
-              {kind}
-            </label>
-          ))}
-        </div>
-        <div className="mt-2 space-y-1">
-          {Object.entries(config.providers).flatMap(([provider, cfg]) =>
-            (cfg.models ?? []).map((model) => (
-              <div
-                key={`${provider}/${model.id}`}
-                className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
-              >
-                <span className="min-w-0 flex-1 truncate font-mono">
-                  {provider}/{model.id}
-                  {model.name ? ` · ${model.name}` : ''}
-                </span>
-                <Button
-                  onClick={() => {
-                    setModelProvider(provider);
-                    setModelId(model.id);
-                    setModelName(model.name ?? '');
-                    setModelContext(
-                      model.contextWindow ? String(model.contextWindow) : '',
-                    );
-                    setModelMaxTokens(
-                      model.maxTokens ? String(model.maxTokens) : '',
-                    );
-                    setModelReasoning(model.reasoning === true);
-                    setModelInput(model.input?.length ? model.input : ['text']);
-                  }}
-                >
-                  编辑
-                </Button>
-                <Button
-                  onClick={() =>
-                    void run('agent', 'models', 'delete', {
-                      providerId: provider,
-                      modelId: model.id,
-                    }).catch(report)
-                  }
-                >
-                  删除
-                </Button>
-              </div>
-            )),
-          )}
-          {Object.values(config.providers).every(
-            (provider) => !provider.models?.length,
-          ) && <p className="text-[11px] text-zinc-500">暂无自定义模型</p>}
-        </div>
-      </Section>
-
       <Section title="供应商">
         <input
           value={providerQuery}
@@ -979,10 +832,11 @@ function ModelsCard() {
                 .includes(providerQuery.trim().toLowerCase()),
             )
             .map((provider) => {
-              const canLogin =
-                provider.canApiKeyLogin || provider.canOAuthLogin;
-              const choosing = authFor === provider.id;
               const enteringKey = keyFor === provider.id;
+              const supportsOAuth = provider.authTypes.includes('oauth');
+              const supportsApiKey = provider.authTypes.includes('api_key');
+              const oauthActive = provider.authType === 'oauth';
+              const apiKeyActive = provider.authType === 'api_key';
               const providerModels = models.catalog.filter(
                 (model) => model.provider === provider.id,
               );
@@ -997,9 +851,7 @@ function ModelsCard() {
                         {provider.name}
                       </div>
                       <div className="truncate text-[10px] text-zinc-400">
-                        {provider.configured
-                          ? `已连接 · ${provider.authLabel ?? ''}`
-                          : '未连接'}
+                        {statusOf(provider)}
                         {' · '}
                         {providerModels.length} 个模型
                       </div>
@@ -1022,8 +874,7 @@ function ModelsCard() {
                           value={apiKey}
                           onChange={(event) => setApiKey(event.target.value)}
                           onKeyDown={(event) => {
-                            if (event.key === 'Enter')
-                              login(provider, 'api_key');
+                            if (event.key === 'Enter') saveApiKey(provider);
                             if (event.key === 'Escape') {
                               setKeyFor(null);
                               setApiKey('');
@@ -1034,7 +885,7 @@ function ModelsCard() {
                         />
                         <Button
                           disabled={!apiKey.trim() || busy !== null}
-                          onClick={() => login(provider, 'api_key')}
+                          onClick={() => saveApiKey(provider)}
                         >
                           保存
                         </Button>
@@ -1046,29 +897,6 @@ function ModelsCard() {
                         >
                           取消
                         </Button>
-                      </div>
-                    ) : choosing ? (
-                      <div className="flex items-center gap-1">
-                        {provider.canApiKeyLogin && (
-                          <Button
-                            onClick={() => {
-                              setAuthFor(null);
-                              setKeyFor(provider.id);
-                              setApiKey('');
-                            }}
-                          >
-                            API Key
-                          </Button>
-                        )}
-                        {provider.canOAuthLogin && (
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => login(provider, 'oauth')}
-                          >
-                            OAuth
-                          </Button>
-                        )}
-                        <Button onClick={() => setAuthFor(null)}>取消</Button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1">
@@ -1083,8 +911,20 @@ function ModelsCard() {
                             删除
                           </Button>
                         )}
-                        {provider.configured && (
+                        {supportsApiKey && (
                           <Button
+                            disabled={busy !== null}
+                            onClick={() => {
+                              setKeyFor(provider.id);
+                              setApiKey('');
+                            }}
+                          >
+                            {apiKeyActive ? '更换 API Key' : '配置 API Key'}
+                          </Button>
+                        )}
+                        {supportsApiKey && apiKeyActive && (
+                          <Button
+                            disabled={busy !== null}
                             onClick={() =>
                               void run(
                                 'agent',
@@ -1093,18 +933,32 @@ function ModelsCard() {
                               ).catch(report)
                             }
                           >
-                            退出
+                            清除 API Key
                           </Button>
                         )}
-                        {canLogin && (
+                        {supportsOAuth && !oauthActive && (
                           <Button
                             disabled={busy !== null}
-                            onClick={() => startLogin(provider)}
+                            onClick={() => login(provider)}
                           >
-                            {provider.configured ? '重新登录' : '连接'}
+                            登录
                           </Button>
                         )}
-                        {!canLogin && !provider.configured && (
+                        {supportsOAuth && oauthActive && (
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() =>
+                              void run(
+                                'agent',
+                                providerAddress(provider.id),
+                                'logout',
+                              ).catch(report)
+                            }
+                          >
+                            退出登录
+                          </Button>
+                        )}
+                        {!supportsOAuth && !supportsApiKey && (
                           <span className="text-[10px] text-zinc-400">
                             仅使用环境变量
                           </span>
@@ -1113,52 +967,11 @@ function ModelsCard() {
                     )}
                   </div>
                   {expanded === provider.id && (
-                    <div className="space-y-1 border-t border-zinc-200 px-3 py-2 dark:border-[#2c3039]">
-                      {providerModels.length === 0 ? (
-                        <p className="text-[11px] text-zinc-500">
-                          暂无模型；登录供应商后会刷新其模型目录
-                        </p>
-                      ) : (
-                        providerModels.map((model) => {
-                          const active =
-                            current?.provider === model.provider &&
-                            current?.modelId === model.modelId;
-                          return (
-                            <div
-                              key={model.modelId}
-                              className="flex items-center gap-2 py-0.5 text-[11px]"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <span className="truncate font-medium text-zinc-700 dark:text-zinc-200">
-                                  {model.label}
-                                </span>
-                                <span className="ml-2 font-mono text-[10px] text-zinc-400">
-                                  {model.modelId}
-                                </span>
-                              </div>
-                              {model.available === false ? (
-                                <span className="text-[10px] text-zinc-400">
-                                  需登录
-                                </span>
-                              ) : (
-                                <Button
-                                  active={active}
-                                  disabled={active}
-                                  onClick={() =>
-                                    void run('agent', 'models', 'setDefault', {
-                                      providerId: model.provider,
-                                      modelId: model.modelId,
-                                    }).catch(report)
-                                  }
-                                >
-                                  {active ? '当前' : '使用'}
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
+                    <ProviderModels
+                      providerId={provider.id}
+                      current={current}
+                      report={report}
+                    />
                   )}
                 </div>
               );
@@ -1169,6 +982,247 @@ function ModelsCard() {
         </div>
       </Section>
     </Panel>
+  );
+}
+
+interface ProviderModelsSnapshot {
+  providerId: string;
+  catalog: ModelView[];
+  configured: ModelConfig[];
+}
+
+interface ModelDraft {
+  id: string;
+  name: string;
+  context: string;
+  maxTokens: string;
+  reasoning: boolean;
+  input: Array<'text' | 'image'>;
+}
+
+const BLANK_MODEL_DRAFT: ModelDraft = {
+  id: '',
+  name: '',
+  context: '',
+  maxTokens: '',
+  reasoning: false,
+  input: ['text'],
+};
+
+function draftOf(model: ModelConfig): ModelDraft {
+  return {
+    id: model.id,
+    name: model.name ?? '',
+    context: model.contextWindow ? String(model.contextWindow) : '',
+    maxTokens: model.maxTokens ? String(model.maxTokens) : '',
+    reasoning: model.reasoning === true,
+    input: model.input?.length ? model.input : ['text'],
+  };
+}
+
+/**
+ * 供应商展开区：模型永远挂在供应商下面，providerId 由所在行固定。
+ * 目录里的模型只能选为当前模型；自定义模型（models.json）可在此增删改。
+ */
+function ProviderModels({
+  providerId,
+  current,
+  report,
+}: {
+  providerId: string;
+  current: AgentSnapshot | null;
+  report: (reason: unknown) => void;
+}) {
+  const address = `provider/${encodeURIComponent(providerId)}/models`;
+  const scoped = useResource<ProviderModelsSnapshot>('agent', address, {
+    providerId,
+    catalog: [],
+    configured: [],
+  });
+  const [draft, setDraft] = useState<ModelDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const configured = new Map(
+    scoped.configured.map((model) => [model.id, model] as const),
+  );
+  const rows: ModelView[] = [
+    ...scoped.catalog,
+    ...scoped.configured
+      .filter(
+        (model) => !scoped.catalog.some((row) => row.modelId === model.id),
+      )
+      .map((model) => ({
+        provider: providerId,
+        modelId: model.id,
+        label: model.name ?? model.id,
+        available: true,
+      })),
+  ];
+  const inputClass =
+    'min-w-0 rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]';
+  const positiveNumber = (value: string): number | undefined => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  };
+
+  const submit = (): void => {
+    if (!draft) return;
+    const modelId = draft.id.trim();
+    if (!modelId) return;
+    const contextWindow = positiveNumber(draft.context);
+    const maxTokens = positiveNumber(draft.maxTokens);
+    setBusy(true);
+    void run('agent', address, 'save', {
+      modelId,
+      config: {
+        name: draft.name.trim() || undefined,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
+        ...(draft.reasoning ? { reasoning: true } : {}),
+        ...(draft.input.length > 0 ? { input: draft.input } : {}),
+      },
+    })
+      .then(() => setDraft(null))
+      .catch(report)
+      .finally(() => setBusy(false));
+  };
+
+  const act = (action: string, input?: Record<string, unknown>): void => {
+    void run('agent', address, action, input).catch(report);
+  };
+
+  return (
+    <div className="space-y-1 border-t border-zinc-200 px-3 py-2 dark:border-[#2c3039]">
+      {rows.length === 0 && (
+        <p className="text-[11px] text-zinc-500">
+          暂无模型；登录供应商后会刷新其模型目录
+        </p>
+      )}
+      {rows.map((model) => {
+        const custom = configured.get(model.modelId);
+        const active =
+          current?.provider === providerId &&
+          current?.modelId === model.modelId;
+        return (
+          <div
+            key={model.modelId}
+            className="flex items-center gap-2 py-0.5 text-[11px]"
+          >
+            <div className="min-w-0 flex-1">
+              <span className="truncate font-medium text-zinc-700 dark:text-zinc-200">
+                {model.label}
+              </span>
+              <span className="ml-2 font-mono text-[10px] text-zinc-400">
+                {model.modelId}
+              </span>
+              {custom && (
+                <span className="ml-2 rounded bg-zinc-100 px-1 text-[10px] text-zinc-500 dark:bg-[#23272a] dark:text-zinc-400">
+                  自定义
+                </span>
+              )}
+            </div>
+            {custom && (
+              <>
+                <Button onClick={() => setDraft(draftOf(custom))}>编辑</Button>
+                <Button
+                  onClick={() => act('delete', { modelId: model.modelId })}
+                >
+                  删除
+                </Button>
+              </>
+            )}
+            {model.available === false ? (
+              <span className="text-[10px] text-zinc-400">需登录</span>
+            ) : (
+              <Button
+                active={active}
+                disabled={active}
+                onClick={() => act('setDefault', { modelId: model.modelId })}
+              >
+                {active ? '当前' : '使用'}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+      {draft ? (
+        <div className="mt-1 space-y-1 rounded border border-dashed border-zinc-200 p-2 dark:border-[#2c3039]">
+          <div className="flex flex-wrap gap-2">
+            <input
+              autoFocus
+              value={draft.id}
+              onChange={(event) =>
+                setDraft({ ...draft, id: event.target.value })
+              }
+              placeholder="model id"
+              className={`${inputClass} w-40`}
+            />
+            <input
+              value={draft.name}
+              onChange={(event) =>
+                setDraft({ ...draft, name: event.target.value })
+              }
+              placeholder="展示名"
+              className={`${inputClass} w-40`}
+            />
+            <input
+              value={draft.context}
+              onChange={(event) =>
+                setDraft({ ...draft, context: event.target.value })
+              }
+              inputMode="numeric"
+              placeholder="contextWindow"
+              className={`${inputClass} w-28`}
+            />
+            <input
+              value={draft.maxTokens}
+              onChange={(event) =>
+                setDraft({ ...draft, maxTokens: event.target.value })
+              }
+              inputMode="numeric"
+              placeholder="maxTokens"
+              className={`${inputClass} w-24`}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
+            <label className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={draft.reasoning}
+                onChange={(event) =>
+                  setDraft({ ...draft, reasoning: event.target.checked })
+                }
+              />
+              reasoning
+            </label>
+            {(['text', 'image'] as const).map((kind) => (
+              <label key={kind} className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={draft.input.includes(kind)}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      input: event.target.checked
+                        ? [...new Set([...draft.input, kind])]
+                        : draft.input.filter((item) => item !== kind),
+                    })
+                  }
+                />
+                {kind}
+              </label>
+            ))}
+            <Button disabled={!draft.id.trim() || busy} onClick={submit}>
+              保存
+            </Button>
+            <Button onClick={() => setDraft(null)}>取消</Button>
+          </div>
+        </div>
+      ) : (
+        <Button onClick={() => setDraft({ ...BLANK_MODEL_DRAFT })}>
+          ＋ 添加模型
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -1937,6 +1991,7 @@ function SettingsHome() {
 
   return (
     <div className="h-screen overflow-y-auto bg-zinc-100 text-zinc-900 dark:bg-[#1a1c1d] dark:text-zinc-100">
+      <ToastHost />
       <div className="mx-auto max-w-[980px] px-6 py-8">
         <h1 className="text-[18px] font-semibold">设置</h1>
         <p className="mt-1 text-[12px] text-zinc-500 dark:text-zinc-400">

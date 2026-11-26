@@ -72,7 +72,8 @@ export interface AgentSessionInput {
   /** 已登记适配器的资源根；会话创建时生成资源地图。 */
   resourceRoots?: readonly ResourceRoot[];
   skillOwner?: (source: string) => { id: string; label: string } | null;
-  openExternal?: (url: string) => void | Promise<void>;
+  /** 打开授权页（宿主的标签页能力）。 */
+  openUrl?: (url: string) => void | Promise<void>;
 }
 
 export class AgentSession {
@@ -94,7 +95,7 @@ export class AgentSession {
       resourceLoaderOptions: {
         extensionFactories: composeExtensionFactories(
           input.extensionFactories ?? [],
-          { openUrl: input.openExternal },
+          { openUrl: input.openUrl },
         ),
         systemPrompt: SYSTEM_PROMPT,
         additionalSkillPaths: input.additionalSkillPaths ?? [],

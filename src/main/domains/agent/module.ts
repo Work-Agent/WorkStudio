@@ -10,9 +10,13 @@ import type { DomainModule } from '../../registry/module.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { ToolSurface } from './tools.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
+import type { SecretVault } from '../../platform/vault.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import type { SettingsManager } from '@earendil-works/pi-coding-agent';
-import type { PiEventFrame } from '../../../shared/types.ts';
+import type {
+  PiEventFrame,
+  ProviderCredentialInput,
+} from '../../../shared/types.ts';
 import { CallFailure } from '../../contract.ts';
 import { createLog } from '../../log.ts';
 import type { DialogView } from '../shell/domains.ts';
@@ -101,9 +105,31 @@ export class AgentModule implements DomainModule {
     private readonly tools: ToolSurface,
     private readonly storage: StorageLayout,
     private readonly browser: BrowserCapability,
+    private readonly vault: SecretVault,
     private readonly plugins?: PluginManager,
+    /** 打开授权页（宿主接到内置标签页，OAuth 授权链路共用）。 */
+    private readonly openUrl?: (url: string) => void | Promise<void>,
   ) {
     this.agents = new SessionAgents((input) => this.bootstrapSession(input));
+  }
+
+  /** 插件写凭证：校验 provider 存在 + 落主进程存储 + 刷新投影。 */
+  async writeCredential(
+    providerId: string,
+    input: ProviderCredentialInput,
+  ): Promise<void> {
+    const app = this.app;
+    if (!app) throw new Error('agent runtime 未启动');
+    await app.completeLogin(providerId, input);
+    this.refreshAppModels();
+  }
+
+  /** 插件清凭证：等价于退出登录。 */
+  async clearCredential(providerId: string): Promise<void> {
+    const app = this.app;
+    if (!app) throw new Error('agent runtime 未启动');
+    await app.logoutProvider(providerId);
+    this.refreshAppModels();
   }
 
   /** 当前工作区的活动会话 agent（App 级视图 / 设置用）。 */
@@ -197,9 +223,11 @@ export class AgentModule implements DomainModule {
     const current = snapshot?.current;
     this.app = await AgentApp.create({
       storage: this.storage,
+      vault: this.vault,
       extensionFactories: [createAgentToolsExtension(this.tools, this.browser)],
       additionalSkillPaths: () => this.plugins?.skillPaths() ?? [],
       skillOwner: (source) => this.plugins?.skillOwner(source) ?? null,
+      ...(this.openUrl ? { openUrl: this.openUrl } : {}),
     });
     this.app.onChanged = () => {
       this.refreshAppModels();

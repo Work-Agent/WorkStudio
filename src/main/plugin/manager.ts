@@ -9,10 +9,14 @@ import type {
   PluginCommandInput,
   PluginContribution,
   PluginContext,
+  PluginCredentials,
   PluginScope,
+  PluginSecrets,
   PluginSettings,
+  ProviderCredentialInput,
 } from '@work-studio/sdk';
 import type { CallResult, ChangeType } from '../contract.ts';
+import { CallFailure } from '../contract.ts';
 import { createLog } from '../log.ts';
 import type { TransportRouter } from '../transport/router.ts';
 import type { Address } from '../registry/address.ts';
@@ -25,16 +29,23 @@ import { resolvePluginResourceGroup } from '../domains/workspace/resource-tree.t
 import { matchesClaim } from '../transport/resource.ts';
 import type { PluginPackage } from './manifest.ts';
 import type { PluginFiles } from './files.ts';
-import type { SecretsService } from './secrets.ts';
+import type { SecretVault } from '../platform/vault.ts';
 import type { PluginStore } from './store.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+/** 供应商凭证端口：由 agent 模块实现，插件只能经这里写入。 */
+export interface ProviderCredentialPort {
+  write(providerId: string, input: ProviderCredentialInput): Promise<void>;
+  clear(providerId: string): Promise<void>;
+}
 
 export interface PluginManagerOptions {
   store?: PluginStore;
   resources?: ResourceForestService;
   files?: PluginFiles;
-  secrets?: SecretsService;
+  /** App 级密钥库：插件只能拿到 `plugin:<id>` 域。 */
+  vault?: SecretVault;
 }
 
 export interface PluginRegistration {
@@ -43,6 +54,59 @@ export interface PluginRegistration {
 }
 
 export class PluginManager {
+  private credentialPort: ProviderCredentialPort | null = null;
+
+  /** 组合根绑定凭证端口；未绑定或未声明时插件调用一律拒绝。 */
+  bindCredentials(port: ProviderCredentialPort | null): void {
+    this.credentialPort = port;
+  }
+
+  /** 插件密钥域：API 只认 `plugin:<id>`，插件拿不到别人的域。 */
+  private vaultScopeFor(pluginId: string): PluginSecrets {
+    const scope = this.options.vault?.forPlugin(pluginId);
+    return {
+      availability: () =>
+        scope?.availability() ?? {
+          available: false,
+          reason: '密钥服务不可用',
+        },
+      get: async (key) => (scope ? await scope.get(key) : null),
+      set: async (key, value) => {
+        if (!scope) throw new Error('密钥服务不可用');
+        await scope.set(key, value);
+      },
+    };
+  }
+
+  /** 清单声明的供应商白名单：插件只能写自己声明的 provider。 */
+  private credentialsFor(pkg: PluginPackage): PluginCredentials {
+    const declared = new Set(pkg.manifest.credentials ?? []);
+    const port = (): ProviderCredentialPort => {
+      if (!this.credentialPort) {
+        throw new CallFailure('failed', '凭证服务不可用');
+      }
+      return this.credentialPort;
+    };
+    const guard = (providerId: string): void => {
+      if (!declared.has(providerId)) {
+        throw new CallFailure(
+          'denied',
+          `插件未声明凭证权限：${pkg.manifest.id} → ${providerId}`,
+        );
+      }
+    };
+    return {
+      write: async (providerId, input) => {
+        guard(providerId);
+        await port().write(providerId, input);
+      },
+      clear: async (providerId) => {
+        guard(providerId);
+        await port().clear(providerId);
+      },
+    };
+  }
+
   private readonly registrations = new Map<string, PluginRegistration>();
   private readonly scopes = new Map<string, PluginScope>();
   private readonly settings = new Map<string, Record<string, unknown>>();
@@ -383,18 +447,8 @@ export class PluginManager {
         watch: <T>(key: string, callback: (next: T) => void) =>
           this.watchSetting(id, key, callback),
       },
-      secrets: {
-        availability: () =>
-          this.options.secrets?.availability() ?? {
-            available: false,
-            reason: '密钥服务不可用',
-          },
-        get: async (key) => (await this.options.secrets?.get(id, key)) ?? null,
-        set: async (key, value) => {
-          if (!this.options.secrets) throw new Error('密钥服务不可用');
-          await this.options.secrets.set(id, key, value);
-        },
-      },
+      credentials: this.credentialsFor(pkg),
+      secrets: this.vaultScopeFor(id),
       events: {
         emit: (name, data) => {
           const resource = this.eventsResources.get(id);
@@ -427,6 +481,7 @@ export class PluginManager {
         write: (ref, bytes) => this.transport.writeBytes(ref, bytes),
       },
       settings: this.settingsOf(id),
+      credentials: this.credentialsFor(pkg),
       changed: (ref, type) => ctx.changed(ref, type),
       log: createLog(`plugin:${id}`),
     };

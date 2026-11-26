@@ -6,6 +6,7 @@
  */
 
 import type { ChangeType } from './bridge.ts';
+import type { PluginCredentials } from './credentials.ts';
 
 export interface Log {
   info(message: string): void;
@@ -26,6 +27,8 @@ export interface PluginSettings {
 export interface PluginContext {
   fs: PluginFs;
   settings: PluginSettings;
+  /** 供应商凭证：只写不读，范围由清单 `credentials` 声明。 */
+  credentials: PluginCredentials;
   changed(ref: string, type: ChangeType): void;
   log: Log;
 }

@@ -29,7 +29,7 @@ import { PluginService } from './plugin/service.ts';
 import { PluginCatalogService } from './plugin/catalog.ts';
 import { createPluginFetcher } from './plugin/network.ts';
 import { PluginFiles } from './plugin/files.ts';
-import { SecretsService } from './plugin/secrets.ts';
+import { SecretVault } from './platform/vault.ts';
 import { ResourceForestService } from './domains/workspace/resources.ts';
 import { PageRouter, type PageTarget } from './page-router.ts';
 import { ShellHost, type ShellHostOptions } from './domains/shell/native.ts';
@@ -85,6 +85,7 @@ function seedBuiltins(
 export class NextApp {
   readonly registry = new DomainRegistry();
   readonly storage: StorageLayout;
+  readonly vault: SecretVault;
   readonly appearance: AppearanceStore;
   readonly protocols: Protocols;
   readonly origins = new Origins();
@@ -120,13 +121,13 @@ export class NextApp {
       options.builtinPluginsRoot,
     );
     const pluginFiles = new PluginFiles(this.storage.pluginsTmpRoot);
-    const pluginSecrets = new SecretsService(this.storage.pluginsDataRoot);
+    this.vault = new SecretVault(this.storage.dataRoot);
     const resources = new ResourceForestService();
     this.plugins = new PluginManager(this.registry, this.transport, {
       store: this.pluginStore,
       resources,
       files: pluginFiles,
-      secrets: pluginSecrets,
+      vault: this.vault,
     });
     this.lifecycle = new PluginLifecycle(this.plugins, this.protocols);
     const pluginFetcher = createPluginFetcher(this.storage);
@@ -158,6 +159,7 @@ export class NextApp {
 
     registerSystemModules(this.registry, {
       storage: this.storage,
+      vault: this.vault,
       workspaceRoot: options.workspaceRoot,
       protocols: this.protocols,
       transport: this.transport,

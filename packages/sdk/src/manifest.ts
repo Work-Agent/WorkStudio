@@ -21,4 +21,6 @@ export interface WorkStudioManifest {
   settings?: { schema: string };
   /** 技能目录（相对插件根）；名称 / 描述由 SKILL.md frontmatter 定义。 */
   skills?: string[];
+  /** 允许写入凭证的供应商 id；未声明时一律拒绝。 */
+  credentials?: string[];
 }

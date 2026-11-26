@@ -237,19 +237,19 @@ web ────────→ transport / cache（由 browser 模块承载）
 
 箭头表示“依赖谁”，只表达启动顺序与调用方向；跨服务不注入对方对象，只通过资源地址、命令或端口。
 
-| Domain（服务） | 聚合根 / 主要 resource                               | 读模型                                                                                                                                                                                            |
-| -------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shell`        | `windows` · `appearance`                             | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                                                         |
-| `workspace`    | `registry`                                           | `<wsId>/resources` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                                             |
-| `plugin`       | `installed` · `task`                                 | `catalog`                                                                                                                                                                                         |
-| `settings`     | `preferences` · `updates`                            | `pages` · `storage`                                                                                                                                                                               |
-| `browser`      | `policy`                                             | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                                                            |
-| `web`          | `web`（快照资源）                                    | —                                                                                                                                                                                                 |
-| `agent`        | `skills` · `provider/<id>` · `model/<provider>/<id>` | `<wsId>/sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `<wsId>/context` · `providers` · `models` · `modelsConfig` · `tools` · `prompts` · `themes` · `extensions` |
+| Domain（服务） | 聚合根 / 主要 resource                                                        | 读模型                                                                                                                                                                                            |
+| -------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shell`        | `windows` · `appearance`                                                      | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                                                         |
+| `workspace`    | `registry`                                                                    | `<wsId>/resources` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                                             |
+| `plugin`       | `installed` · `task`                                                          | `catalog`                                                                                                                                                                                         |
+| `settings`     | `preferences` · `updates`                                                     | `pages` · `storage`                                                                                                                                                                               |
+| `browser`      | `policy`                                                                      | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                                                            |
+| `web`          | `web`（快照资源）                                                             | —                                                                                                                                                                                                 |
+| `agent`        | `skills` · `provider/<id>` · `provider/<id>/models` · `model/<provider>/<id>` | `<wsId>/sessions`（`current` / `active` / `items` / `task` / `opened` / `thinking`） · `<wsId>/context` · `providers` · `models` · `modelsConfig` · `tools` · `prompts` · `themes` · `extensions` |
 
 聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管单个会话的消息、轮次、队列和 thinking，`agent/<wsId>/sessions` 是集合投影与当前会话入口；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/<wsId>/sessions` 每个工作区一份：首次使用时按需创建该工作区的 pi runtime，未创建时给只读投影。模型、凭证、设置与技能是 App 级共享（AgentApp），会话与扩展上下文按工作区绑定。
 
-供应商就是资源：`agent/providers` 是目录投影，`agent/provider/<id>` 承载配置与认证。OAuth 外部页通过 bridge 调用 `beginOAuth` 取得一次 `state`，回调页再用 `completeLogin` 提交 `state + accessToken`；凭证值只进主进程，资源快照不返回 token。bridge 只存在于系统页与插件页，普通外部 HTTPS 页面不注入 `window.workStudio`。
+供应商就是资源：`agent/providers` 是目录投影，`agent/provider/<id>` 承载配置与认证。认证分两条路线，文案必须分开：OAuth 走 `login` / `logout`（登录会刷新模型目录）；API Key 只是配置凭证（注入同一个 `completeLogin`，不带 refresh / 有效期即按 api_key 存），不产生登录语义。视图用 `authTypes` 声明支持的路线，`authType` 表示当前生效的路线（`oauth` / `api_key` / `environment`）。模型挂在供应商下面：`agent/provider/<id>/models` 是该供应商的模型投影（目录模型 + 自定义模型），增删改命令只带 `modelId`，`providerId` 由地址段决定；`agent/models` 保留跨供应商的扁平目录，供「设为当前模型」等需要全量筛选的场景使用。OAuth 授权页走应用自己的浏览器标签页（`browser/<windowId>/tabs`），不再调用系统浏览器：会话上下文、关闭时机与回跳都留在应用内。供应商凭证只有一个写入口：`completeLogin` 注入 `accessToken`（必需）、`refreshToken`、`expiresIn` 与 `extra`，只带 accessToken 的按 api_key 存，带 refresh / 有效期的按 oauth 存；清除统一走 `logout`，不再有单独的 API Key 配置/清除命令。登录不再弹窗：`openLogin` 在应用内标签页打开供应商自己的登录页（只认配置里显式声明的 `loginUrl`，内置大厂 OAuth 走回环回调、不推导登录页），登录成功后由该页调用 `completeLogin` 回传凭证；网页来源必须命中该供应商的授权域名（`authDomains`：`baseUrl` / `loginUrl` 的 host 加上配置里声明的域名），否则 `denied`。宿主预置 `simbalink` 供应商（`https://titan-token.simbalink.cn`）作为快捷登录入口，欢迎页与设置页共用同一个命令。凭证只写进主进程的凭证存储，资源快照、命令返回值与日志都不带凭证值；网页标签只注入受限的 `window.workStudioAuth.complete`（只写不读），`commandDenialOf` 对网页视图仅放行这一个命令、订阅一律拒绝，provider 是否存在由主进程校验。系统页与插件页保留完整 `window.workStudio`。
 
 System Domain 由模块持有，不读内容字节，也不出现在工具面里。模块只负责生命周期；Domain 才是服务边界，Resource 才是聚合根。例如 `skills` 是 `agent/skills`，不是独立的 `skills` Domain。
 
@@ -543,6 +543,7 @@ interface PluginContext {
     write(ref: string, bytes: Uint8Array): Promise<void>;
   };
   settings: { get<T>(): T; watch(cb: (next: T) => void): Disposable };
+  credentials: PluginCredentials; // 只写不读，范围由清单声明
   changed(ref: string, kind: 'content' | 'structure'): void;
   log: {
     info(message: string): void;
@@ -552,7 +553,9 @@ interface PluginContext {
 }
 ```
 
-`ctx` 里没有绝对路径、没有进程对象、没有窗口。插件能拿到的就是这四项。
+`ctx` 里没有绝对路径、没有进程对象、没有窗口。插件能拿到的就是这几项。
+
+密钥是 App 级的一个模块（密钥库），不属于任何单个功能：磁盘上一域一份 `secrets.bin`，用 Electron safeStorage 加密。域的入口只有三个工厂——`forPlugin(pluginId)`、`forProvider(host)` 与迁移用的 `forAgent()`；插件拿到的永远是 `forPlugin(自己)` 得到的作用域，API 里没有「指定别人的域」这种参数，跨域读写不可达（e2e 用两个插件写同名 key 验证互不可见、互不覆盖）。现有两类域：`plugin:<id>`（插件私有密钥）与 `provider:<host>`（每个供应商一份，用它的域名做 key，存 pi 的 `Credential`）；域名在 `forProvider` 里校验，取不到 host 时回落到 providerId，不会写进别人的域。pi 的凭据存储由 `agent` 域实现，不再读写明文 `auth.json`（旧文件启动时一次性导入后改名留档）。
 
 跨命令的运行时放在激活期注入的作用域里，它不随单次命令创建：
 
@@ -563,20 +566,22 @@ interface PluginScope {
   tempDir: string; // 插件私有临时区
   settings: PluginScopeSettings;
   secrets: PluginSecrets;
+  credentials: PluginCredentials;
   events: PluginEvents;
   files: PluginFiles;
   log: Log;
 }
 ```
 
-| 能力     | 语义                                                       |
-| -------- | ---------------------------------------------------------- |
-| settings | 按键同步读写，写入落盘并发布插件设置变更                   |
-| secrets  | 明文字符串读写；密文由 safeStorage 管理，后端不可用时拒绝  |
-| events   | 向 `<pluginId>/events` 发布事件，不携带正文、凭证或路径    |
-| files    | 解析页面导入的 `in:` token 与另存为签发的 `save:` token    |
-| dataDir  | 库、缓存、设置与密钥密文的家；卸载时整目录删除             |
-| tempDir  | 导入复制件、导出附件与内联图片；与数据目录分开、随插件清理 |
+| 能力        | 语义                                                                          |
+| ----------- | ----------------------------------------------------------------------------- |
+| settings    | 按键同步读写，写入落盘并发布插件设置变更                                      |
+| secrets     | 插件私有密钥域 `plugin:<id>`；safeStorage 加密落盘，后端不可用时拒绝          |
+| credentials | 把授权页拿到的凭证交给宿主；只写不读，只对清单 `credentials` 声明的供应商生效 |
+| events      | 向 `<pluginId>/events` 发布事件，不携带正文、凭证或路径                       |
+| files       | 解析页面导入的 `in:` token 与另存为签发的 `save:` token                       |
+| dataDir     | 库、缓存、设置与密钥密文的家；卸载时整目录删除                                |
+| tempDir     | 导入复制件、导出附件与内联图片；与数据目录分开、随插件清理                    |
 
 作用域里没有任意文件系统、进程或窗口；插件访问外部文件只能经 token。`deactivate` 之后作用域与其中服务一并失效，插件必须在此之前停掉后台任务。
 
@@ -586,16 +591,17 @@ interface PluginScope {
 
 插件页面是受限页面；能力按发送方身份判定，页面无法自称是别的插件或视图。
 
-| 面           | 规则                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------- |
-| 命令         | 只能调本插件域命令；跨域命令与系统敏感命令由宿主鉴权，拒绝返回 `denied`                                 |
-| 系统命令例外 | 仅 `shell/native/saveFile`、`shell/native/openExternal` 与本窗口 `workspace/<wsId>/resources` 的 `open` |
-| 订阅         | 本插件域与 `shell/appearance`；其余地址拒绝                                                             |
-| 外部文件读   | 页面用 `workStudio.fileToken(file)` 导入复制件，得到不透明 `in:` token，绝对路径不下发                  |
-| 另存为       | `saveFile` 对插件来源签发短期 `save:` token；插件写盘后页面只拿到保存结果                               |
-| 密钥         | 只有插件逻辑层能读明文；页面没有密钥读取命令                                                            |
-| 助手         | 插件命令默认不进助手命令表；内容由资源适配器按需读取，只返回文本与元数据                                |
-| 导航         | 只能留在同插件 `plugin://` 页面；外链一律交给系统浏览器（仅 http/https）                                |
+| 面           | 规则                                                                                                       |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| 命令         | 只能调本插件域命令；跨域命令与系统敏感命令由宿主鉴权，拒绝返回 `denied`                                    |
+| 系统命令例外 | 仅 `shell/native/saveFile`、`shell/native/openExternal` 与本窗口 `workspace/<wsId>/resources` 的 `open`    |
+| 订阅         | 本插件域与 `shell/appearance`；其余地址拒绝                                                                |
+| 外部文件读   | 页面用 `workStudio.fileToken(file)` 导入复制件，得到不透明 `in:` token，绝对路径不下发                     |
+| 另存为       | `saveFile` 对插件来源签发短期 `save:` token；插件写盘后页面只拿到保存结果                                  |
+| 密钥         | 只有插件逻辑层能读明文；页面没有密钥读取命令                                                               |
+| 授权凭证     | 网页标签只注入 `window.workStudioAuth.complete`（只写不读）；已存凭证不会回到任何页面                      |
+| 助手         | 插件命令默认不进助手命令表；内容由资源适配器按需读取，只返回文本与元数据                                   |
+| 导航         | 只能留在同插件 `plugin://` 页面；外链交给系统浏览器（仅 http/https），OAuth 授权页由宿主在应用内标签页打开 |
 
 ### 8.7 兼容
 

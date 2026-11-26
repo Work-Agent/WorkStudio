@@ -15,7 +15,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 
 export function builtinPiExtensions(deps: {
-  /** MCP OAuth 授权页打开方式（桌面端 = shell.openExternal；缺省回落平台浏览器）。 */
+  /** 授权页打开方式：宿主接到应用内标签页（缺省回落平台浏览器）。 */
   openUrl?: (url: string) => void | Promise<void>;
 }): InlineExtension[] {
   return [

@@ -77,8 +77,9 @@ function workPageDevAssets(): Plugin {
  *
  * - 主进程：ESM（package.json type: module），入口 src/main/entry.ts，产物 out/main/index.js
  *   —— pi SDK 是 ESM-only，静态 import 必须 ESM 载体。
- * - preload：多入口 CJS（.cjs）且单文件（共享常量内联）——sandbox: true 的
- *   WebContentsView 只接受 CJS 且无相对 require 能力。
+ * - preload：多入口 CJS（.cjs）且单文件——sandbox: true 的 WebContentsView
+ *   只接受 CJS 且无相对 require 能力；多个入口共享同一模块会让打包器抽出
+ *   chunks/，运行时 require 失败，所以每个 preload 必须自包含。
  * - renderer：多页面（工作台 / 助手 / 浮层；指针捕获层用内联 data: 页，无独立入口）。
  */
 export default defineConfig({
@@ -106,6 +107,7 @@ export default defineConfig({
         input: {
           'work-studio': resolve(__dirname, 'src/preload/work-studio.ts'),
           capture: resolve(__dirname, 'src/preload/capture.ts'),
+          web: resolve(__dirname, 'src/preload/web.ts'),
         },
         output: {
           entryFileNames: '[name].cjs',

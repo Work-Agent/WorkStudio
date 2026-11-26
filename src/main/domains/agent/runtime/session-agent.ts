@@ -25,6 +25,7 @@ import type {
   ModelOption,
   ParsedMessage,
   PiEventFrame,
+  ProviderCredentialInput,
   ProviderInfoView,
   SessionMeta,
   ThinkingLevel,
@@ -327,6 +328,14 @@ export class SessionAgent {
     return level;
   }
 
+  async refreshProviderModels(providerId: string): Promise<number> {
+    return this.app.refreshProviderModels(providerId);
+  }
+
+  async openLoginPage(providerId: string): Promise<string> {
+    return this.app.openLoginPage(providerId);
+  }
+
   getProviderCatalog(customProviderIds: string[]): ProviderInfoView[] {
     return this.app.getProviderCatalog(customProviderIds);
   }
@@ -359,16 +368,12 @@ export class SessionAgent {
     await this.app.deleteModel(providerId, modelId);
   }
 
-  beginOAuth(providerId: string, state: string): void {
-    this.app.beginOAuth(providerId, state);
-  }
-
-  async completeOAuth(
+  /** 授权页交回凭证：一步写入，不经过渲染层。 */
+  async completeLogin(
     providerId: string,
-    state: string,
-    input: { accessToken?: string },
+    input: ProviderCredentialInput,
   ): Promise<void> {
-    await this.app.completeOAuth(providerId, state, input);
+    await this.app.completeLogin(providerId, input);
     this.emitStatus();
   }
 
@@ -377,11 +382,7 @@ export class SessionAgent {
     this.emitStatus();
   }
 
-  async loginProvider(input: {
-    providerId: string;
-    type: 'api_key' | 'oauth';
-    apiKey?: string;
-  }): Promise<void> {
+  async loginProvider(input: { providerId: string }): Promise<void> {
     await this.app.loginProvider(input, {
       askDialog: (dialogType, fields) => {
         const host = this.dialogHost;
@@ -556,7 +557,7 @@ export class SessionAgent {
         ...(additionalSkillPaths.length > 0 ? { additionalSkillPaths } : {}),
         resourceRoots: this.options.resourceRoots?.() ?? [],
         skillOwner: (source) => this.app.skillOwner(source),
-        openExternal: (url) => this.app.openExternal(url),
+        openUrl: (url) => this.app.openUrl(url),
       });
       return {
         session: session.piSession,

@@ -18,6 +18,7 @@ runNext({
   shell: {
     preload: join(here, '../preload/work-studio.cjs'),
     capturePreload: join(here, '../preload/capture.cjs'),
+    webPreload: join(here, '../preload/web.cjs'),
     shellUrl: 'work://studio/shell',
     assistantUrl: 'work://studio/assistant',
     overlayUrl: 'work://studio/overlay',

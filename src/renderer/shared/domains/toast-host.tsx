@@ -1,8 +1,10 @@
-/** 工作台通知条（扩展 ui.notify）。 */
-import {
-  useNotificationsStore,
-  useNotices,
-} from '../../../shared/domains/notices.ts';
+/**
+ * 通知条宿主：任何页面挂一次，就能显示主进程 `ui.notify` 与本地 notifyError。
+ *
+ * 每个页面是独立的 JS 上下文，通知队列不跨页面共享，所以主机页面（壳层）
+ * 与设置页各自挂一份，避免在设置页触发的错误悄悄丢掉。
+ */
+import { useNotificationsStore, useNotices } from './notices.ts';
 
 export function ToastHost() {
   useNotices();

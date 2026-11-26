@@ -40,6 +40,8 @@ export interface ShellHostOptions {
   origins: Origins;
   preload?: string;
   capturePreload?: string;
+  /** 网页标签的受限 preload：只暴露 window.workStudio.command。 */
+  webPreload?: string;
   shellUrl?: string;
   assistantUrl?: string;
   overlayUrl?: string;
@@ -359,9 +361,13 @@ export class ShellHost {
           ? this.options.capturePreload
             ? { preload: this.options.capturePreload }
             : {}
-          : input.type !== 'web' && this.options.preload
-            ? { preload: this.options.preload }
-            : {}),
+          : input.type === 'web'
+            ? this.options.webPreload
+              ? { preload: this.options.webPreload }
+              : {}
+            : this.options.preload
+              ? { preload: this.options.preload }
+              : {}),
         contextIsolation: true,
         sandbox: true,
         additionalArguments: [
@@ -417,7 +423,14 @@ export class ShellHost {
       viewType: input.type,
       workspaceId: windowEntry.record.workspaceId,
       ...(pluginId ? { pluginId } : {}),
+      ...(input.type === 'web' && input.url ? { url: input.url } : {}),
     });
+    if (input.type === 'web') {
+      const track = (_event: unknown, url: string): void =>
+        this.options.origins.setUrl(senderId, url);
+      view.webContents.on('did-navigate', track);
+      view.webContents.on('did-navigate-in-page', track);
+    }
     hardenWebContents(view.webContents, {
       allowNavigation: (url) => {
         if (input.type === 'web') {

@@ -8,7 +8,7 @@ import { PaneSplitter } from './components/PaneSplitter.tsx';
 import { ShellLayout } from './components/ShellLayout.tsx';
 import { ResourcePane } from './components/resource/ResourcePane.tsx';
 import { Sidebar } from './components/sidebar/Sidebar.tsx';
-import { ToastHost } from './components/ToastHost.tsx';
+import { ToastHost } from '../../shared/domains/toast-host.tsx';
 import { TitleBar } from './components/titlebar/TitleBar.tsx';
 
 export function App() {

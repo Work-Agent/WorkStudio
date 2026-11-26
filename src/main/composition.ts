@@ -7,11 +7,13 @@
 
 import type { AppearanceStore } from './platform/appearance.ts';
 import type { StorageLayout } from './platform/paths.ts';
+import type { SecretVault } from './platform/vault.ts';
 import type { ResourceNode } from '../shared/resources.ts';
 import type { TransportRouter } from './transport/router.ts';
 import type { WebCache } from './transport/web-cache.ts';
 import { BrowserCapability } from './domains/browser/capability.ts';
 import { BrowserModule } from './domains/browser/module.ts';
+import { tabsResourceName } from './domains/browser/domains.ts';
 import { AgentModule } from './domains/agent/module.ts';
 import { ToolSurface } from './domains/agent/tools.ts';
 import { PluginModule } from './domains/plugin/module.ts';
@@ -36,6 +38,8 @@ export type { SettingsPage };
 
 export interface SystemModulesOptions {
   storage: StorageLayout;
+  /** App 级密钥库：插件域与供应商凭证共用一份。 */
+  vault: SecretVault;
   workspaceRoot: string;
   protocols: Protocols;
   transport: TransportRouter;
@@ -128,7 +132,47 @@ export function registerSystemModules(
       options.storage,
     ),
   );
-  registry.registerModule(
-    new AgentModule(tools, options.storage, browser, options.plugins),
+  const agent = new AgentModule(
+    tools,
+    options.storage,
+    browser,
+    options.vault,
+    options.plugins,
+    createPageOpener(registry, options.shellHost),
   );
+  registry.registerModule(agent);
+  // 插件写凭证走这里：provider 存在性由 agent 校验，范围由插件清单声明。
+  options.plugins?.bindCredentials({
+    write: (providerId, input) => agent.writeCredential(providerId, input),
+    clear: (providerId) => agent.clearCredential(providerId),
+  });
+}
+
+/**
+ * 授权页走应用自己的标签页：浏览器能力已经是宿主的一部分，
+ * 没有理由再交给系统浏览器（会话上下文、关闭时机、回跳都无法控制）。
+ */
+function createPageOpener(
+  registry: DomainRegistry,
+  shellHost: ShellHost | undefined,
+): ((url: string) => Promise<void>) | undefined {
+  if (!shellHost) return undefined;
+  const log = createLog('agent');
+  return async (url: string): Promise<void> => {
+    const windowId = shellHost.activeWindow();
+    if (!windowId) throw new Error('没有活动窗口，无法打开授权页');
+    const result = await registry.dispatchCommand(
+      { domain: 'browser', resource: tabsResourceName(windowId) },
+      'open',
+      { url },
+      {
+        origin: { type: 'service', id: 'agent' },
+        changed: (ref, type) => registry.changed(ref, type),
+        log,
+      },
+    );
+    if (!result.ok) {
+      throw new Error(`打开授权页失败：${result.error.message}`);
+    }
+  };
 }

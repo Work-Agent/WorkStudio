@@ -48,6 +48,12 @@ export interface ModelsConfigView {
   providers: Record<string, ProviderConfigView>;
 }
 
+/** 供应商可用的认证路线：OAuth 登录 / API Key 配置 / 仅环境变量。 */
+export type ProviderAuthType = 'oauth' | 'api_key' | 'environment';
+
+/** 授权页交回的凭证：类型由 SDK 定义（插件与宿主共用同一契约）。 */
+export type { ProviderCredentialInput } from '@work-studio/sdk';
+
 /** 供应商认证状态（模型设置页；凭证值永不出现）。 */
 export interface ProviderInfoView {
   id: string;
@@ -59,11 +65,14 @@ export interface ProviderInfoView {
   /** 配置来源：stored / runtime / environment / models_json_key… */
   authSource?: string;
   authLabel?: string;
-  hasApiKeyAuth: boolean;
-  hasOAuthAuth: boolean;
-  /** 可交互登录（apiKey.login / oauth.login 存在）。 */
-  canApiKeyLogin: boolean;
-  canOAuthLogin: boolean;
+  /** 该供应商支持的认证路线（可配置的）。 */
+  authTypes: ProviderAuthType[];
+  /** 授权页地址（打开新标签用它；缺省由 baseUrl 推导）。 */
+  loginUrl?: string;
+  /** 允许回传凭证的来源域名（页面 host 必须命中其中之一）。 */
+  authDomains: string[];
+  /** 当前生效的路线；未配置时缺省。 */
+  authType?: ProviderAuthType;
   modelCount: number;
   availableModelCount: number;
 }

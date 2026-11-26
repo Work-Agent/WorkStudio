@@ -1,6 +1,6 @@
 /** 欢迎页：没有其他标签时作为工作区入口保留。 */
 import { createRoot } from 'react-dom/client';
-import { FolderOpen, Settings, Sparkles } from 'lucide-react';
+import { FolderOpen, KeyRound, Settings, Sparkles } from 'lucide-react';
 import { command } from '../../shared/api/bridge.ts';
 import { useWorkspaces } from '../../shared/domains/workspaces.ts';
 import '../../shared/styles/index.css';
@@ -45,6 +45,22 @@ function Welcome() {
             <div className="text-[13px] font-medium">打开工作区…</div>
             <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
               选择本地目录作为当前工作区
+            </div>
+          </button>
+          <button
+            type="button"
+            data-testid="welcome-login-simbalink"
+            onClick={() =>
+              void command('agent', 'providers', 'openLogin', {
+                providerId: 'simbalink',
+              })
+            }
+            className="rounded-xl border border-zinc-200 bg-white p-4 text-left transition-colors hover:border-[#4F6BED]/60 dark:border-[#2c3039] dark:bg-[#141618]"
+          >
+            <KeyRound className="mb-3 h-5 w-5 text-[#4F6BED]" />
+            <div className="text-[13px] font-medium">登录 Simbalink</div>
+            <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              在应用内标签页完成登录，凭证只留在主进程
             </div>
           </button>
           <button

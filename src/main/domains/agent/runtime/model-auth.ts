@@ -1,4 +1,4 @@
-/** 供应商登录：API Key / OAuth 交互经 DialogHost，凭证不经过渲染层。 */
+/** 供应商登录：OAuth 交互经 DialogHost，凭证不经过渲染层。 */
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { DialogHost } from './ui-context.ts';
 
@@ -20,22 +20,18 @@ export interface ModelAuthDeps {
     level: 'info' | 'warning' | 'error',
     source: string,
   ): void;
-  openExternal?(url: string): void | Promise<void>;
+  /** 打开授权页（宿主决定用内置标签页还是系统浏览器）。 */
+  openUrl?(url: string): void | Promise<void>;
   emitStatus(): void;
 }
 
-export async function loginProvider(
+export async function loginOAuth(
   deps: ModelAuthDeps,
-  input: {
-    providerId: string;
-    type: 'api_key' | 'oauth';
-    apiKey?: string;
-  },
+  input: { providerId: string },
 ): Promise<void> {
   const runtime = deps.runtime();
   const provider = runtime.getProvider(input.providerId);
   if (!provider) throw new Error(`未知供应商：${input.providerId}`);
-  let keyConsumed = false;
   const infoCards: string[] = [];
 
   const interaction = {
@@ -49,10 +45,6 @@ export async function loginProvider(
         description?: string;
       }[];
     }): Promise<string> => {
-      if (prompt.type === 'secret' && input.apiKey && !keyConsumed) {
-        keyConsumed = true;
-        return input.apiKey;
-      }
       if (prompt.type === 'select' && prompt.options) {
         const labels = prompt.options.map((o) =>
           o.description ? `${o.label} — ${o.description}` : o.label,
@@ -85,8 +77,12 @@ export async function loginProvider(
       verificationUri?: string;
     }): void => {
       if (event.type === 'auth_url' && event.url) {
-        deps.notify(`请在浏览器完成 ${provider.name} 授权`, 'info', '模型登录');
-        void deps.openExternal?.(event.url);
+        deps.notify(
+          `已在标签页打开 ${provider.name} 授权页，请完成授权`,
+          'info',
+          '模型登录',
+        );
+        void deps.openUrl?.(event.url);
         return;
       }
       if (
@@ -96,10 +92,10 @@ export async function loginProvider(
       ) {
         const id = deps.dialogHost()?.info({
           title: `登录 ${provider.name}`,
-          message: `请在浏览器中输入授权码：\n\n    ${event.userCode}\n\n页面：${event.verificationUri}\n（授权完成后本卡片自动关闭）`,
+          message: `请在授权页中输入授权码：\n\n    ${event.userCode}\n\n页面：${event.verificationUri}\n（授权完成后本卡片自动关闭）`,
         });
         if (id) infoCards.push(id);
-        void deps.openExternal?.(event.verificationUri);
+        void deps.openUrl?.(event.verificationUri);
         return;
       }
       if (event.message) deps.notify(event.message, 'info', '模型登录');
@@ -107,7 +103,7 @@ export async function loginProvider(
   };
 
   try {
-    await runtime.login(input.providerId, input.type, interaction as never, {
+    await runtime.login(input.providerId, 'oauth', interaction as never, {
       agentName: 'WorkStudio',
     });
     await runtime.refresh({

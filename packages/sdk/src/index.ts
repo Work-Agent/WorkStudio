@@ -22,6 +22,10 @@ export type {
   PluginSettings,
 } from './context.ts';
 export type {
+  PluginCredentials,
+  ProviderCredentialInput,
+} from './credentials.ts';
+export type {
   PluginCommand,
   PluginCommandExposure,
   PluginCommandInput,

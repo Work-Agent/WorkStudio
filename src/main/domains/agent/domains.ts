@@ -6,8 +6,7 @@
  * agent 模块只是生命周期，不是地址前缀。
  */
 
-import { randomUUID } from 'node:crypto';
-import { CallFailure } from '../../contract.ts';
+import { CallFailure, type Origin } from '../../contract.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import { AgentContext } from './context.ts';
 import type { ToolSurface } from './tools.ts';
@@ -15,8 +14,10 @@ import type { SessionAgent } from './runtime/session-agent.ts';
 import type { BrowserCapability } from '../browser/capability.ts';
 import type {
   ModelCatalogItem,
+  ModelConfigView,
   ModelsConfigView,
   ParsedMessage,
+  ProviderCredentialInput,
   PiEventFrame,
   ProviderInfoView,
   SessionMeta,
@@ -765,6 +766,13 @@ export interface ModelsState {
   config: ModelsConfigView;
 }
 
+/** 供应商作用域的模型视图：目录模型 + 自定义模型，避免前端跨供应商过滤。 */
+export interface ProviderModelsView {
+  providerId: string;
+  catalog: ModelCatalogItem[];
+  configured: ModelConfigView[];
+}
+
 export interface ModelResources {
   sync(): void;
 }
@@ -792,71 +800,89 @@ export function defineModelsResources(
   const ensureProvider = (providerId: string) => {
     const name = providerResourceName(providerId);
     if (domain.resourceOf(name)) return;
+    const modelsOf = domain.resource(`${name}/models`);
+    modelsOf.snapshot(
+      (): ProviderModelsView => ({
+        providerId,
+        catalog: state.models.filter((model) => model.provider === providerId),
+        configured: state.config.providers[providerId]?.models ?? [],
+      }),
+    );
+    // 模型属于供应商：作用域资源上的命令不需要重复传 providerId。
+    modelsOf.command('save', {
+      summary: '保存该供应商下的模型',
+      args: { modelId: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+        await runtime.saveModel(providerId, {
+          id: String(input.modelId),
+          ...(typeof input.config === 'object' && input.config !== null
+            ? input.config
+            : {}),
+        });
+        sync();
+        return null;
+      },
+    });
+    modelsOf.command('delete', {
+      summary: '删除该供应商下的模型',
+      args: { modelId: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+        await runtime.deleteModel(providerId, String(input.modelId));
+        sync();
+        return null;
+      },
+    });
+    modelsOf.command('setDefault', {
+      summary: '把该供应商下的模型设为当前模型',
+      args: { modelId: { type: 'string', required: true } },
+      run: async (input) => {
+        const runtime = host?.();
+        if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+        await runtime.setModel(providerId, String(input.modelId));
+        sync();
+        return null;
+      },
+    });
     const resource = domain.resource(name);
     resource.snapshot(
       () =>
         state.providers.find((provider) => provider.id === providerId) ?? null,
     );
+    // 两条路线分开：OAuth 叫登录/退出，API Key 只是配置/清除。
     resource.command('login', {
-      summary: '登录供应商',
-      args: {
-        type: { enum: ['api_key', 'oauth'] },
-        apiKey: { type: 'string' },
-        url: { type: 'string' },
-      },
-      run: async (input) => {
+      summary: '登录供应商（OAuth）',
+      args: {},
+      run: async () => {
         const runtime = host?.();
         if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-        if (input.type !== 'oauth') {
-          await runtime.loginProvider({
-            providerId,
-            type: 'api_key',
-            ...(typeof input.apiKey === 'string'
-              ? { apiKey: input.apiKey }
-              : {}),
-          });
-          return null;
-        }
-        await runtime.loginProvider({
-          providerId,
-          type: 'oauth',
-        });
+        await runtime.loginProvider({ providerId });
+        resource.publish();
         return null;
       },
     });
-    resource.command('beginOAuth', {
-      summary: '开始 OAuth 授权（返回 state）',
-      args: {},
-      run: () => {
-        const runtime = host?.();
-        if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-        const state = randomUUID();
-        runtime.beginOAuth(providerId, state);
-        return { state };
-      },
-    });
+    // 授权页一步交回凭证：provider 由地址段确定，后端只校验它是否存在。
     resource.command('completeLogin', {
-      summary: '提交 OAuth 授权结果',
+      summary: '提交授权页拿到的凭证',
       args: {
-        state: { type: 'string', required: true },
-        accessToken: { type: 'string' },
+        accessToken: { type: 'string', required: true },
+        refreshToken: { type: 'string' },
+        expiresIn: { type: 'number' },
+        extra: { type: 'string' },
       },
       run: async (input) => {
         const runtime = host?.();
         if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-        await runtime.completeOAuth(
-          providerId,
-          String(input.state),
-          typeof input.accessToken === 'string'
-            ? { accessToken: input.accessToken }
-            : {},
-        );
+        await runtime.completeLogin(providerId, credentialInputOf(input));
         resource.publish();
         return null;
       },
     });
     resource.command('logout', {
-      summary: '退出供应商',
+      summary: '退出供应商登录（OAuth）',
       args: {},
       run: () => {
         const runtime = host?.();
@@ -887,6 +913,11 @@ export function defineModelsResources(
       },
     });
     resource.publish();
+    modelsOf.publish();
+  };
+
+  const publishProviderModels = (providerId: string): void => {
+    domain.resourceOf(`${providerResourceName(providerId)}/models`)?.publish();
   };
 
   const ensureModel = (providerId: string, modelId: string) => {
@@ -942,12 +973,20 @@ export function defineModelsResources(
 
   const sync = (): void => {
     for (const provider of state.providers) ensureProvider(provider.id);
+    // 自定义供应商可能还没进目录，也要能管理它下面的模型。
+    for (const providerId of Object.keys(state.config.providers)) {
+      ensureProvider(providerId);
+    }
     for (const model of state.models) {
       ensureModel(model.provider, model.modelId);
     }
     providers.publish();
     models.publish();
     config.publish();
+    for (const providerId of Object.keys(state.config.providers)) {
+      publishProviderModels(providerId);
+    }
+    for (const provider of state.providers) publishProviderModels(provider.id);
   };
 
   providers.command('refresh', {
@@ -964,6 +1003,50 @@ export function defineModelsResources(
     run: () => {
       sync();
       return state.models;
+    },
+  });
+  // 通用入口：providerId 作为参数，宿主据此校验存在性（网页/插件回传走它）。
+  providers.command('completeLogin', {
+    summary: '提交授权页拿到的凭证',
+    args: {
+      providerId: { type: 'string', required: true },
+      accessToken: { type: 'string', required: true },
+      refreshToken: { type: 'string' },
+      expiresIn: { type: 'number' },
+      extra: { type: 'string' },
+    },
+    run: async (input, ctx) => {
+      const providerId = String(input.providerId);
+      assertAuthDomain(ctx.origin, providerId, state);
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      await runtime.completeLogin(providerId, credentialInputOf(input));
+      sync();
+      return null;
+    },
+  });
+  // 模型发现：用已存凭证拉 OpenAI 兼容的 /models，写回 models.json。
+  providers.command('refreshModels', {
+    summary: '按供应商凭证刷新模型目录',
+    args: { providerId: { type: 'string', required: true } },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      const added = await runtime.refreshProviderModels(
+        String(input.providerId),
+      );
+      sync();
+      return { added };
+    },
+  });
+  // 快捷登录：打开供应商自己的登录页（应用内标签页），不再走弹窗流程。
+  providers.command('openLogin', {
+    summary: '打开供应商登录页',
+    args: { providerId: { type: 'string', required: true } },
+    run: async (input) => {
+      const runtime = host?.();
+      if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+      return runtime.openLoginPage(String(input.providerId));
     },
   });
   providers.command('save', {
@@ -1041,6 +1124,64 @@ export function defineModelsResources(
 
   if (state.providers.length || state.models.length) sync();
   return { sync };
+}
+
+/**
+ * 网页来源的域名校验：页面 host 必须命中该供应商的授权域名。
+ * 系统页 / 插件页不受此限（它们本来就在宿主内）。
+ */
+function assertAuthDomain(
+  origin: Origin,
+  providerId: string,
+  state: ModelsState,
+): void {
+  if (origin.type !== 'view' || origin.viewType !== 'web') return;
+  const host = hostOfUrl(origin.url);
+  const provider = state.providers.find((item) => item.id === providerId);
+  if (!host || !provider || !provider.authDomains.includes(host)) {
+    throw new CallFailure(
+      'denied',
+      `来源域名未授权：${host ?? '未知'}（${providerId}）`,
+    );
+  }
+}
+
+function hostOfUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 命令参数只有标量：extra 用 JSON 字符串传，解析失败按无附加字段处理。 */
+function credentialInputOf(
+  input: Record<string, unknown>,
+): ProviderCredentialInput {
+  const extra = parseExtra(input.extra);
+  return {
+    accessToken: String(input.accessToken ?? ''),
+    ...(typeof input.refreshToken === 'string' && input.refreshToken.trim()
+      ? { refreshToken: input.refreshToken.trim() }
+      : {}),
+    ...(typeof input.expiresIn === 'number'
+      ? { expiresIn: input.expiresIn }
+      : {}),
+    ...(extra ? { extra } : {}),
+  };
+}
+
+function parseExtra(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function providerResourceName(providerId: string): string {

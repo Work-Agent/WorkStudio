@@ -8,6 +8,7 @@
  */
 
 import type { Log } from './context.ts';
+import type { PluginCredentials } from './credentials.ts';
 
 export interface SecretsAvailability {
   available: boolean;
@@ -54,6 +55,8 @@ export interface PluginScope {
   readonly tempDir: string;
   readonly settings: PluginScopeSettings;
   readonly secrets: PluginSecrets;
+  /** 供应商凭证：只写不读，范围由清单 `credentials` 声明。 */
+  readonly credentials: PluginCredentials;
   readonly events: PluginEvents;
   readonly files: PluginFiles;
   readonly log: Log;
