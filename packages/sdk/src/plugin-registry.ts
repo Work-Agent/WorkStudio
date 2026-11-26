@@ -18,6 +18,7 @@ export interface PluginRegistryEntry {
   stage?: 'installed' | 'ready' | 'error' | 'broken';
   state: PluginRegistryState;
   installedVersion?: string;
+  icon?: string;
   builtin?: boolean;
   hasConfig?: boolean;
   error?: string;
