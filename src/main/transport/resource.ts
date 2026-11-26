@@ -16,6 +16,7 @@ export type {
   OpenTarget,
   ReadOptions,
   ResourceAdapter,
+  ResourceRoot,
 } from '@work-studio/sdk';
 
 export function matchesClaim(ref: string, claim: Claim): boolean {

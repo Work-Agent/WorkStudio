@@ -14,6 +14,7 @@ import type {
   OpenTarget,
   ReadOptions,
   ResourceAdapter,
+  ResourceRoot,
 } from './resource.ts';
 import { matchesClaim } from './resource.ts';
 import type { WorkspaceFiles } from './workspace-files.ts';
@@ -65,6 +66,35 @@ export class TransportRouter {
         this.registrations.splice(index, 1);
       }
     }
+  }
+
+  /** 已登记适配器的资源根自述；没有 describe 的按 claims 前缀兜底。 */
+  resourceRoots(): ResourceRoot[] {
+    const roots: ResourceRoot[] = [];
+    for (const registration of this.registrations) {
+      try {
+        const described = registration.adapter.describe?.();
+        if (described) {
+          roots.push(...(Array.isArray(described) ? described : [described]));
+          continue;
+        }
+      } catch {
+        // 单个适配器描述失败不影响其他根。
+      }
+      for (const claim of registration.claims) {
+        for (const prefix of claim.prefixes ?? []) {
+          roots.push({
+            root: prefix,
+            label: registration.domain,
+            // 兜底根如实说明支持的动作，避免模型对 ls 产生错误预期。
+            summary: registration.adapter.ls
+              ? '资源根；用 ls 查看结构'
+              : '资源根；用 read / grep 访问',
+          });
+        }
+      }
+    }
+    return roots;
   }
 
   resolve(ref: string): { domain: string; adapter: ResourceAdapter } | null {

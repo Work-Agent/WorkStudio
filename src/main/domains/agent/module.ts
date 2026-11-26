@@ -290,6 +290,7 @@ export class AgentModule implements DomainModule {
       storage: this.storage,
       workspacePath: path,
       workspaceId,
+      resourceRoots: () => this.tools.resourceRoots(),
       ...(sessionFile ? { sessionFile } : {}),
       ...(draftKey ? { draftKey } : {}),
       sendEvent: (frame) => this.onSessionFrame(agent, frame),

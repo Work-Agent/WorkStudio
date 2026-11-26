@@ -60,6 +60,7 @@ export type {
   OpenTarget,
   ReadOptions,
   ResourceAdapter,
+  ResourceRoot,
 } from './resource.ts';
 export type {
   PluginEvents,

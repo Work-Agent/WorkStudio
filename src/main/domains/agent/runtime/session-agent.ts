@@ -36,6 +36,7 @@ import { listSessions } from './session-list.ts';
 import { AppSpaceSettingsStorage } from './settings-storage.ts';
 import { readSessionMessages, deleteSessionFile } from './session-index.ts';
 import { AgentSession as WorkAgentSession } from './session.ts';
+import type { ResourceRoot } from '../../../transport/resource.ts';
 import { DialogHost, makeUiContext } from './ui-context.ts';
 import type { AgentApp } from './agent-app.ts';
 
@@ -54,6 +55,8 @@ export interface SessionAgentOptions {
   sendEvent?: (frame: PiEventFrame) => void;
   onTurnFinished?: () => void;
   onSessionCreated?: (path: string) => void;
+  /** 会话创建时生成资源地图用的资源根。 */
+  resourceRoots?: () => readonly ResourceRoot[];
   ui?: {
     onDialogRequest: (
       request: import('../../../../shared/types.ts').UiDialogRequest,
@@ -551,6 +554,7 @@ export class SessionAgent {
         skills: this.app.skills,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
         ...(additionalSkillPaths.length > 0 ? { additionalSkillPaths } : {}),
+        resourceRoots: this.options.resourceRoots?.() ?? [],
         skillOwner: (source) => this.app.skillOwner(source),
         openExternal: (url) => this.app.openExternal(url),
       });

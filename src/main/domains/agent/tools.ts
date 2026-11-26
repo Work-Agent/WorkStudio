@@ -16,6 +16,7 @@ import type {
   Item,
   ListOptions,
   ReadOptions,
+  ResourceRoot,
 } from '../../transport/resource.ts';
 import type { TransportRouter } from '../../transport/router.ts';
 import { createLog } from '../../log.ts';
@@ -81,6 +82,11 @@ export class ToolSurface {
 
   list(): readonly ToolInfo[] {
     return TOOLS;
+  }
+
+  /** 会话创建时注入资源地图：已登记适配器的资源根。 */
+  resourceRoots(): ResourceRoot[] {
+    return this.transport.resourceRoots();
   }
 
   async ls(ref: string, options?: ListOptions): Promise<Entry[]> {
