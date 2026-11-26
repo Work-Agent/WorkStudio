@@ -35,6 +35,36 @@
         "invalid": 2,
         "notFound": 3
       }
+    },
+    {
+      "name": "html-viewer.credentialProbe",
+      "summary": "验证凭证写入受限",
+      "args": {},
+      "exitCodes": {
+        "ok": 0,
+        "failed": 1,
+        "invalid": 2,
+        "notFound": 3
+      }
+    },
+    {
+      "name": "html-viewer.secret",
+      "summary": "读写本插件密钥域的探针",
+      "args": {
+        "action": {
+          "type": "string",
+          "required": true
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "exitCodes": {
+        "ok": 0,
+        "failed": 1,
+        "invalid": 2,
+        "notFound": 3
+      }
     }
   ]
 }

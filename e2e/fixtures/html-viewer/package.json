@@ -23,6 +23,9 @@
     ],
     "skills": [
       "skills/html-viewer"
+    ],
+    "credentials": [
+      "html-viewer-probe"
     ]
   },
   "exports": {

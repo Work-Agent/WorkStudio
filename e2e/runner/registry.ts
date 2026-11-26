@@ -24,6 +24,9 @@ import sidebarResize from '../cases/sidebar-resize.ts';
 import sidebarSearch from '../cases/sidebar-search.ts';
 import agentOauth from '../cases/agent-oauth.ts';
 import agentModels from '../cases/agent-models.ts';
+import agentCredentials from '../cases/agent-credentials.ts';
+import agentSecretDomains from '../cases/agent-secret-domains.ts';
+import agentLoginPage from '../cases/agent-login-page.ts';
 import dialogSelect from '../cases/dialog-select.ts';
 import settingsPreferences from '../cases/settings-preferences.ts';
 import pluginLifecycle from '../cases/plugin-lifecycle.ts';
@@ -81,6 +84,9 @@ export const cases: readonly E2ECase[] = [
   sidebarSearch,
   agentOauth,
   agentModels,
+  agentCredentials,
+  agentSecretDomains,
+  agentLoginPage,
   pluginContent,
   pluginSave,
   pluginSkills,

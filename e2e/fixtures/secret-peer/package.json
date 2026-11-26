@@ -1,0 +1,18 @@
+{
+  "name": "@work-studio/plugin-secret-peer",
+  "version": "1.0.0",
+  "description": "密钥域隔离探针插件：只能读写自己的域",
+  "author": "work-studio",
+  "type": "module",
+  "workstudio": {
+    "id": "secret-peer",
+    "label": "密钥域探针",
+    "icon": "key",
+    "pages": {
+      "content": "index.html"
+    }
+  },
+  "exports": {
+    "./workstudio": "./engine.js"
+  }
+}
