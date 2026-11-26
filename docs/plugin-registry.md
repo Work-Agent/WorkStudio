@@ -65,7 +65,7 @@ index.json 中 builtin: true
 ```
 
 - 同步发生在打包阶段（`pnpm plugins:sync`，由 `package` / `make` / `release` 与 release workflow 调用），普通构建不联网；
-- `out/plugins` 只被产物构建清空（`build` / `package` / `make`）；dev 复用已有同步结果，所以本地要看到内置插件需先手动同步一次；
+- `out/plugins` 只由同步脚本写入（每次同步前清空）；`build` 与 `dev` 都不动它，所以本地要看到内置插件需先手动同步一次；
 - 每个包仍按 sha256 固定，构建与运行时都不信任未校验的 zip；
 - 播种只向前：包版本高于已安装版本时覆盖，同版或用户已装的更新版本保留，不降级；
 - 内置插件在侧栏不可卸载；`plugins/data/<id>` 与普通插件一样保留。

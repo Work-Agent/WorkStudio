@@ -538,7 +538,7 @@ node node_modules/electron/install.js
 ### 7.4 Build and packaging
 
 - Build output `out/{main,preload,renderer}` and packaging output `dist/` are not committed.
-- To see built-in plugins in local development, run `pnpm plugins:sync` once (needs network, proxy allowed): `pnpm dev` reuses `out/plugins/`, and only production builds (`build` / `package` / `make`) clear it first.
+- To see built-in plugins in local development, run `pnpm plugins:sync` once (needs network, proxy allowed): `out/plugins/` is written only by that script (cleared before each sync), and neither `pnpm build` nor `pnpm dev` touches it.
 - macOS builds are signed with a **Developer ID Application** certificate (hardened runtime + notarization): local builds discover the certificate from the keychain (create it in Apple Developer and import first); CI imports the p12 from secrets in the Release workflow. Fuses rewrite the binary and electron-builder re-signs afterwards. Signing is a prerequisite for in-app silent updates — Squirrel.Mac verifies that the update bundle's code signature matches the running app (Team ID); ad-hoc signed copies cannot silently upgrade to a signed version.
 - Installers are produced on the matching platform (or in CI): a macOS host builds mac targets only by default; Windows / Linux targets belong to CI.
 

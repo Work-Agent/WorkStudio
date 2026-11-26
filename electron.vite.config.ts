@@ -1,29 +1,8 @@
-import { rmSync } from 'fs';
 import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { defaultAllowedOrigins, type Plugin } from 'vite';
-
-/**
- * out/plugins 只由打包期的 registry 同步写入（scripts/sync-builtin-plugins.mjs）。
- * 产物构建先清空，避免上一次同步的包混进新的产物。
- *
- * dev 下 electron-vite 同样用 build 流程产出 main/preload（mode=development），
- * 只按 command 判断会把每次 dev 已同步的内置包一起删掉，故按 mode 区分。
- */
-function resetBuiltinPlugins(): Plugin {
-  return {
-    name: 'ws-reset-builtin-plugins',
-    apply: (_config, env) => env.mode !== 'development',
-    buildStart() {
-      rmSync(resolve(__dirname, 'out/plugins'), {
-        recursive: true,
-        force: true,
-      });
-    },
-  };
-}
 
 /**
  * 主进程 bundle 需要 pi（ESM 依赖链）：
@@ -104,7 +83,7 @@ function workPageDevAssets(): Plugin {
  */
 export default defineConfig({
   main: {
-    plugins: [renamePiNodeGlobals(), resetBuiltinPlugins()],
+    plugins: [renamePiNodeGlobals()],
     build: {
       outDir: 'out/main',
       // 依赖全部打进主进程 bundle（pi + 其依赖）：打包时不再依赖 node_modules

@@ -538,7 +538,7 @@ node node_modules/electron/install.js
 
 - 构建产物 `out/{main,preload,renderer}` 与打包产物 `dist/` 都不进版本库。
 - 打包前会执行 `pnpm plugins:sync`：读取注册表 `index.json`，把 `builtin: true` 的条目下载并校验到 `out/plugins/`；应用首次启动再播种到数据根的 `plugins/installed/`。
-- 本地开发要看到内置插件，先执行一次 `pnpm plugins:sync`（需要网络，可走代理）：`pnpm dev` 复用 `out/plugins/`，只有产物构建（`build` / `package` / `make`）会先清空它。
+- 本地开发要看到内置插件，先执行一次 `pnpm plugins:sync`（需要网络，可走代理）：`out/plugins/` 只由该脚本写入（每次同步前清空），`pnpm build` 与 `pnpm dev` 都不动它。
 - macOS 构建使用 **Developer ID Application** 证书签名（hardened runtime + 公证）：本地构建从钥匙串自动发现证书（需先在 Apple Developer 创建并导入）；CI 由 Release workflow 从 secrets 导入 p12。fuses 会改写二进制，electron-builder 在改写后重签。签名是应用内静默更新的前置条件——Squirrel.Mac 校验更新包与当前应用的代码签名一致（Team ID），ad-hoc 签名的副本无法静默升级到签名版本。
 - 安装包在对应平台（或 CI）上产出：macOS 主机默认只产 mac 目标，Windows / Linux 目标交给 CI。
 
