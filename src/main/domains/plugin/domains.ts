@@ -114,7 +114,7 @@ export function definePluginResources(
   installed.command('open', {
     summary: '打开插件设置页',
     args: { id: { type: 'string', required: true } },
-    run: (input) => openPluginSettings(registry, store, String(input.id)),
+    run: (input) => openPluginHome(registry, store, String(input.id)),
   });
   installed.command('reveal', {
     summary: '在文件管理器中打开插件目录',
@@ -257,7 +257,7 @@ export function definePluginResources(
   pluginRegistry.command('open', {
     summary: '打开插件设置页',
     args: { id: { type: 'string', required: true } },
-    run: (input) => openPluginSettings(registry, store, String(input.id)),
+    run: (input) => openPluginHome(registry, store, String(input.id)),
   });
 
   service.onChange((type) => {
@@ -380,27 +380,26 @@ function registrySnapshot(
   };
 }
 
-async function openPluginSettings(
+/** 插件主页：有设置页走 settings；没有设置页回退到内容页。 */
+async function openPluginHome(
   registry: DomainRegistry,
   store: PluginStore,
   id: string,
 ): Promise<unknown> {
   const pkg = store.read(id);
   if (!pkg) throw new CallFailure('not_found', `插件不存在或已损坏：${id}`);
-  if (!pkg.settingsPage) {
-    throw new CallFailure('not_found', `插件没有设置页：${id}`);
-  }
   const label = pkg.manifest.label ?? id;
+  const surface = pkg.settingsPage ? 'settings' : 'content';
   const windowId = activeWindowId(registry);
   if (!windowId) throw new CallFailure('failed', '没有活动窗口');
   const result = await registry.dispatchCommand(
     { domain: 'shell', resource: `${windowId}/views` },
     'open',
     {
-      id: `plugin:${id}:settings`,
+      id: `plugin:${id}:${surface}`,
       type: 'page',
-      title: `${label} 设置`,
-      url: `plugin://${id}/settings`,
+      title: surface === 'settings' ? `${label} 设置` : label,
+      url: `plugin://${id}/${surface}`,
     },
     serviceContext(registry),
   );

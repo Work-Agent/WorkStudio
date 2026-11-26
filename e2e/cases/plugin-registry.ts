@@ -33,6 +33,9 @@ export default defineCase({
         ),
       '侧栏插件注册表未渲染已安装项',
     );
+    await ctx.clickTestId('plugin-registry-installed');
+    const page = await ctx.waitForPage(/html-viewer\/settings/);
+    await page.expect.text('body', 'HTML 阅读器');
     await ctx.clickTestId('sidebar-nav-resources');
   },
 });

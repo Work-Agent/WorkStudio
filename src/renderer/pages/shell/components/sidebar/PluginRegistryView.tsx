@@ -83,6 +83,18 @@ export function PluginRegistryView() {
   const open = (entry: PluginRegistryEntry): Promise<void> =>
     act(() => run('open', { id: entry.id }));
 
+  const openAvailable = (entry: PluginRegistryEntry): Promise<void> =>
+    act(async () => {
+      if (
+        entry.state === 'available' &&
+        !window.confirm(`安装「${entry.name}」并打开插件主页？`)
+      ) {
+        return;
+      }
+      await run('install', { id: entry.id });
+      await run('open', { id: entry.id });
+    });
+
   const installManual = (): Promise<void> =>
     act(async () => {
       await run('installSource', { source });
@@ -187,7 +199,9 @@ export function PluginRegistryView() {
             <div
               key={entry.id}
               data-testid="plugin-registry-installed"
-              className="rounded-lg border border-zinc-200 px-2 py-1.5 dark:border-[#2c3039]"
+              title="打开插件主页"
+              onClick={() => void open(entry)}
+              className="cursor-pointer rounded-lg border border-zinc-200 px-2 py-1.5 transition-colors hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
             >
               <div className="flex items-center gap-1.5">
                 <span className="min-w-0 flex-1 truncate font-medium">
@@ -216,7 +230,10 @@ export function PluginRegistryView() {
                     type="button"
                     disabled={locked}
                     className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                    onClick={() => void open(entry)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void open(entry);
+                    }}
                   >
                     配置
                   </button>
@@ -225,7 +242,10 @@ export function PluginRegistryView() {
                   type="button"
                   disabled={locked}
                   className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                  onClick={() => void reload(entry)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void reload(entry);
+                  }}
                 >
                   重载
                 </button>
@@ -234,7 +254,10 @@ export function PluginRegistryView() {
                     type="button"
                     disabled={locked}
                     className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                    onClick={() => void remove(entry)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void remove(entry);
+                    }}
                   >
                     卸载
                   </button>
@@ -257,7 +280,9 @@ export function PluginRegistryView() {
             <div
               key={entry.id}
               data-testid="plugin-registry-available"
-              className="rounded-lg border border-zinc-200 px-2 py-1.5 dark:border-[#2c3039]"
+              title="安装并打开插件主页"
+              onClick={() => void openAvailable(entry)}
+              className="cursor-pointer rounded-lg border border-zinc-200 px-2 py-1.5 transition-colors hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
             >
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -280,11 +305,12 @@ export function PluginRegistryView() {
                   type="button"
                   disabled={locked || entry.builtin}
                   className="shrink-0 rounded border border-zinc-200 px-2 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                  onClick={() =>
+                  onClick={(event) => {
+                    event.stopPropagation();
                     void (entry.state === 'update'
                       ? update(entry)
-                      : install(entry))
-                  }
+                      : install(entry));
+                  }}
                 >
                   {entry.builtin
                     ? '内置'
