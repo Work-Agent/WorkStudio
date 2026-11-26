@@ -183,7 +183,7 @@ await window.workStudio.command(
 - `accessToken` 只进主进程，资源快照只返回 `ProviderInfoView`（是否已配置、认证来源等），不回传 token；
 - 插件页被允许订阅 `agent/providers` / `agent/provider/<id>`，并且只允许调用 `beginOAuth` / `completeLogin`；`save` / `delete` / `logout` 不对页面开放；
 - bridge 只注入系统页和插件页。普通外部 HTTPS 页面没有 `window.workStudio`，OAuth 回调应落在 `work://studio/oauth` 系统页或插件页；
-- 完成后通过 `agent/providers` 的订阅更新即可看到供应商变为已配置。
+- 完成后 `agent/providers` 会变为已配置，宿主同时刷新该供应商的模型目录；界面按供应商展开模型列表。
 
 ## 8. 构建
 

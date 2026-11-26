@@ -220,6 +220,9 @@ export class AgentApp {
       },
       { providerId: input.providerId, type: 'oauth' },
     );
+    // OAuth 登录会带来新的模型目录；刷新宿主投影（runProviderLogin 已完成网络刷新）。
+    this.onChanged?.();
+    ui.emitStatus();
   }
 
   private async refreshModels(): Promise<void> {

@@ -425,14 +425,14 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 - **Model and config page**: a newly added custom model is written with `compat.supportsDeveloperRole: false` by default, since third-party endpoints generally accept only the `system` instruction role; existing model entries are never rewritten or migrated.
 - Pages read only their own partition and whitelisted commands, never connecting to sources directly.
 
-| Settings entry             | User task                                                                                                                             |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Appearance                 | Black (pure black default), Graphite, Porcelain and Mist; follow the system with separate light/dark choices; shared editor font size |
-| Preferences                | Distinguish app defaults from workspace overrides; restore inheritance and protect unsaved form changes                               |
-| Model connections          | Connect a provider before selecting an available default model; OAuth pages can return a token; custom endpoints are advanced options |
-| Capabilities               | Keep document plugins, skills and assistant extensions distinct, with their sources, scopes and actual runtime states                 |
-| Resource diagnostics       | Use the sidebar's source state, counts and errors; reveal registry details on demand                                                  |
-| Storage, About and updates | Common locations and version status first; advanced paths and access tokens on demand                                                 |
+| Settings entry             | User task                                                                                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Appearance                 | Black (pure black default), Graphite, Porcelain and Mist; follow the system with separate light/dark choices; shared editor font size               |
+| Preferences                | Distinguish app defaults from workspace overrides; restore inheritance and protect unsaved form changes                                             |
+| Model connections          | Models are grouped under providers; sign in before selecting one; OAuth refreshes the provider model catalog; custom endpoints are advanced options |
+| Capabilities               | Keep document plugins, skills and assistant extensions distinct, with their sources, scopes and actual runtime states                               |
+| Resource diagnostics       | Use the sidebar's source state, counts and errors; reveal registry details on demand                                                                |
+| Storage, About and updates | Common locations and version status first; advanced paths and access tokens on demand                                                               |
 
 Appearance is an app preference that survives workspace changes and restarts. The shell, built-in pages, assistant and editors stay in sync. Websites and document previews retain their own colors; third-party pages can still receive light/dark themes.
 

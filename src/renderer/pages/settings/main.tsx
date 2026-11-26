@@ -697,6 +697,7 @@ function ModelsCard() {
     'text',
   ]);
   const [providerQuery, setProviderQuery] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [authFor, setAuthFor] = useState<string | null>(null);
   const [keyFor, setKeyFor] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
@@ -729,6 +730,7 @@ function ModelsCard() {
         setAuthFor(null);
         setKeyFor(null);
         setApiKey('');
+        setExpanded(provider.id);
       })
       .catch(report)
       .finally(() => setBusy(null));
@@ -981,114 +983,180 @@ function ModelsCard() {
                 provider.canApiKeyLogin || provider.canOAuthLogin;
               const choosing = authFor === provider.id;
               const enteringKey = keyFor === provider.id;
+              const providerModels = models.catalog.filter(
+                (model) => model.provider === provider.id,
+              );
               return (
                 <div
                   key={provider.id}
-                  className="flex flex-wrap items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[12px] dark:border-[#2c3039]"
+                  className="rounded border border-zinc-200 dark:border-[#2c3039]"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{provider.name}</div>
-                    <div className="truncate text-[10px] text-zinc-400">
-                      {provider.configured
-                        ? `已连接 · ${provider.authLabel ?? ''}`
-                        : '未连接'}
-                      {' · '}
-                      {provider.modelCount} 个模型
+                  <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-[12px]">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">
+                        {provider.name}
+                      </div>
+                      <div className="truncate text-[10px] text-zinc-400">
+                        {provider.configured
+                          ? `已连接 · ${provider.authLabel ?? ''}`
+                          : '未连接'}
+                        {' · '}
+                        {providerModels.length} 个模型
+                      </div>
                     </div>
-                  </div>
-                  {enteringKey ? (
-                    <div className="flex items-center gap-1">
-                      <input
-                        autoFocus
-                        type="password"
-                        value={apiKey}
-                        onChange={(event) => setApiKey(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') login(provider, 'api_key');
-                          if (event.key === 'Escape') {
-                            setKeyFor(null);
-                            setApiKey('');
-                          }
-                        }}
-                        placeholder="API Key"
-                        className={`${inputClass} w-40`}
-                      />
-                      <Button
-                        disabled={!apiKey.trim() || busy !== null}
-                        onClick={() => login(provider, 'api_key')}
-                      >
-                        保存
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setKeyFor(null);
-                          setApiKey('');
-                        }}
-                      >
-                        取消
-                      </Button>
-                    </div>
-                  ) : choosing ? (
-                    <div className="flex items-center gap-1">
-                      {provider.canApiKeyLogin && (
+                    <Button
+                      active={expanded === provider.id}
+                      onClick={() =>
+                        setExpanded(
+                          expanded === provider.id ? null : provider.id,
+                        )
+                      }
+                    >
+                      模型 {providerModels.length}
+                    </Button>
+                    {enteringKey ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          type="password"
+                          value={apiKey}
+                          onChange={(event) => setApiKey(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter')
+                              login(provider, 'api_key');
+                            if (event.key === 'Escape') {
+                              setKeyFor(null);
+                              setApiKey('');
+                            }
+                          }}
+                          placeholder="API Key"
+                          className={`${inputClass} w-40`}
+                        />
+                        <Button
+                          disabled={!apiKey.trim() || busy !== null}
+                          onClick={() => login(provider, 'api_key')}
+                        >
+                          保存
+                        </Button>
                         <Button
                           onClick={() => {
-                            setAuthFor(null);
-                            setKeyFor(provider.id);
+                            setKeyFor(null);
                             setApiKey('');
                           }}
                         >
-                          API Key
+                          取消
                         </Button>
-                      )}
-                      {provider.canOAuthLogin && (
-                        <Button
-                          disabled={busy !== null}
-                          onClick={() => login(provider, 'oauth')}
-                        >
-                          OAuth
-                        </Button>
-                      )}
-                      <Button onClick={() => setAuthFor(null)}>取消</Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      {!provider.builtin && (
-                        <Button
-                          onClick={() =>
-                            void run('agent', 'providers', 'delete', {
-                              providerId: provider.id,
-                            }).catch(report)
-                          }
-                        >
-                          删除
-                        </Button>
-                      )}
-                      {provider.configured && (
-                        <Button
-                          onClick={() =>
-                            void run(
-                              'agent',
-                              providerAddress(provider.id),
-                              'logout',
-                            ).catch(report)
-                          }
-                        >
-                          退出
-                        </Button>
-                      )}
-                      {canLogin && (
-                        <Button
-                          disabled={busy !== null}
-                          onClick={() => startLogin(provider)}
-                        >
-                          {provider.configured ? '重新登录' : '连接'}
-                        </Button>
-                      )}
-                      {!canLogin && !provider.configured && (
-                        <span className="text-[10px] text-zinc-400">
-                          仅使用环境变量
-                        </span>
+                      </div>
+                    ) : choosing ? (
+                      <div className="flex items-center gap-1">
+                        {provider.canApiKeyLogin && (
+                          <Button
+                            onClick={() => {
+                              setAuthFor(null);
+                              setKeyFor(provider.id);
+                              setApiKey('');
+                            }}
+                          >
+                            API Key
+                          </Button>
+                        )}
+                        {provider.canOAuthLogin && (
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => login(provider, 'oauth')}
+                          >
+                            OAuth
+                          </Button>
+                        )}
+                        <Button onClick={() => setAuthFor(null)}>取消</Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        {!provider.builtin && (
+                          <Button
+                            onClick={() =>
+                              void run('agent', 'providers', 'delete', {
+                                providerId: provider.id,
+                              }).catch(report)
+                            }
+                          >
+                            删除
+                          </Button>
+                        )}
+                        {provider.configured && (
+                          <Button
+                            onClick={() =>
+                              void run(
+                                'agent',
+                                providerAddress(provider.id),
+                                'logout',
+                              ).catch(report)
+                            }
+                          >
+                            退出
+                          </Button>
+                        )}
+                        {canLogin && (
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => startLogin(provider)}
+                          >
+                            {provider.configured ? '重新登录' : '连接'}
+                          </Button>
+                        )}
+                        {!canLogin && !provider.configured && (
+                          <span className="text-[10px] text-zinc-400">
+                            仅使用环境变量
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {expanded === provider.id && (
+                    <div className="space-y-1 border-t border-zinc-200 px-3 py-2 dark:border-[#2c3039]">
+                      {providerModels.length === 0 ? (
+                        <p className="text-[11px] text-zinc-500">
+                          暂无模型；登录供应商后会刷新其模型目录
+                        </p>
+                      ) : (
+                        providerModels.map((model) => {
+                          const active =
+                            current?.provider === model.provider &&
+                            current?.modelId === model.modelId;
+                          return (
+                            <div
+                              key={model.modelId}
+                              className="flex items-center gap-2 py-0.5 text-[11px]"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="truncate font-medium text-zinc-700 dark:text-zinc-200">
+                                  {model.label}
+                                </span>
+                                <span className="ml-2 font-mono text-[10px] text-zinc-400">
+                                  {model.modelId}
+                                </span>
+                              </div>
+                              {model.available === false ? (
+                                <span className="text-[10px] text-zinc-400">
+                                  需登录
+                                </span>
+                              ) : (
+                                <Button
+                                  active={active}
+                                  disabled={active}
+                                  onClick={() =>
+                                    void run('agent', 'models', 'setDefault', {
+                                      providerId: model.provider,
+                                      modelId: model.modelId,
+                                    }).catch(report)
+                                  }
+                                >
+                                  {active ? '当前' : '使用'}
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   )}
@@ -1097,46 +1165,6 @@ function ModelsCard() {
             })}
           {models.providers.length === 0 && (
             <p className="text-[12px] text-zinc-500">暂无供应商目录</p>
-          )}
-        </div>
-      </Section>
-
-      <Section title="可用模型">
-        <div className="space-y-1">
-          {models.catalog
-            .filter((model) => model.available !== false)
-            .map((model) => {
-              const active =
-                current?.provider === model.provider &&
-                current?.modelId === model.modelId;
-              return (
-                <div
-                  key={`${model.provider}/${model.modelId}`}
-                  className="flex items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 dark:border-[#2c3039]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-medium">{model.label}</div>
-                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {model.provider} · {model.modelId}
-                    </div>
-                  </div>
-                  <Button
-                    active={active}
-                    disabled={active}
-                    onClick={() =>
-                      void run('agent', 'models', 'setDefault', {
-                        providerId: model.provider,
-                        modelId: model.modelId,
-                      }).catch(report)
-                    }
-                  >
-                    {active ? '当前' : '使用'}
-                  </Button>
-                </div>
-              );
-            })}
-          {models.catalog.length === 0 && (
-            <p className="text-[12px] text-zinc-500">暂无可用模型</p>
           )}
         </div>
       </Section>
