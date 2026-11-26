@@ -26,6 +26,12 @@ const STAGE_LABEL: Record<string, string> = {
   broken: '包损坏',
 };
 
+const BUTTON =
+  'cursor-pointer whitespace-nowrap rounded-md border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303436] dark:text-zinc-300 dark:hover:bg-[#23272a]';
+
+const PRIMARY =
+  'cursor-pointer rounded-md bg-[#4F6BED] px-2.5 py-1 text-[11px] text-white transition-colors hover:bg-[#3D56E0] disabled:cursor-not-allowed disabled:opacity-40';
+
 function ago(value: number | null): string {
   if (!value) return '尚未加载';
   const diff = Math.max(0, Date.now() - value);
@@ -133,7 +139,7 @@ export function PluginRegistryView() {
           type="button"
           disabled={locked}
           onClick={() => void act(() => run('refresh'))}
-          className="rounded border border-zinc-200 px-2 py-1 text-[11px] text-zinc-600 disabled:opacity-40 dark:border-[#303436] dark:text-zinc-300"
+          className={BUTTON}
         >
           刷新
         </button>
@@ -157,7 +163,7 @@ export function PluginRegistryView() {
               task.phase !== 'activate' && (
                 <button
                   type="button"
-                  className="rounded border border-zinc-200 px-2 py-1 text-[11px] dark:border-[#303436]"
+                  className={BUTTON}
                   onClick={() => void act(() => run('cancel'))}
                 >
                   取消
@@ -166,7 +172,7 @@ export function PluginRegistryView() {
             {task.status !== 'running' && (
               <button
                 type="button"
-                className="rounded border border-zinc-200 px-2 py-1 text-[11px] dark:border-[#303436]"
+                className={BUTTON}
                 onClick={() => void act(() => run('clearTask'))}
               >
                 关闭
@@ -199,69 +205,62 @@ export function PluginRegistryView() {
             <div
               key={entry.id}
               data-testid="plugin-registry-installed"
-              title="打开插件主页"
+              title="打开插件设置"
               onClick={() => void open(entry)}
               className="cursor-pointer rounded-lg border border-zinc-200 px-2 py-1.5 transition-colors hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
             >
-              <div className="flex items-center gap-1.5">
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {entry.name}
-                </span>
-                {entry.builtin && (
-                  <span className="rounded bg-indigo-50 px-1 text-[10px] text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-400">
-                    内置
-                  </span>
-                )}
-                <span className="text-[10px] text-zinc-400">
-                  {STAGE_LABEL[entry.stage ?? ''] ?? entry.stage ?? ''}
-                </span>
-              </div>
-              <div className="truncate font-mono text-[10px] text-zinc-400">
-                v{entry.version} · {entry.id}
-              </div>
-              {entry.error && (
-                <div className="mt-0.5 text-[11px] text-red-500">
-                  {entry.error}
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {entry.name}
+                    </span>
+                    {entry.builtin && (
+                      <span className="shrink-0 rounded bg-indigo-50 px-1 text-[10px] text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-400">
+                        内置
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 truncate font-mono text-[10px] text-zinc-400">
+                    <span className="truncate">
+                      v{entry.version} · {entry.id}
+                    </span>
+                    <span className="shrink-0 font-sans">
+                      {STAGE_LABEL[entry.stage ?? ''] ?? entry.stage ?? ''}
+                    </span>
+                  </div>
+                  {entry.error && (
+                    <div className="mt-0.5 text-[11px] text-red-500">
+                      {entry.error}
+                    </div>
+                  )}
                 </div>
-              )}
-              <div className="mt-1 flex gap-1">
-                {entry.hasConfig && (
+                <div className="flex shrink-0 gap-1">
                   <button
                     type="button"
                     disabled={locked}
-                    className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
+                    className={BUTTON}
                     onClick={(event) => {
                       event.stopPropagation();
-                      void open(entry);
+                      void reload(entry);
                     }}
                   >
-                    配置
+                    重载
                   </button>
-                )}
-                <button
-                  type="button"
-                  disabled={locked}
-                  className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void reload(entry);
-                  }}
-                >
-                  重载
-                </button>
-                {!entry.builtin && (
-                  <button
-                    type="button"
-                    disabled={locked}
-                    className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void remove(entry);
-                    }}
-                  >
-                    卸载
-                  </button>
-                )}
+                  {!entry.builtin && (
+                    <button
+                      type="button"
+                      disabled={locked}
+                      className={BUTTON}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void remove(entry);
+                      }}
+                    >
+                      卸载
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -304,7 +303,7 @@ export function PluginRegistryView() {
                 <button
                   type="button"
                   disabled={locked || entry.builtin}
-                  className="shrink-0 rounded border border-zinc-200 px-2 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
+                  className={PRIMARY}
                   onClick={(event) => {
                     event.stopPropagation();
                     void (entry.state === 'update'
@@ -341,7 +340,7 @@ export function PluginRegistryView() {
           <button
             type="button"
             disabled={locked || !source.trim()}
-            className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
+            className={BUTTON}
             onClick={() => void installManual()}
           >
             安装
@@ -349,7 +348,7 @@ export function PluginRegistryView() {
           <button
             type="button"
             disabled={locked}
-            className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] disabled:opacity-40 dark:border-[#303436]"
+            className={BUTTON}
             onClick={() => void pickFile()}
           >
             zip
