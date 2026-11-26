@@ -429,7 +429,7 @@ Settings does not touch the pipeline: no transport / codec / store, only pages a
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Appearance                 | Black (pure black default), Graphite, Porcelain and Mist; follow the system with separate light/dark choices; shared editor font size |
 | Preferences                | Distinguish app defaults from workspace overrides; restore inheritance and protect unsaved form changes                               |
-| Model connections          | Connect a provider before selecting an available default model; custom endpoints are advanced options                                 |
+| Model connections          | Connect a provider before selecting an available default model; OAuth pages can return a token; custom endpoints are advanced options |
 | Capabilities               | Keep document plugins, skills and assistant extensions distinct, with their sources, scopes and actual runtime states                 |
 | Resource diagnostics       | Use the sidebar's source state, counts and errors; reveal registry details on demand                                                  |
 | Storage, About and updates | Common locations and version status first; advanced paths and access tokens on demand                                                 |

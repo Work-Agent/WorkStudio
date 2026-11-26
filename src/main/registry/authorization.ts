@@ -34,6 +34,14 @@ export function commandDenialOf(
   ) {
     return null;
   }
+  // OAuth 回调页需要把 accessToken 交回 provider 资源；只开放这两个命令。
+  if (
+    entry.address.domain === 'agent' &&
+    entry.address.resource.startsWith('provider/') &&
+    (entry.action === 'beginOAuth' || entry.action === 'completeLogin')
+  ) {
+    return null;
+  }
   if (
     origin.workspaceId &&
     entry.action === 'open' &&
@@ -53,5 +61,8 @@ export function subscriptionDenialOf(
   if (!pluginId) return null;
   if (address.startsWith(`${pluginId}/`)) return null;
   if (address === 'shell/appearance') return null;
+  if (address === 'agent/providers' || address.startsWith('agent/provider/')) {
+    return null;
+  }
   return `插件视图无权订阅：${address}`;
 }

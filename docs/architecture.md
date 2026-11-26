@@ -249,6 +249,8 @@ web ────────→ transport / cache（由 browser 模块承载）
 
 聚合根是一致性边界：例如 `agent/skills` 管激活与禁用，`agent/<wsId>/session/<sessionId>` 管单个会话的消息、轮次、队列和 thinking，`agent/<wsId>/sessions` 是集合投影与当前会话入口；`agent/provider/<id>` 管供应商配置与认证，`agent/model/<provider>/<id>` 管模型条目。`agent/tools`、`agent/prompts` 这类只读投影不承载命令，不强行做聚合根。`agent/<wsId>/sessions` 每个工作区一份：首次使用时按需创建该工作区的 pi runtime，未创建时给只读投影。模型、凭证、设置与技能是 App 级共享（AgentApp），会话与扩展上下文按工作区绑定。
 
+供应商就是资源：`agent/providers` 是目录投影，`agent/provider/<id>` 承载配置与认证。OAuth 外部页通过 bridge 调用 `beginOAuth` 取得一次 `state`，回调页再用 `completeLogin` 提交 `state + accessToken`；凭证值只进主进程，资源快照不返回 token。bridge 只存在于系统页与插件页，普通外部 HTTPS 页面不注入 `window.workStudio`。
+
 System Domain 由模块持有，不读内容字节，也不出现在工具面里。模块只负责生命周期；Domain 才是服务边界，Resource 才是聚合根。例如 `skills` 是 `agent/skills`，不是独立的 `skills` Domain。
 
 ### 4.3 Biz Domain

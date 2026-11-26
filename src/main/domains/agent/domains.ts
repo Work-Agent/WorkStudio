@@ -6,6 +6,7 @@
  * agent 模块只是生命周期，不是地址前缀。
  */
 
+import { randomUUID } from 'node:crypto';
 import { CallFailure } from '../../contract.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import { AgentContext } from './context.ts';
@@ -816,6 +817,17 @@ export function defineModelsResources(
           type: 'oauth',
         });
         return null;
+      },
+    });
+    resource.command('beginOAuth', {
+      summary: '开始 OAuth 授权（返回 state）',
+      args: {},
+      run: () => {
+        const runtime = host?.();
+        if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
+        const state = randomUUID();
+        runtime.beginOAuth(providerId, state);
+        return { state };
       },
     });
     resource.command('completeLogin', {
