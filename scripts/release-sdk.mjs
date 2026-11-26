@@ -6,7 +6,8 @@
  * - 预发布 tag 不发 SDK；
  * - SDK 版本没变（等于 npm latest）且代码没变 → 跳过；
  * - SDK 代码变了但版本没 bump → 失败；
- * - SDK 版本不等于 npm latest → 必须等于 release tag，然后发布。
+ * - SDK 版本高于 npm latest → 发布。SDK 版本独立于 app 版本，
+ *   tag 只负责触发，发布与否由 packages/sdk/package.json 决定。
  *
  * 用法：
  *   node scripts/release-sdk.mjs --tag v0.3.3
@@ -163,11 +164,6 @@ if (tagVersion.includes('-')) {
 const latest = npmLatest();
 
 if (latest === null) {
-  if (sdkVersion !== tagVersion) {
-    fail(
-      `首次发布 SDK：packages/sdk 版本 ${sdkVersion} 必须等于 tag 版本 ${tagVersion}`,
-    );
-  }
   output({
     publish: 'true',
     version: sdkVersion,
@@ -191,7 +187,7 @@ const changed = changedSince(tag, baseline);
 if (sdkVersion === latest) {
   if (changed) {
     fail(
-      `SDK 自 ${baseline ? baseline.slice(0, 7) : '首个版本'} 以来有变化，但版本仍是 ${sdkVersion}；请 bump 到 ${tagVersion}`,
+      `SDK 自 ${baseline ? baseline.slice(0, 7) : '首个版本'} 以来有变化，但版本仍是 ${sdkVersion}；请 bump packages/sdk 版本`,
     );
   }
   output({
@@ -204,12 +200,6 @@ if (sdkVersion === latest) {
 
 if (compareStable(sdkVersion, latest) <= 0) {
   fail(`SDK 版本必须大于 npm latest ${latest}，当前 ${sdkVersion}`);
-}
-
-if (sdkVersion !== tagVersion) {
-  fail(
-    `SDK 版本 ${sdkVersion} 不等于 release tag ${tagVersion}（npm latest ${latest}）`,
-  );
 }
 
 output({

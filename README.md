@@ -555,7 +555,7 @@ git push origin v0.1.1
 
 workflow 先跑与 CI 相同的 verify（typecheck / lint / build），并判定 SDK 是否需要发布；通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
 
-SDK 只在其版本随 release bump 时发布；没有变化的 release 跳过 npm。发布判定、版本规则与 npm 认证见 [RELEASING.md](RELEASING.md)。
+SDK 只在其 `packages/sdk` 版本高于 npm 已发布版本时发布；没有变化的 release 跳过 npm。发布判定、版本规则与 npm 认证（Trusted Publisher，无需 token）见 [RELEASING.md](RELEASING.md)。
 
 macOS 构建需要仓库配置以下 Actions secrets：
 
@@ -566,7 +566,8 @@ macOS 构建需要仓库配置以下 Actions secrets：
 | `APPLE_ID`                    | Apple ID 邮箱（公证用）                          |
 | `APPLE_APP_SPECIFIC_PASSWORD` | appleid.apple.com 生成的 App 专用密码（公证用）  |
 | `APPLE_TEAM_ID`               | Team ID（公证用）                                |
-| `NPM_TOKEN`                   | 发布 `@work-studio/sdk` 的 npm granular token    |
+
+SDK 发布走 npm Trusted Publisher（OIDC），不需要 `NPM_TOKEN` 之类的 token secret。
 
 CI 在打包之后会验证签名身份（Developer ID Application）与 Gatekeeper 放行结果：公证凭据缺失或签名回退为 ad-hoc 时构建直接失败，避免发出无法静默更新的安装包。本地手动打包不注入公证凭据，因此只完成签名、不做公证。
 

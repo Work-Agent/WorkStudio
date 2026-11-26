@@ -1,7 +1,7 @@
 {
   "name": "work-studio",
   "productName": "WorkStudio",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "WorkStudio desktop application",
   "keywords": [],
