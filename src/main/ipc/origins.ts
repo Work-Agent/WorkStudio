@@ -21,14 +21,6 @@ export class Origins {
     return this.bySender.get(senderId) ?? null;
   }
 
-  /** 网页视图导航后更新来源地址（域名校验读它）。 */
-  setUrl(senderId: string, url: string): void {
-    const origin = this.bySender.get(senderId);
-    if (origin?.type === 'view' && origin.viewType === 'web') {
-      this.bySender.set(senderId, { ...origin, url });
-    }
-  }
-
   /** 发送方 → 视图的反查；用于把更新投递给正确的 webContents。 */
   senderOfView(viewId: string): string | null {
     for (const [senderId, origin] of this.bySender) {

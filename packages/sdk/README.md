@@ -152,38 +152,14 @@ window.workStudio.unsubscribe('workspace', 'file:///demo.md');
 | `agent/providers`     | 供应商目录投影         |
 | `agent/provider/<id>` | 单个供应商的配置与认证 |
 
-外部 OAuth 页面通过 `window.workStudio` 调用两个命令：
+凭证由主进程持有，页面不参与：
 
-```ts
-// 1. 宿主生成一次性 state；页面用它拼授权 URL
-const begin = await window.workStudio.command<{ state: string }>(
-  'agent',
-  `provider/${encodeURIComponent(providerId)}`,
-  'beginOAuth',
-  {},
-);
-const { state } = begin.ok
-  ? begin.data
-  : (() => {
-      throw new Error(begin.error.message);
-    })();
+- 大厂 OAuth：`agent/provider/<id>.login` 打开授权页，provider 回调本机回环，主进程换 token 后写入密钥库；
+- 自有服务：`agent/providers.openLogin` 打开供应商声明的 `loginUrl`（带 `redirect_uri` + `state`），登录成功后 302 回本机，主进程校验后写入；
+- 设置页的 API Key 走 `agent/provider/<id>.configureApiKey`；
+- 插件写凭证走 `ctx.credentials.write`（清单 `credentials` 声明范围）。
 
-// 2. OAuth 回调页把 state + accessToken 交回宿主
-await window.workStudio.command(
-  'agent',
-  `provider/${encodeURIComponent(providerId)}`,
-  'completeLogin',
-  { state, accessToken },
-);
-```
-
-约束：
-
-- `state` 由宿主生成、单次使用；`completeLogin` 校验失败会拒绝；
-- `accessToken` 只进主进程，资源快照只返回 `ProviderInfoView`（是否已配置、认证来源等），不回传 token；
-- 插件页被允许订阅 `agent/providers` / `agent/provider/<id>`，并且只允许调用 `beginOAuth` / `completeLogin`；`save` / `delete` / `logout` 不对页面开放；
-- bridge 只注入系统页和插件页。普通外部 HTTPS 页面没有 `window.workStudio`，OAuth 回调应落在 `work://studio/oauth` 系统页或插件页；
-- 完成后 `agent/providers` 会变为已配置，宿主同时刷新该供应商的模型目录；界面按供应商展开模型列表。
+网页标签不注入 `window.workStudio`，也没有任何凭证命令；供应商快照只返回 `ProviderInfoView`（是否已配置、认证来源等）。
 
 ## 8. 构建
 

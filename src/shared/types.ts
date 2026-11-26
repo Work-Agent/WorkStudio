@@ -69,8 +69,6 @@ export interface ProviderInfoView {
   authTypes: ProviderAuthType[];
   /** 授权页地址（打开新标签用它；缺省由 baseUrl 推导）。 */
   loginUrl?: string;
-  /** 允许回传凭证的来源域名（页面 host 必须命中其中之一）。 */
-  authDomains: string[];
   /** 当前生效的路线；未配置时缺省。 */
   authType?: ProviderAuthType;
   modelCount: number;
@@ -458,6 +456,8 @@ export interface UiDialogRequest {
   prefill?: string;
   /** 密文输入（凭证类）。 */
   secret?: boolean;
+  /** 非模态：不铺背板、不挡背后的页面（等待浏览器回调的粘贴框用它）。 */
+  modal?: boolean;
   timeoutMs?: number;
 }
 

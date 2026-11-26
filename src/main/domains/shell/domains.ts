@@ -1156,6 +1156,8 @@ export interface DialogRequest {
   placeholder?: string;
   prefill?: string;
   secret?: boolean;
+  /** 非模态：不铺背板、不挡背后页面（等浏览器回调时用）。 */
+  modal?: boolean;
 }
 
 export interface DialogView {
@@ -1221,6 +1223,7 @@ export function defineDialogsResources(
         placeholder: { type: 'string' },
         prefill: { type: 'string' },
         secret: { type: 'boolean' },
+        modal: { type: 'boolean' },
       },
       run: (input) => {
         const id =
@@ -1255,6 +1258,7 @@ export function defineDialogsResources(
               ? { prefill: input.prefill }
               : {}),
             ...(input.secret === true ? { secret: true } : {}),
+            ...(input.modal === false ? { modal: false } : {}),
           },
           status: 'open',
         };

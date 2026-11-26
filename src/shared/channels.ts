@@ -8,9 +8,6 @@ export const BRIDGE_CHANNELS = {
   fileToken: 'workstudio:file-token',
 } as const;
 
-/** 网页标签回传授权凭证的专用通道（只写不读）。 */
-export const OAUTH_CREDENTIAL_CHANNEL = 'workstudio:oauth-credential';
-
 /** 窗口 → 渲染层的工作区绑定；窗口与工作区 1:1，值即该窗口的 wsId。 */
 export const WORKSPACE_ARG = '--work-studio-workspace=';
 

@@ -10,15 +10,6 @@ import type { Origin } from '../contract.ts';
 import type { CommandEntry } from './command.ts';
 
 const NATIVE_ALLOW = new Set(['saveFile', 'openExternal']);
-/** 网页回传凭证的唯一入口：`agent/providers.completeLogin`。 */
-function isCredentialSubmit(entry: CommandEntry): boolean {
-  return (
-    entry.address.domain === 'agent' &&
-    entry.address.resource === 'providers' &&
-    entry.action === 'completeLogin'
-  );
-}
-
 function pluginIdOf(origin: Origin): string | null {
   return origin.type === 'view' && origin.pluginId ? origin.pluginId : null;
 }
@@ -33,11 +24,9 @@ export function commandDenialOf(
       : null;
   }
   // 外部网页只开放「回传授权凭证」：provider 由地址决定，主进程再校验其存在。
-  // 外部网页只有「按域名回传凭证」一个入口；域名匹配在命令内部再校验。
+  // 外部网页不注入 bridge，也没有任何可调用命令。
   if (origin.type === 'view' && origin.viewType === 'web') {
-    return isCredentialSubmit(entry)
-      ? null
-      : `网页视图无权调用命令：${entry.address.domain}/${entry.address.resource}/${entry.action}`;
+    return `网页视图无权调用命令：${entry.address.domain}/${entry.address.resource}/${entry.action}`;
   }
   const pluginId = pluginIdOf(origin);
   if (!pluginId || origin.type !== 'view') return null;
@@ -46,14 +35,6 @@ export function commandDenialOf(
     entry.address.domain === 'shell' &&
     entry.address.resource === 'native' &&
     NATIVE_ALLOW.has(entry.action)
-  ) {
-    return null;
-  }
-  // OAuth 回调页需要把凭证交回 provider 资源。
-  if (
-    entry.address.domain === 'agent' &&
-    entry.address.resource.startsWith('provider/') &&
-    entry.action === 'completeLogin'
   ) {
     return null;
   }

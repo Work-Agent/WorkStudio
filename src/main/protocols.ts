@@ -21,7 +21,6 @@ const SYSTEM_PAGES = new Set([
   'capture',
   'welcome',
   'settings',
-  'oauth',
   'snapshot',
 ]);
 

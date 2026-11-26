@@ -724,8 +724,8 @@ function ModelsCard() {
   const saveApiKey = (provider: ProviderView): void => {
     if (!apiKey.trim()) return;
     setBusy(provider.id);
-    void run('agent', providerAddress(provider.id), 'completeLogin', {
-      accessToken: apiKey.trim(),
+    void run('agent', providerAddress(provider.id), 'configureApiKey', {
+      apiKey: apiKey.trim(),
     })
       .then(() => {
         setKeyFor(null);

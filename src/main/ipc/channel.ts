@@ -7,10 +7,7 @@
 
 import { ipcMain, webContents } from 'electron';
 import type { DomainUpdate } from '../contract.ts';
-import {
-  BRIDGE_CHANNELS,
-  OAUTH_CREDENTIAL_CHANNEL,
-} from '../../shared/channels.ts';
+import { BRIDGE_CHANNELS } from '../../shared/channels.ts';
 import type { PluginFiles } from '../plugin/files.ts';
 import type { Dispatcher } from './dispatcher.ts';
 import type { Origins } from './origins.ts';
@@ -80,36 +77,6 @@ export class IpcChannel {
         );
       },
     );
-    // 网页标签回传授权凭证：走命令表（鉴权 + 审计），只写主进程存储。
-    ipcMain.handle(OAUTH_CREDENTIAL_CHANNEL, (event, payload: unknown) => {
-      const input =
-        payload && typeof payload === 'object'
-          ? (payload as Record<string, unknown>)
-          : {};
-      const providerId = String(input['providerId'] ?? '');
-      if (!/^[a-z0-9][a-z0-9-]*$/.test(providerId)) {
-        throw new Error(`providerId 非法：${providerId}`);
-      }
-      const extra = input['extra'];
-      return this.dispatcher.call(
-        String(event.sender.id),
-        'agent/providers',
-        'completeLogin',
-        {
-          providerId,
-          accessToken: input['accessToken'],
-          ...(typeof input['refreshToken'] === 'string'
-            ? { refreshToken: input['refreshToken'] }
-            : {}),
-          ...(typeof input['expiresIn'] === 'number'
-            ? { expiresIn: input['expiresIn'] }
-            : {}),
-          ...(extra && typeof extra === 'object'
-            ? { extra: JSON.stringify(extra) }
-            : {}),
-        },
-      );
-    });
     ipcMain.handle(
       BRIDGE_CHANNELS.fileToken,
       (event, path: unknown, name?: unknown) => {
@@ -137,7 +104,6 @@ export class IpcChannel {
     ipcMain.removeHandler(BRIDGE_CHANNELS.command);
     ipcMain.removeAllListeners(BRIDGE_CHANNELS.notify);
     ipcMain.removeHandler(BRIDGE_CHANNELS.fileToken);
-    ipcMain.removeHandler(OAUTH_CREDENTIAL_CHANNEL);
   }
 
   /** Dispatcher 的投递出口：viewId → 对应的 webContents。 */

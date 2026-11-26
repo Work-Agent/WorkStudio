@@ -64,8 +64,8 @@ export default defineCase({
       const result = await window.workStudio.command(
         'agent',
         `provider/${providerId}`,
-        'completeLogin',
-        { accessToken: 'e2e-api-key' },
+        'configureApiKey',
+        { apiKey: 'e2e-api-key' },
       );
       if (!result.ok) throw new Error(result.error.message);
     }, PROVIDER);

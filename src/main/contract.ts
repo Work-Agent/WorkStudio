@@ -33,8 +33,6 @@ export type Origin =
       workspaceId?: string;
       /** 插件视图所属插件；由 URL（plugin://<id>/...）推导，不读取入参。 */
       pluginId?: string;
-      /** 网页视图的当前地址；导航时更新，用于来源域名校验。 */
-      url?: string;
     }
   | { type: 'service'; id: string }
   | { type: 'tool'; name: string };

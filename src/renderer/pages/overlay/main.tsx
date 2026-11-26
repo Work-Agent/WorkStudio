@@ -21,7 +21,7 @@ interface Props {
 }
 
 function DialogCard({ dialog, onRespond }: Props) {
-  const [text, setText] = useState(dialog.prefill ?? dialog.placeholder ?? '');
+  const [text, setText] = useState(dialog.prefill ?? '');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -38,9 +38,21 @@ function DialogCard({ dialog, onRespond }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [dialog, text, onRespond]);
 
+  // 非模态：不铺背板、不拦点击，等浏览器回调的卡片只在旁边提示。
+  const glass = dialog.modal === false;
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/35">
-      <div className="w-[min(560px,calc(100vw-48px))] rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-[#1E2021] shadow-2xl">
+    <div
+      className={
+        glass
+          ? 'fixed inset-x-0 bottom-6 flex justify-center pointer-events-none'
+          : 'fixed inset-0 flex items-center justify-center bg-black/35'
+      }
+    >
+      <div
+        className={`w-[min(560px,calc(100vw-48px))] rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-[#1E2021] shadow-2xl ${
+          glass ? 'pointer-events-auto' : ''
+        }`}
+      >
         <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
           {dialog.title}
         </div>

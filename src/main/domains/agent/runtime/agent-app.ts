@@ -36,6 +36,7 @@ import {
   migrateAgentDomain,
   migrateLegacyAuthFile,
 } from './credentials.ts';
+import { loginViaLoopback } from './page-login.ts';
 
 function hostOfUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
@@ -84,6 +85,8 @@ export class AgentApp {
   readonly credentials: AgentCredentials;
   /** 模型 / 凭证变化后通知宿主（用于重建各工作区会话）。 */
   onChanged: (() => void) | null = null;
+  /** 登录等流程的提示出口；不传则静默。 */
+  onNotify: ((message: string) => void) | null = null;
 
   private constructor(
     private readonly modelRuntimeValue: ModelRuntime,
@@ -235,8 +238,11 @@ export class AgentApp {
     return saved;
   }
 
-  /** 快捷登录：在应用内标签页打开该供应商的登录页。 */
-  async openLoginPage(providerId: string): Promise<string> {
+  /**
+   * 快捷登录：打开供应商登录页，等它 302 回本机回调后直接写密钥库。
+   * 全程主进程完成，页面只负责完成登录并跳回。
+   */
+  async loginViaPage(providerId: string): Promise<void> {
     const config = this.modelStore.readView();
     const provider = this.getProviderCatalog(
       Object.keys(config.providers),
@@ -244,8 +250,13 @@ export class AgentApp {
     if (!provider) throw new Error(`未知供应商：${providerId}`);
     if (!provider.loginUrl)
       throw new Error(`该供应商没有登录页：${providerId}`);
-    await this.openUrl(provider.loginUrl);
-    return provider.loginUrl;
+    const credential = await loginViaLoopback({
+      providerId,
+      loginUrl: provider.loginUrl,
+      openUrl: (url) => this.openUrl(url),
+      notify: (message) => this.onNotify?.(message),
+    });
+    await this.applyCredential(providerId, credential);
   }
 
   getProviderCatalog(customProviderIds: string[]): ProviderInfoView[] {
@@ -290,10 +301,11 @@ export class AgentApp {
   }
 
   /**
-   * 授权页把凭证交回来：provider 必须存在，凭证只写进主进程存储。
-   * 只有 accessToken 的按 api_key 存；带 refresh / 过期的按 oauth 存。
+   * 凭证落点（唯一的写入实现）：OAuth 回调、页面登录回调、API Key 配置、
+   * 插件写凭证最后都走这里。只有 accessToken 的按 api_key 存；带 refresh /
+   * 有效期的按 oauth 存。provider 必须存在，凭证只进主进程密钥库。
    */
-  async completeLogin(
+  async applyCredential(
     providerId: string,
     input: ProviderCredentialInput,
   ): Promise<void> {
@@ -340,6 +352,7 @@ export class AgentApp {
       askDialog: (
         dialogType: 'select' | 'input' | 'editor' | 'confirm',
         fields: Record<string, unknown>,
+        opts?: { signal?: AbortSignal },
       ) => Promise<string | boolean | undefined>;
       dialogHost: () => unknown;
       notify: (message: string, level: 'info' | 'warning' | 'error') => void;

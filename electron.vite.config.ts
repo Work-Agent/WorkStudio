@@ -107,7 +107,6 @@ export default defineConfig({
         input: {
           'work-studio': resolve(__dirname, 'src/preload/work-studio.ts'),
           capture: resolve(__dirname, 'src/preload/capture.ts'),
-          web: resolve(__dirname, 'src/preload/web.ts'),
         },
         output: {
           entryFileNames: '[name].cjs',
@@ -140,7 +139,6 @@ export default defineConfig({
           ),
           welcome: resolve(__dirname, 'src/renderer/pages/welcome/index.html'),
           capture: resolve(__dirname, 'src/renderer/pages/capture/index.html'),
-          oauth: resolve(__dirname, 'src/renderer/pages/oauth/index.html'),
         },
       },
     },

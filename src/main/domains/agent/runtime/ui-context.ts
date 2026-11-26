@@ -68,6 +68,8 @@ export class DialogHost {
       prefill?: string;
       /** 密文输入（登录凭证等；值不回显）。 */
       secret?: boolean;
+      /** 非模态展示：不挡住背后的网页（等浏览器回调时用）。 */
+      modal?: boolean;
     },
     opts?: ExtensionUIDialogOptions,
   ): Promise<string | boolean | undefined> {
@@ -84,6 +86,7 @@ export class DialogHost {
         : {}),
       ...(fields.prefill !== undefined ? { prefill: fields.prefill } : {}),
       ...(fields.secret ? { secret: true } : {}),
+      ...(fields.modal === false ? { modal: false } : {}),
       ...(opts?.timeout !== undefined ? { timeoutMs: opts.timeout } : {}),
     };
     // 请求到达前已中止：不 dispatch，直接按取消结算（fail-closed）。

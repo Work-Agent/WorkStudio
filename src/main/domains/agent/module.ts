@@ -120,7 +120,7 @@ export class AgentModule implements DomainModule {
   ): Promise<void> {
     const app = this.app;
     if (!app) throw new Error('agent runtime 未启动');
-    await app.completeLogin(providerId, input);
+    await app.applyCredential(providerId, input);
     this.refreshAppModels();
   }
 
@@ -229,6 +229,15 @@ export class AgentModule implements DomainModule {
       skillOwner: (source) => this.plugins?.skillOwner(source) ?? null,
       ...(this.openUrl ? { openUrl: this.openUrl } : {}),
     });
+    this.app.onNotify = (message) => {
+      const workspaceId = this.currentWorkspaceId;
+      if (!workspaceId) return;
+      void this.dispatchShell(workspaceId, 'notices', 'notify', {
+        message,
+        level: 'info',
+        source: 'provider',
+      });
+    };
     this.app.onChanged = () => {
       this.refreshAppModels();
       for (const [, agents] of this.agents.entries()) {
@@ -335,6 +344,7 @@ export class AgentModule implements DomainModule {
               : {}),
             ...(request.prefill ? { prefill: request.prefill } : {}),
             ...(request.secret ? { secret: true } : {}),
+            ...(request.modal === false ? { modal: false } : {}),
           });
         },
         onDialogResolved: (id) => {

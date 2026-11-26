@@ -40,8 +40,6 @@ export interface ShellHostOptions {
   origins: Origins;
   preload?: string;
   capturePreload?: string;
-  /** 网页标签的受限 preload：只暴露 window.workStudio.command。 */
-  webPreload?: string;
   shellUrl?: string;
   assistantUrl?: string;
   overlayUrl?: string;
@@ -361,13 +359,9 @@ export class ShellHost {
           ? this.options.capturePreload
             ? { preload: this.options.capturePreload }
             : {}
-          : input.type === 'web'
-            ? this.options.webPreload
-              ? { preload: this.options.webPreload }
-              : {}
-            : this.options.preload
-              ? { preload: this.options.preload }
-              : {}),
+          : input.type !== 'web' && this.options.preload
+            ? { preload: this.options.preload }
+            : {}),
         contextIsolation: true,
         sandbox: true,
         additionalArguments: [
@@ -423,18 +417,18 @@ export class ShellHost {
       viewType: input.type,
       workspaceId: windowEntry.record.workspaceId,
       ...(pluginId ? { pluginId } : {}),
-      ...(input.type === 'web' && input.url ? { url: input.url } : {}),
     });
     if (input.type === 'web') {
-      const track = (_event: unknown, url: string): void =>
-        this.options.origins.setUrl(senderId, url);
-      view.webContents.on('did-navigate', track);
-      view.webContents.on('did-navigate-in-page', track);
+      // 本地回调（OAuth loopback）命中后收尾：给服务一点时间响应，再关标签页。
+      view.webContents.on('did-navigate', (_event: unknown, url: string) => {
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1):\d+\//i.test(url)) return;
+        setTimeout(() => this.closeView(windowId, id), 1200);
+      });
     }
     hardenWebContents(view.webContents, {
       allowNavigation: (url) => {
         if (input.type === 'web') {
-          return /^https?:/i.test(url) || url.startsWith('work://studio/oauth');
+          return /^https?:/i.test(url);
         }
         if (pluginId) return parsePluginUrl(url)?.id === pluginId;
         // 系统页：正式包只走 work://；开发模式下页面地址是 dev server。
@@ -475,17 +469,6 @@ export class ShellHost {
         entry.ready = true;
         this.resizeWindow(windowId);
       });
-      const onNavigate = (
-        event: { preventDefault(): void },
-        url: string,
-      ): void => {
-        if (!url.startsWith('work://studio/oauth')) return;
-        event.preventDefault();
-        this.closeView(windowId, id);
-        this.openView(windowId, { type: 'page', title: 'OAuth 回调', url });
-      };
-      view.webContents.on('will-navigate', onNavigate);
-      view.webContents.on('will-redirect', onNavigate);
     }
     if (input.url) void view.webContents.loadURL(input.url);
     return record;

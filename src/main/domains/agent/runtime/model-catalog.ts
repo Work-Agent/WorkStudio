@@ -24,13 +24,6 @@ export function providerCatalog(
     if (p.auth.oauth) authTypes.push('oauth');
     if (p.auth.apiKey) authTypes.push('api_key');
     const loginUrl = loginUrlOf(p.baseUrl, configs[p.id]);
-    const authDomains = [
-      ...new Set(
-        [hostOf(p.baseUrl), hostOf(loginUrl)]
-          .filter((host): host is string => Boolean(host))
-          .concat(stringList(configs[p.id]?.['authDomains'])),
-      ),
-    ];
     const authType: ProviderAuthType | undefined = !status.configured
       ? undefined
       : status.source === 'environment'
@@ -48,7 +41,6 @@ export function providerCatalog(
       ...(status.label ? { authLabel: status.label } : {}),
       authTypes,
       ...(loginUrl ? { loginUrl } : {}),
-      authDomains,
       ...(authType ? { authType } : {}),
       modelCount: models.length,
       availableModelCount: models.filter((m) =>
@@ -76,21 +68,6 @@ function loginUrlOf(
   return typeof declared === 'string' && /^https?:\/\//i.test(declared)
     ? declared
     : undefined;
-}
-
-function hostOf(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    return new URL(url).host;
-  } catch {
-    return undefined;
-  }
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
 }
 
 export function modelCatalog(runtime: ModelRuntime): ModelCatalogItem[] {

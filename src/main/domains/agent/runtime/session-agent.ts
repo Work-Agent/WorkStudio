@@ -332,8 +332,9 @@ export class SessionAgent {
     return this.app.refreshProviderModels(providerId);
   }
 
-  async openLoginPage(providerId: string): Promise<string> {
-    return this.app.openLoginPage(providerId);
+  async loginViaPage(providerId: string): Promise<void> {
+    await this.app.loginViaPage(providerId);
+    this.emitStatus();
   }
 
   getProviderCatalog(customProviderIds: string[]): ProviderInfoView[] {
@@ -369,11 +370,11 @@ export class SessionAgent {
   }
 
   /** 授权页交回凭证：一步写入，不经过渲染层。 */
-  async completeLogin(
+  async applyCredential(
     providerId: string,
     input: ProviderCredentialInput,
   ): Promise<void> {
-    await this.app.completeLogin(providerId, input);
+    await this.app.applyCredential(providerId, input);
     this.emitStatus();
   }
 
@@ -384,10 +385,10 @@ export class SessionAgent {
 
   async loginProvider(input: { providerId: string }): Promise<void> {
     await this.app.loginProvider(input, {
-      askDialog: (dialogType, fields) => {
+      askDialog: (dialogType, fields, opts) => {
         const host = this.dialogHost;
         if (!host) throw new Error('对话框宿主未接入');
-        return host.ask(dialogType, fields as never) as Promise<
+        return host.ask(dialogType, fields as never, opts as never) as Promise<
           string | boolean | undefined
         >;
       },
