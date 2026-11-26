@@ -20,6 +20,7 @@ import assistantSessions from '../cases/assistant-sessions.ts';
 import pluginInstall from '../cases/plugin-install.ts';
 import pluginCatalog from '../cases/plugin-catalog.ts';
 import pluginRegistry from '../cases/plugin-registry.ts';
+import sidebarResize from '../cases/sidebar-resize.ts';
 import dialogSelect from '../cases/dialog-select.ts';
 import settingsPreferences from '../cases/settings-preferences.ts';
 import pluginLifecycle from '../cases/plugin-lifecycle.ts';
@@ -73,6 +74,7 @@ export const cases: readonly E2ECase[] = [
   pluginInstall,
   pluginCatalog,
   pluginRegistry,
+  sidebarResize,
   pluginContent,
   pluginSave,
   pluginSkills,

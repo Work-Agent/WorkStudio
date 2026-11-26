@@ -18,7 +18,7 @@ export const TABBAR_HEIGHT = 36;
 export const LEFT_COLLAPSED_PX = 56;
 
 /** 拖拽左栏到该宽度以下松手 → 自动收起。 */
-export const COLLAPSE_THRESHOLD_PX = 140;
+export const COLLAPSE_THRESHOLD_PX = 120;
 
 /** 左栏展开默认宽度。 */
 export const DEFAULT_LEFT_PX = 240;

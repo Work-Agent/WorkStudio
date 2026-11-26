@@ -193,10 +193,8 @@ export function previewPaneResize(
 ): InteractionPreview {
   const dx = cursorX - startClientX;
   if (side === 'left') {
-    // 收起态开始拖动即进入展开区间；拖动期间不提前套用收起宽度。
-    const raw = ui.sidebarCollapsed
-      ? COLLAPSE_THRESHOLD_PX
-      : ui.paneWidths.left;
+    // 收起态从收起宽度开始跟手；拖动不足阈值松手会收回，避免一按下就跳到展开宽度。
+    const raw = ui.sidebarCollapsed ? LEFT_COLLAPSED_PX : ui.paneWidths.left;
     const next = clamp(
       raw + dx,
       LEFT_MIN_DRAG_PX,
