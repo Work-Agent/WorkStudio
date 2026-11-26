@@ -1,48 +1,42 @@
 /**
- * 系统列表投影：provider → ListGroup → 每个工作区一份 ListSnapshot。
+ * 资源森林投影：provider → ResourceGroup → 每个工作区一份 ResourceForest。
  *
- * 列表定义归 App/Workspace，数据由 provider 现取；系统与插件列表共用
- * 同一注册表，插件定义以插件 id 为 owner，撤销时按 owner 清理。
+ * 文件列表是森林：每个 group 是一棵树；定义归 App/Workspace，
+ * 数据由 provider 现取。插件贡献的树也注册到同一注册表。
  */
 
 import type {
-  ListDefinition,
-  ListGroup,
-  ListSnapshot,
-} from '../../../shared/lists.ts';
+  ResourceContext,
+  ResourceForest,
+  ResourceGroup,
+  ResourceGroupDefinition,
+} from '../../../shared/resources.ts';
 
 export type {
-  ListDefinition,
-  ListGroup,
-  ListSnapshot,
-} from '../../../shared/lists.ts';
+  ResourceContext,
+  ResourceForest,
+  ResourceGroup,
+  ResourceGroupDefinition,
+} from '../../../shared/resources.ts';
 
-export interface ListProviderContext {
-  workspacePath: string;
-  workspaceId: string;
-}
+export type ResourceProvider = (
+  ctx: ResourceContext,
+) => Promise<ResourceGroup[]> | ResourceGroup[];
 
-export type ListProvider = (
-  ctx: ListProviderContext,
-) => Promise<ListGroup[]> | ListGroup[];
-
-interface ListEntry {
-  definition: ListDefinition;
-  provider?: ListProvider;
+interface ResourceGroupEntry {
+  definition: ResourceGroupDefinition;
+  provider?: ResourceProvider;
   owner: string;
 }
 
-export class ListRegistry {
-  private readonly entries = new Map<string, ListEntry>();
+export class ResourceGroupRegistry {
+  private readonly entries = new Map<string, ResourceGroupEntry>();
   private readonly listeners = new Set<(ids: string[]) => void>();
 
-  /**
-   * 登记定义与取数实现。注册本身不代表数据可算：系统列表在模块启动时
-   * 全量刷新，插件列表在 runtime 就绪后由 `touch` 触发。
-   */
+  /** 登记定义与取数实现；owner 用于热卸载时按插件清理。 */
   register(
-    definition: ListDefinition,
-    provider: ListProvider | undefined,
+    definition: ResourceGroupDefinition,
+    provider: ResourceProvider | undefined,
     owner = 'system',
   ): void {
     this.entries.set(definition.id, { definition, provider, owner });
@@ -70,7 +64,6 @@ export class ListRegistry {
     if (removed.length) this.notify(removed);
   }
 
-  /** 订阅定义集合变化：返回本次受影响的列表 id。 */
   onChange(listener: (ids: string[]) => void): () => void {
     this.listeners.add(listener);
     return () => {
@@ -78,7 +71,6 @@ export class ListRegistry {
     };
   }
 
-  /** 归属方完成一轮注册后主动触发重算。 */
   touch(owner: string): void {
     const ids = this.idsOfOwner(owner);
     if (ids.length) this.notify(ids);
@@ -88,13 +80,12 @@ export class ListRegistry {
     for (const listener of this.listeners) listener(ids);
   }
 
-  definitions(): ListDefinition[] {
+  definitions(): ResourceGroupDefinition[] {
     return [...this.entries.values()]
       .map((entry) => entry.definition)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
-  /** 来源资源命中：哪些组需要随它重算；事件级依赖同时比对事件名。 */
   definitionsOf(domain: string, resource: string, event?: string): string[] {
     const matched: string[] = [];
     for (const [id, entry] of this.entries) {
@@ -111,36 +102,36 @@ export class ListRegistry {
     return matched;
   }
 
-  providers(only?: ReadonlySet<string>): ListEntry[] {
+  providers(only?: ReadonlySet<string>): ResourceGroupEntry[] {
     return [...this.entries.values()].filter(
       (entry) => entry.provider && (!only || only.has(entry.definition.id)),
     );
   }
 }
 
-export class ListService {
-  readonly registry = new ListRegistry();
-  private readonly snapshots = new Map<string, ListSnapshot>();
-  private readonly epochs = new Map<string, number>();
+export class ResourceForestService {
+  readonly registry = new ResourceGroupRegistry();
+  private readonly snapshots = new Map<string, ResourceForest>();
+  private readonly revisions = new Map<string, number>();
 
-  current(workspaceId: string): ListSnapshot {
-    return this.snapshots.get(workspaceId) ?? { workspaceEpoch: 0, groups: [] };
+  current(workspaceId: string): ResourceForest {
+    return this.snapshots.get(workspaceId) ?? { revision: 0, groups: [] };
   }
 
   forget(workspaceId: string): void {
     this.snapshots.delete(workspaceId);
-    this.epochs.delete(workspaceId);
+    this.revisions.delete(workspaceId);
   }
 
   /** 全量或按组重算；未参与本次重算的组保留上一份结果。 */
   async refresh(
-    context: ListProviderContext,
+    context: ResourceContext,
     only?: ReadonlySet<string>,
-  ): Promise<ListSnapshot> {
-    const epoch = (this.epochs.get(context.workspaceId) ?? 0) + 1;
-    this.epochs.set(context.workspaceId, epoch);
+  ): Promise<ResourceForest> {
+    const revision = (this.revisions.get(context.workspaceId) ?? 0) + 1;
+    this.revisions.set(context.workspaceId, revision);
     const previous = this.snapshots.get(context.workspaceId);
-    const refreshed = new Map<string, ListGroup[]>();
+    const refreshed = new Map<string, ResourceGroup[]>();
     for (const entry of this.registry.providers(only)) {
       try {
         refreshed.set(
@@ -158,34 +149,42 @@ export class ListService {
         !refreshed.has(group.definitionId) &&
         this.registry.has(group.definitionId),
     );
+    const order = new Map(
+      this.registry
+        .definitions()
+        .map((definition) => [definition.id, definition.order ?? 0]),
+    );
     const groups = [...kept, ...[...refreshed.values()].flat()].sort(
       (a, b) =>
-        (this.registry.definitions().find((item) => item.id === a.definitionId)
-          ?.order ?? 0) -
-        (this.registry.definitions().find((item) => item.id === b.definitionId)
-          ?.order ?? 0),
+        (order.get(a.definitionId) ?? 0) - (order.get(b.definitionId) ?? 0),
     );
-    const snapshot: ListSnapshot = { workspaceEpoch: epoch, groups };
+    const snapshot: ResourceForest = { revision, groups };
     this.snapshots.set(context.workspaceId, snapshot);
     return snapshot;
   }
 }
 
-function errorGroup(definition: ListDefinition, error: unknown): ListGroup {
+function errorGroup(
+  definition: ResourceGroupDefinition,
+  error: unknown,
+): ResourceGroup {
+  const message = error instanceof Error ? error.message : String(error);
   return {
     id: `${definition.id}:error`,
     definitionId: definition.id,
     section: definition.section ?? 'resources',
     label: definition.label,
     ...(definition.icon ? { icon: definition.icon } : {}),
-    countLabel: '加载失败',
-    updatedAt: 0,
+    ...(definition.tone ? { tone: definition.tone } : {}),
+    ...(definition.unit ? { unit: definition.unit } : {}),
     count: 0,
-    order: definition.order,
+    countLabel: definition.countLabel ?? `0 ${definition.unit ?? '项'}`,
+    updatedAt: 0,
+    order: definition.order ?? 0,
     state: 'error',
     fields: definition.fields,
     actions: definition.actions,
-    items: [],
-    diagnostics: [error instanceof Error ? error.message : String(error)],
+    roots: [],
+    diagnostics: [message],
   };
 }

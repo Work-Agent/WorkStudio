@@ -61,7 +61,7 @@ export class PluginLifecycle {
       const scope = this.manager.scopeOf(pkg.manifest.id);
       if (scope) await contribution.lifecycle?.activate?.(scope);
       // 运行时已就绪：插件列表第一次取数放在这里。
-      this.manager.touchLists(pkg.manifest.id);
+      this.manager.touchResources(pkg.manifest.id);
       this.stages.set(pkg.manifest.id, 'activate');
       this.errors.delete(pkg.manifest.id);
     } catch (error) {

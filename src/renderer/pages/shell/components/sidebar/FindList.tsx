@@ -5,11 +5,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
-import type { ListItem } from '../../../../../shared/lists.ts';
+import type { ResourceNode } from '../../../../../shared/resources.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
 import type { Entry } from '@work-studio/sdk';
 import { command } from '../../../../shared/api/bridge.ts';
-import { openListItem } from '../../../../shared/domains/lists.ts';
+import { openResourceNode } from '../../../../shared/domains/resources.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
 import {
@@ -81,13 +81,13 @@ export function FindList() {
   );
 
   const open = (ref: string, name: string): void => {
-    const item: ListItem = {
+    const item: ResourceNode = {
       key: ref,
-      itemType: 'document',
+      type: 'file',
       title: name,
       meta: { ref },
     };
-    void openListItem(item).catch((error: unknown) =>
+    void openResourceNode(item).catch((error: unknown) =>
       notifyError(
         error instanceof Error ? error.message : String(error),
         'open',

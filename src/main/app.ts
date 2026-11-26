@@ -14,7 +14,7 @@
  */
 
 import type { DomainUpdate } from './contract.ts';
-import type { ListItem } from '../shared/lists.ts';
+import type { ResourceNode } from '../shared/resources.ts';
 import { TransportRouter } from './transport/router.ts';
 import { WebCache } from './transport/web-cache.ts';
 import { WorkspaceFiles } from './transport/workspace-files.ts';
@@ -30,7 +30,7 @@ import { PluginCatalogService } from './plugin/catalog.ts';
 import { createPluginFetcher } from './plugin/network.ts';
 import { PluginFiles } from './plugin/files.ts';
 import { SecretsService } from './plugin/secrets.ts';
-import { ListService } from './domains/workspace/lists.ts';
+import { ResourceForestService } from './domains/workspace/resources.ts';
 import { PageRouter, type PageTarget } from './page-router.ts';
 import { ShellHost, type ShellHostOptions } from './domains/shell/native.ts';
 import { Dispatcher } from './ipc/dispatcher.ts';
@@ -121,10 +121,10 @@ export class NextApp {
     );
     const pluginFiles = new PluginFiles(this.storage.pluginsTmpRoot);
     const pluginSecrets = new SecretsService(this.storage.pluginsDataRoot);
-    const lists = new ListService();
+    const resources = new ResourceForestService();
     this.plugins = new PluginManager(this.registry, this.transport, {
       store: this.pluginStore,
-      lists,
+      resources,
       files: pluginFiles,
       secrets: pluginSecrets,
     });
@@ -167,11 +167,11 @@ export class NextApp {
       pluginStore: this.pluginStore,
       pluginService: this.pluginService,
       pluginFiles,
-      lists,
+      resources,
       builtinPluginIds: this.builtinPluginIds,
       appearance: this.appearance,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
-      openItem: (item, workspaceId) => this.openListItem(item, workspaceId),
+      openNode: (node, workspaceId) => this.openResourceNode(node, workspaceId),
       ...(options.settingsPages
         ? { settingsPages: options.settingsPages }
         : {}),
@@ -188,8 +188,8 @@ export class NextApp {
     this.ipc = ipc;
   }
 
-  private async openListItem(
-    item: ListItem,
+  private async openResourceNode(
+    item: ResourceNode,
     workspaceId: string,
   ): Promise<unknown> {
     const meta = item.meta ?? {};

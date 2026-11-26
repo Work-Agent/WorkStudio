@@ -6,7 +6,7 @@
  */
 
 import type { WorkspaceMeta } from '../../../shared/app.ts';
-import type { ListItem } from '../../../shared/lists.ts';
+import type { ResourceNode } from '../../../shared/resources.ts';
 import { CallFailure } from '../../contract.ts';
 import { pending } from '../../registry/command.ts';
 import type { TransportRouter } from '../../transport/router.ts';
@@ -239,26 +239,26 @@ export function defineWorkspaceRegistryResource(
   });
 }
 
-// ─── list ────────────────────────────────────────────────────
+// ─── resources ──────────────────────────────────────────────
 
-/** 工作区列表资源：每个工作区一份，地址 `workspace/<wsId>/list`。 */
-export function listResourceName(workspaceId: string): string {
-  return `${workspaceId}/list`;
+/** 工作区资源森林：每个工作区一份，地址 `workspace/<wsId>/resources`。 */
+export function resourcesResourceName(workspaceId: string): string {
+  return `${workspaceId}/resources`;
 }
 
-export function defineWorkspaceListResource(
+export function defineWorkspaceResourcesResource(
   registry: DomainRegistry,
   workspaceId: string,
-  service: import('./lists.ts').ListService,
-  context: () => import('./lists.ts').ListProviderContext,
-  openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>,
+  service: import('./resources.ts').ResourceForestService,
+  context: () => import('./resources.ts').ResourceContext,
+  openNode?: (node: ResourceNode, workspaceId: string) => Promise<unknown>,
 ): void {
   const resource = registry
     .define('workspace')
-    .resource(listResourceName(workspaceId));
+    .resource(resourcesResourceName(workspaceId));
   resource.snapshot(() => service.current(workspaceId));
   resource.command('refresh', {
-    summary: '刷新列表投影',
+    summary: '刷新资源森林',
     args: {},
     run: async () => {
       const snapshot = await service.refresh(context());
@@ -266,51 +266,52 @@ export function defineWorkspaceListResource(
       return snapshot;
     },
   });
-  resource.command('open', {
-    summary: '按 ref 打开列表项',
-    args: {
-      ref: { type: 'string', required: true },
-      title: { type: 'string' },
-    },
-    run: openItem
-      ? (input) => {
-          const ref = String(input.ref);
-          const title =
-            typeof input.title === 'string' && input.title ? input.title : ref;
-          return openItem(
-            {
-              key: ref,
-              itemType: 'document',
-              title,
-              meta: { ref },
-            },
-            workspaceId,
-          );
-        }
-      : pending('workspace/<wsId>/list/open'),
-  });
   resource.command('action', {
-    summary: '执行列表动作',
+    summary: '执行资源动作',
     args: {
       action: { type: 'string', required: true },
       key: { type: 'string' },
     },
-    run: openItem
+    run: openNode
       ? async (input) => {
           if (input.action !== 'open') {
             throw new CallFailure(
               'invalid',
-              `不支持的列表动作：${input.action}`,
+              `不支持的资源动作：${input.action}`,
             );
           }
-          const item = input.item;
-          if (!item || typeof item !== 'object') {
-            throw new CallFailure('invalid', '列表动作缺少 item');
+          const node = input.node;
+          if (!node || typeof node !== 'object') {
+            throw new CallFailure('invalid', '资源动作缺少 node');
           }
-          return openItem(item as ListItem, workspaceId);
+          return openNode(node as ResourceNode, workspaceId);
         }
-      : pending('workspace/<wsId>/list/action'),
+      : pending('workspace/<wsId>/resources/action'),
   });
+  resource.command('children', {
+    summary: '读取树节点子项',
+    args: {
+      groupId: { type: 'string', required: true },
+      key: { type: 'string', required: true },
+    },
+    run: (input) => {
+      const groupId = String(input.groupId);
+      const key = String(input.key);
+      const group = service
+        .current(workspaceId)
+        .groups.find((item) => item.id === groupId);
+      return findNode(group?.roots ?? [], key)?.children ?? [];
+    },
+  });
+}
+
+function findNode(nodes: ResourceNode[], key: string): ResourceNode | null {
+  for (const node of nodes) {
+    if (node.key === key) return node;
+    const found = findNode(node.children ?? [], key);
+    if (found) return found;
+  }
+  return null;
 }
 
 // ─── search ──────────────────────────────────────────────────

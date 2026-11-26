@@ -28,12 +28,13 @@ export default defineCase({
         if (!workspaceId) return { ok: false, error: '没有当前工作区' };
         const response = await window.workStudio.command(
           'workspace',
-          `${workspaceId}/list`,
+          `${workspaceId}/resources`,
           'action',
           {
             action: 'open',
-            item: {
+            node: {
               key: target,
+              type: 'file',
               title: 'E2E HTML',
               meta: { ref: target },
             },

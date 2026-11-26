@@ -33,12 +33,6 @@ export const DEFAULT_SETTINGS_PAGES: SettingsPage[] = [
     icon: 'globe',
   },
   {
-    id: 'plugins',
-    label: '文档插件',
-    desc: '注册表安装 · 本地 zip / 目录',
-    icon: 'package',
-  },
-  {
     id: 'updates',
     label: '关于与更新',
     desc: '版本检查 · 安装包下载',

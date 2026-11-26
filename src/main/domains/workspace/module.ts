@@ -1,26 +1,26 @@
 /**
  * workspace 模块：工作区宿主（生命周期 + 依赖）。
  *
- * 持有 WorkspaceScope 与按工作区划分的列表资源（`workspace/<wsId>/list`）；
+ * 持有 WorkspaceScope 与按工作区划分的资源森林（`workspace/<wsId>/resources`）；
  * 域只声明资源与命令，切换 / 释放由模块生命周期驱动。
  */
 
 import type { DomainModule } from '../../registry/module.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
-import type { ListItem } from '../../../shared/lists.ts';
+import type { ResourceNode } from '../../../shared/resources.ts';
 import { createLog } from '../../log.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { TransportRouter } from '../../transport/router.ts';
 import {
   WorkspaceScope,
-  defineWorkspaceListResource,
+  defineWorkspaceResourcesResource,
   defineWorkspaceRegistryResource,
   defineWorkspaceSearchResource,
-  listResourceName,
+  resourcesResourceName,
   searchResourceName,
 } from './domains.ts';
-import { ListService } from './lists.ts';
-import { registerSystemLists } from './list-builtins.ts';
+import { ResourceForestService } from './resources.ts';
+import { registerSystemResources } from './resource-builtins.ts';
 import type { WorkspaceRepository } from './repo.ts';
 
 export class WorkspaceModule implements DomainModule {
@@ -28,21 +28,21 @@ export class WorkspaceModule implements DomainModule {
   readonly dependencies = ['shell'] as const;
 
   private readonly scope: WorkspaceScope;
-  private readonly listWorkspaces = new Set<string>();
+  private readonly resourceWorkspaces = new Set<string>();
   private registry: DomainRegistry | null = null;
   private offWorkspace: (() => void) | null = null;
-  private offLists: (() => void) | null = null;
-  private offListDefs: (() => void) | null = null;
-  private listTimer: ReturnType<typeof setTimeout> | null = null;
-  private pendingLists = new Set<string>();
+  private offResources: (() => void) | null = null;
+  private offResourceDefs: (() => void) | null = null;
+  private resourceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingResources = new Set<string>();
   private readonly log = createLog('workspace');
 
   constructor(
     repo: WorkspaceRepository,
     private readonly transport: TransportRouter,
-    readonly lists: ListService,
-    private readonly openItem?: (
-      item: ListItem,
+    readonly resources: ResourceForestService,
+    private readonly openNode?: (
+      node: ResourceNode,
       workspaceId: string,
     ) => Promise<unknown>,
   ) {
@@ -52,7 +52,7 @@ export class WorkspaceModule implements DomainModule {
   attach(registry: DomainRegistry): void {
     this.registry = registry;
     this.scope.bind(registry);
-    registerSystemLists(this.lists.registry, {
+    registerSystemResources(this.resources.registry, {
       registry,
       transport: this.transport,
     });
@@ -76,18 +76,18 @@ export class WorkspaceModule implements DomainModule {
           (update.data as { current: WorkspaceMeta | null }).current,
         );
       });
-      // 列表来源变化：只重算声明了该来源的组（同轮合并成一次）。
-      this.offLists = registry.onUpdate((update) => {
-        const ids = this.lists.registry.definitionsOf(
+      // 来源变化：只重算声明了该来源的组（同轮合并成一次）。
+      this.offResources = registry.onUpdate((update) => {
+        const ids = this.resources.registry.definitionsOf(
           update.domain,
           update.resource,
           update.type === 'event' ? update.event : undefined,
         );
-        if (ids.length > 0) this.scheduleListRefresh(ids);
+        if (ids.length > 0) this.scheduleResourceRefresh(ids);
       });
-      // 插件列表注册 / 撤销：重算对应定义。
-      this.offListDefs = this.lists.registry.onChange((ids) =>
-        this.scheduleListRefresh(ids),
+      // 插件资源组注册 / 撤销：重算对应定义。
+      this.offResourceDefs = this.resources.registry.onChange((ids) =>
+        this.scheduleResourceRefresh(ids),
       );
     }
     await this.syncWorkspaceResources();
@@ -97,17 +97,17 @@ export class WorkspaceModule implements DomainModule {
   stop(): void {
     this.offWorkspace?.();
     this.offWorkspace = null;
-    this.offLists?.();
-    this.offLists = null;
-    this.offListDefs?.();
-    this.offListDefs = null;
-    if (this.listTimer) clearTimeout(this.listTimer);
-    this.listTimer = null;
-    this.pendingLists.clear();
+    this.offResources?.();
+    this.offResources = null;
+    this.offResourceDefs?.();
+    this.offResourceDefs = null;
+    if (this.resourceTimer) clearTimeout(this.resourceTimer);
+    this.resourceTimer = null;
+    this.pendingResources.clear();
     this.scope.dispose();
-    for (const workspaceId of this.listWorkspaces)
-      this.lists.forget(workspaceId);
-    this.listWorkspaces.clear();
+    for (const workspaceId of this.resourceWorkspaces)
+      this.resources.forget(workspaceId);
+    this.resourceWorkspaces.clear();
     this.registry = null;
   }
 
@@ -129,26 +129,26 @@ export class WorkspaceModule implements DomainModule {
     }
   }
 
-  /** 注册表变化：补齐 / 回收每个工作区的列表与搜索资源，再重算列表。 */
+  /** 注册表变化：补齐 / 回收每个工作区的资源森林与搜索资源。 */
   private async syncWorkspaceResources(): Promise<void> {
     const registry = this.registry;
     if (!registry) return;
     const workspaces = this.scope.snapshot().workspaces;
     const known = new Set(workspaces.map((meta) => meta.id));
-    for (const workspaceId of Array.from(this.listWorkspaces)) {
+    for (const workspaceId of Array.from(this.resourceWorkspaces)) {
       if (known.has(workspaceId)) continue;
-      this.listWorkspaces.delete(workspaceId);
-      this.lists.forget(workspaceId);
+      this.resourceWorkspaces.delete(workspaceId);
+      this.resources.forget(workspaceId);
       this.scope.releaseRefs(workspaceId);
-      registry.define('workspace').remove(listResourceName(workspaceId));
+      registry.define('workspace').remove(resourcesResourceName(workspaceId));
       registry.define('workspace').remove(searchResourceName(workspaceId));
     }
     await Promise.all(
       workspaces.map(async (meta) => {
-        this.listWorkspaces.add(meta.id);
-        this.ensureList(meta.id);
+        this.resourceWorkspaces.add(meta.id);
+        this.ensureResources(meta.id);
         this.ensureSearch(meta.id);
-        await this.refreshList(meta.id, meta.path);
+        await this.refreshResources(meta.id, meta.path);
       }),
     );
   }
@@ -168,60 +168,65 @@ export class WorkspaceModule implements DomainModule {
     });
   }
 
-  private ensureList(workspaceId: string): void {
+  private ensureResources(workspaceId: string): void {
     const registry = this.registry;
     if (!registry) return;
     const resource = registry
       .define('workspace')
-      .resourceOf(listResourceName(workspaceId));
+      .resourceOf(resourcesResourceName(workspaceId));
     if (resource) return;
-    defineWorkspaceListResource(
+    defineWorkspaceResourcesResource(
       registry,
       workspaceId,
-      this.lists,
+      this.resources,
       () => {
         const meta = this.scope
           .snapshot()
           .workspaces.find((item) => item.id === workspaceId);
         return { workspaceId, workspacePath: meta?.path ?? '' };
       },
-      this.openItem,
+      this.openNode,
     );
   }
 
-  private async refreshList(workspaceId: string, path: string): Promise<void> {
-    await this.lists.refresh({ workspaceId, workspacePath: path });
+  private async refreshResources(
+    workspaceId: string,
+    path: string,
+  ): Promise<void> {
+    await this.resources.refresh({ workspaceId, workspacePath: path });
     this.registry
       ?.define('workspace')
-      .resource(listResourceName(workspaceId))
+      .resource(resourcesResourceName(workspaceId))
       .publish();
   }
 
   /** 同一轮内的来源变更合并成一次重算。 */
-  private scheduleListRefresh(ids: string[]): void {
-    for (const id of ids) this.pendingLists.add(id);
-    if (this.listTimer) return;
-    this.listTimer = setTimeout(() => {
-      const only = new Set(this.pendingLists);
-      this.pendingLists.clear();
-      this.listTimer = null;
-      void this.refreshAffected(only);
+  private scheduleResourceRefresh(ids: string[]): void {
+    for (const id of ids) this.pendingResources.add(id);
+    if (this.resourceTimer) return;
+    this.resourceTimer = setTimeout(() => {
+      const only = new Set(this.pendingResources);
+      this.pendingResources.clear();
+      this.resourceTimer = null;
+      void this.refreshAffectedResources(only);
     }, 16);
   }
 
-  private async refreshAffected(only: ReadonlySet<string>): Promise<void> {
+  private async refreshAffectedResources(
+    only: ReadonlySet<string>,
+  ): Promise<void> {
     const paths = new Map(
       this.scope.snapshot().workspaces.map((meta) => [meta.id, meta.path]),
     );
     await Promise.all(
-      Array.from(this.listWorkspaces).map(async (workspaceId) => {
-        await this.lists.refresh(
+      Array.from(this.resourceWorkspaces).map(async (workspaceId) => {
+        await this.resources.refresh(
           { workspaceId, workspacePath: paths.get(workspaceId) ?? '' },
           only,
         );
         this.registry
           ?.define('workspace')
-          .resource(listResourceName(workspaceId))
+          .resource(resourcesResourceName(workspaceId))
           .publish();
       }),
     );

@@ -20,7 +20,8 @@ import { parseAddress } from '../registry/address.ts';
 import type { CommandContext, CommandInput } from '../registry/command.ts';
 import type { DomainRegistry, Target } from '../registry/registry.ts';
 import type { Resource } from '../registry/resource.ts';
-import type { ListService } from '../domains/workspace/lists.ts';
+import type { ResourceForestService } from '../domains/workspace/resources.ts';
+import { resolvePluginResourceGroup } from '../domains/workspace/resource-tree.ts';
 import { matchesClaim } from '../transport/resource.ts';
 import type { PluginPackage } from './manifest.ts';
 import type { PluginFiles } from './files.ts';
@@ -31,7 +32,7 @@ import { join } from 'node:path';
 
 export interface PluginManagerOptions {
   store?: PluginStore;
-  lists?: ListService;
+  resources?: ResourceForestService;
   files?: PluginFiles;
   secrets?: SecretsService;
 }
@@ -76,9 +77,9 @@ export class PluginManager {
     }
 
     // 列表 id 全局唯一：冲突在登记任何东西之前拒绝，避免半成品。
-    for (const list of contribution.lists ?? []) {
-      if (this.options.lists?.registry.has(list.definition.id)) {
-        throw new Error(`列表重复：${list.definition.id}`);
+    for (const group of contribution.resourceGroups ?? []) {
+      if (this.options.resources?.registry.has(group.definition.id)) {
+        throw new Error(`资源组重复：${group.definition.id}`);
       }
     }
 
@@ -151,8 +152,14 @@ export class PluginManager {
       throw error;
     }
 
-    for (const list of contribution.lists ?? []) {
-      this.options.lists?.registry.register(list.definition, list.provider, id);
+    for (const group of contribution.resourceGroups ?? []) {
+      this.options.resources?.registry.register(
+        group.definition,
+        async (ctx) => [
+          await resolvePluginResourceGroup(group, ctx, this.transport),
+        ],
+        id,
+      );
     }
 
     this.scopes.set(id, this.createScope(pkg));
@@ -166,9 +173,9 @@ export class PluginManager {
     return this.registry.activate(registration.package.manifest.id);
   }
 
-  /** 激活完成后的收尾：运行时已就绪，重算该插件声明的列表。 */
-  touchLists(pluginId: string): void {
-    this.options.lists?.registry.touch(pluginId);
+  /** 激活完成后的收尾：运行时已就绪，重算该插件声明的资源组。 */
+  touchResources(pluginId: string): void {
+    this.options.resources?.registry.touch(pluginId);
   }
 
   /** 激活期作用域：只在注册成功后存在，撤销时失效。 */
@@ -181,7 +188,7 @@ export class PluginManager {
     const registration = this.registrations.get(pluginId);
     await this.registry.revoke(pluginId);
     this.transport.revoke(registration?.package.manifest.id ?? pluginId);
-    this.options.lists?.registry.revokeOwner(pluginId);
+    this.options.resources?.registry.revokeOwner(pluginId);
     this.registrations.delete(pluginId);
     this.scopes.delete(pluginId);
     this.settings.delete(pluginId);

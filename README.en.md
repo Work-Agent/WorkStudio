@@ -158,7 +158,7 @@ Renderer pages
 Runtime
   DomainRegistry · Dispatcher · storage / logging / network adapters
 Domains
-  workspaces · resources · lists · plugins
+  workspaces · resources · plugins
   shell · settings
   sessions · models · skills · thinking · extensions · tools · prompts · themes
 Domain modules
@@ -171,9 +171,9 @@ Agent layer
 ```
 
 - **Domain / Resource is the runtime unit**: domains follow capabilities (workspaces / resources / lists / plugins / shell / settings, plus sessions / models / skills / thinking / extensions / tools / prompts / themes under agent); lifecycle is grouped into four DomainModules — workspace / shell / settings / agent. There is no Capability, controller or separate lifecycle interface.
-- **Workspace is a scope, not a domain**: workspace-scoped resources carry the wsId in the resource name (for example `workspace/<wsId>/list`); windows map 1:1 to workspaces and subscribe to the workspace they are bound to.
+- **Workspace is a scope, not a domain**: workspace-scoped resources carry the wsId in the resource name (for example `workspace/<wsId>/resources`); windows map 1:1 to workspaces and subscribe to the workspace they are bound to.
 - **Runtime owns the framework**: DomainRegistry, Dispatcher and storage / logging / network adapters provide cross-domain mechanics and hold no business state.
-- **DomainModules own implementations**: the workspace module manages resources / URA / lists / plugins; shell manages windows / views / layout / theme; settings manages settings / updates; the agent engine lives in a separate Agent layer owned by AgentDomain, split into sessions / models / skills / thinking / extensions / tools / prompts / themes domains.
+- **DomainModules own implementations**: the workspace module manages resources / URA / the resource forest; the plugin registry is App-level; shell manages windows / views / layout / theme; settings manages settings / updates; the agent engine lives in a separate Agent layer owned by AgentDomain, split into sessions / models / skills / thinking / extensions / tools / prompts / themes domains.
 - **Dependencies are explicit**: DomainModule declares `dependencies`; DomainRegistry starts in topological order and stops in reverse. No DI container.
 - **App is the composition root**: it only owns process lifecycle, windows, view providers, IPC and assembly of the four DomainModules.
 - **Views have two layers**: window-level system views (assistant / overlay / capture) and content tabs (resource pages / web) are separate; Views only handles hosting, geometry, visibility and stacking.
@@ -417,8 +417,8 @@ source (catalog:<id> / URL / zip / directory)
 Settings does not touch the pipeline: no transport / codec / store, only pages and a list. It hosts two kinds of page: framework built-ins and plugin settings pages.
 
 - **Framework built-ins**: list and pages both owned by the main process, with the page directory separate from plugin pages;
-- **Plugin settings pages**: the page is supplied by the plugin (`settings` entry) and manages that plugin's configuration; opened from the plugin list under Settings, and available as the plugin's detail page right after installation;
-- `settings.list` projects the built-in list; plugin settings pages are reached from the plugin list, and `views.open({ type: 'settings' })` opens by ref;
+- **Plugin settings pages**: the page is supplied by the plugin (`settings` entry) and manages that plugin's configuration; opened from the sidebar plugin list and available as the plugin home after installation;
+- `settings.list` projects the built-in list; plugin settings pages are reached from the sidebar plugin list, and `views.open({ type: 'settings' })` opens by ref;
 - **The ref carries its own scheme**: built-ins are `settings://<id>`, plugin settings pages are `settings://plugin.<id>`; the tab set, address bar and page sessions all recognise it by ref;
 - Physical loading shares the `app://page` protocol, preload bridge, theme broadcast and session lifecycle with plugin pages;
 - Adding a built-in page = one page + one list entry; plugin settings pages follow the plugin version; neither enters installation or trust flows on its own;
@@ -519,7 +519,7 @@ node node_modules/electron/install.js
 │   ├── main/
 │   │   ├── app.ts / index.ts      # composition root / Electron entry
 │   │   ├── runtime/               # DomainRegistry / Dispatcher / storage / log / net
-│   │   ├── domains/               # workspaces / resources / lists / plugins / shell / settings / agent
+│   │   ├── domains/               # workspaces / resources / plugins / shell / settings / agent
 │   │   └── agent/                 # Agent layer: pi runtime / harness / tools / sessions
 │   ├── preload/                   # preload contracts for pages and content views
 │   ├── renderer/

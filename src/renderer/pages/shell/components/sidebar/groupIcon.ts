@@ -8,7 +8,7 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react';
-import type { ListGroup } from '../../../../../shared/lists.ts';
+import type { ResourceGroup } from '../../../../../shared/resources.ts';
 
 const ICONS: Record<string, LucideIcon> = {
   folder: FolderOpen,
@@ -19,7 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
   sliders: Settings,
 };
 
-export function groupIconOf(group: ListGroup): {
+export function groupIconOf(group: ResourceGroup): {
   Icon: LucideIcon;
   iconUrl?: string;
 } {

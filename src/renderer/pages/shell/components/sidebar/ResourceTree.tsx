@@ -1,8 +1,8 @@
 /**
- * ResourceTree —— 资源侧栏树。
+ * ResourceTree —— 资源侧栏森林。
  *
- * 分组是根节点；「本地文档」按 `relativePath` 继续展开目录 / 文件，
- * 其他资源（网站域、临时网页）保持分组下平铺。插件列表仍走列表视图。
+ * 每个 ResourceGroup 是一棵树；整个侧栏是森林。
+ * 分组、目录可折叠，文件/条目点击走 workspace/<wsId>/resources 的 open action。
  */
 import { useState } from 'react';
 import {
@@ -13,108 +13,26 @@ import {
   Globe,
   X,
 } from 'lucide-react';
-import type { ListGroup, ListItem } from '../../../../../shared/lists.ts';
+import type {
+  ResourceGroup,
+  ResourceNode,
+} from '../../../../../shared/resources.ts';
 import { command } from '../../../../shared/api/bridge.ts';
-import { openListItem } from '../../../../shared/domains/lists.ts';
+import { openResourceNode } from '../../../../shared/domains/resources.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
 import { useActiveWorkspaceId } from '../../domains/windows.ts';
 import { groupIconOf } from './groupIcon.ts';
 import { formatTime } from './time.ts';
 
-type TreeNode =
-  | {
-      key: string;
-      kind: 'group';
-      label: string;
-      group: ListGroup;
-      children: TreeNode[];
-    }
-  | {
-      key: string;
-      kind: 'dir';
-      label: string;
-      children: TreeNode[];
-    }
-  | {
-      key: string;
-      kind: 'item';
-      label: string;
-      item: ListItem;
-      children: TreeNode[];
-    };
-
-function itemNode(item: ListItem): TreeNode {
-  return {
-    key: `i:${item.key}`,
-    kind: 'item',
-    label: item.title,
-    item,
-    children: [],
-  };
-}
-
-function relativeOf(item: ListItem): string {
-  const value = item.meta?.['relativePath'];
-  return typeof value === 'string' && value ? value : item.title;
-}
-
-function sortNodes(nodes: TreeNode[]): void {
-  nodes.sort((a, b) => {
-    if (a.kind !== b.kind) {
-      if (a.kind === 'dir') return -1;
-      if (b.kind === 'dir') return 1;
-      return 0;
-    }
-    return a.label.localeCompare(b.label, 'zh-Hans-CN');
-  });
-  for (const node of nodes) sortNodes(node.children);
-}
-
-function buildNodes(group: ListGroup): TreeNode[] {
-  if (group.definitionId !== 'docs') return group.items.map(itemNode);
-  const roots: TreeNode[] = [];
-  for (const item of group.items) {
-    const parts = relativeOf(item)
-      .split(/[\\/]+/)
-      .filter(Boolean);
-    if (parts.length < 2) {
-      roots.push(itemNode(item));
-      continue;
-    }
-    let level = roots;
-    let prefix = '';
-    for (const part of parts.slice(0, -1)) {
-      prefix = prefix ? `${prefix}/${part}` : part;
-      let dir = level.find(
-        (node): node is Extract<TreeNode, { kind: 'dir' }> =>
-          node.kind === 'dir' && node.label === part,
-      );
-      if (!dir) {
-        dir = {
-          key: `d:${group.id}:${prefix}`,
-          kind: 'dir',
-          label: part,
-          children: [],
-        };
-        level.push(dir);
-      }
-      level = dir.children;
-    }
-    level.push(itemNode(item));
-  }
-  sortNodes(roots);
-  return roots;
-}
-
-function openItem(item: ListItem): void {
-  if (item.state?.disabled === true) return;
-  void openListItem(item).catch((error: unknown) =>
+function openNode(node: ResourceNode): void {
+  if (node.state?.disabled === true) return;
+  void openResourceNode(node).catch((error: unknown) =>
     notifyError(error instanceof Error ? error.message : String(error), 'open'),
   );
 }
 
-function closeItem(item: ListItem, wsId: string | null): void {
-  const viewId = item.meta?.['viewId'];
+function closeNode(node: ResourceNode, wsId: string | null): void {
+  const viewId = node.meta?.['viewId'];
   if (typeof viewId === 'string' && wsId) {
     void command('shell', `${wsId}/views`, 'close', { id: viewId }).catch(
       () => undefined,
@@ -122,40 +40,60 @@ function closeItem(item: ListItem, wsId: string | null): void {
   }
 }
 
-function TreeRow({
+function NodeIcon({
   node,
+  group,
+  expanded,
+}: {
+  node: ResourceNode;
+  group: ResourceGroup;
+  expanded: boolean;
+}) {
+  if (node.type === 'dir') {
+    return expanded ? (
+      <FolderOpen className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+    ) : (
+      <Folder className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+    );
+  }
+  if (String(node.meta?.['source'] ?? '') === 'web') {
+    return <Globe className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />;
+  }
+  if (group.definitionId === 'settings') {
+    return <FileText className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />;
+  }
+  return <FileText className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />;
+}
+
+function NodeRow({
+  node,
+  group,
   depth,
   wsId,
   expanded,
   onToggle,
 }: {
-  node: TreeNode;
+  node: ResourceNode;
+  group: ResourceGroup;
   depth: number;
   wsId: string | null;
   expanded: (key: string, fallback: boolean) => boolean;
   onToggle: (key: string, next: boolean) => void;
 }) {
-  const isItem = node.kind === 'item';
-  const isOpen = expanded(node.key, node.kind === 'group');
-  const active = isItem && node.item.state?.active === true;
-  const opened = isItem && node.item.state?.open === true;
-
-  const label = node.label;
+  const branch = node.type === 'dir' && Boolean(node.children?.length);
+  const isOpen = branch ? expanded(`n:${node.key}`, false) : false;
+  const active = node.state?.active === true;
+  const opened = node.state?.open === true;
   const indent = 8 + depth * 12;
 
   return (
-    <div role="treeitem" aria-expanded={isItem ? undefined : isOpen}>
+    <div role="treeitem" aria-expanded={branch ? isOpen : undefined}>
       <div
         data-testid={
-          node.kind === 'group'
-            ? 'sidebar-tree-group'
-            : node.kind === 'dir'
-              ? 'sidebar-tree-dir'
-              : 'sidebar-tree-item'
+          node.type === 'dir' ? 'sidebar-tree-dir' : 'sidebar-tree-item'
         }
-        data-group={node.kind === 'group' ? node.group.id : undefined}
         onClick={() =>
-          isItem ? openItem(node.item) : onToggle(node.key, !isOpen)
+          branch ? onToggle(`n:${node.key}`, !isOpen) : openNode(node)
         }
         className={`group relative flex items-center pr-1.5 min-h-[32px] rounded-md cursor-pointer transition-colors ${
           active
@@ -163,13 +101,13 @@ function TreeRow({
             : 'hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]'
         }`}
         style={{ paddingLeft: indent }}
-        title={label}
+        title={node.title}
       >
         {active && (
           <span className="absolute left-0 top-1 bottom-1 w-0.5 bg-[#4F6BED] rounded-r" />
         )}
         <span className="shrink-0 w-4 flex items-center justify-center">
-          {!isItem && (
+          {branch && (
             <ChevronRight
               className={`w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 transition-transform ${
                 isOpen ? 'rotate-90' : ''
@@ -178,46 +116,23 @@ function TreeRow({
           )}
         </span>
         <span className="shrink-0 w-5 flex items-center justify-center">
-          {node.kind === 'group' ? (
-            <GroupIcon group={node.group} />
-          ) : node.kind === 'dir' ? (
-            isOpen ? (
-              <FolderOpen className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-            ) : (
-              <Folder className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-            )
-          ) : String(node.item.meta?.['source'] ?? '') === 'web' ? (
-            <Globe className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
-          ) : (
-            <FileText className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
-          )}
+          <NodeIcon node={node} group={group} expanded={isOpen} />
         </span>
-        <span
-          className={`ml-1.5 flex-1 min-w-0 truncate text-[13px] ${
-            node.kind === 'group'
-              ? 'font-semibold text-zinc-900 dark:text-zinc-100'
-              : 'text-zinc-700 dark:text-zinc-200'
-          }`}
-        >
-          {label}
+        <span className="ml-1.5 flex-1 min-w-0 truncate text-[13px] text-zinc-700 dark:text-zinc-200">
+          {node.title}
         </span>
-        {node.kind === 'group' && (
-          <span className="ml-1 shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
-            {node.group.countLabel}
+        {node.badge && (
+          <span className="ml-1 shrink-0 rounded bg-zinc-100 px-1 text-[10px] text-zinc-500 dark:bg-[#23272a] dark:text-zinc-400">
+            {node.badge}
           </span>
         )}
-        {node.kind === 'group' && node.group.updatedAt > 0 && (
-          <span className="ml-1.5 shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
-            {formatTime(node.group.updatedAt)}
-          </span>
-        )}
-        {isItem && opened && (
+        {node.type === 'item' && opened && (
           <button
             type="button"
             title="关闭"
             onClick={(event) => {
               event.stopPropagation();
-              closeItem(node.item, wsId);
+              closeNode(node, wsId);
             }}
             className="ml-1 shrink-0 w-5 h-5 rounded flex items-center justify-center text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-zinc-700 dark:hover:text-zinc-200"
           >
@@ -225,12 +140,13 @@ function TreeRow({
           </button>
         )}
       </div>
-      {!isItem && isOpen && (
+      {branch && isOpen && (
         <div role="group">
-          {node.children.map((child) => (
-            <TreeRow
+          {node.children?.map((child) => (
+            <NodeRow
               key={child.key}
               node={child}
+              group={group}
               depth={depth + 1}
               wsId={wsId}
               expanded={expanded}
@@ -243,7 +159,7 @@ function TreeRow({
   );
 }
 
-function GroupIcon({ group }: { group: ListGroup }) {
+function GroupIcon({ group }: { group: ResourceGroup }) {
   const { Icon, iconUrl } = groupIconOf(group);
   if (iconUrl) {
     return <img src={iconUrl} alt="" className="w-4 h-4 object-contain" />;
@@ -251,7 +167,88 @@ function GroupIcon({ group }: { group: ListGroup }) {
   return <Icon className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />;
 }
 
-export function ResourceTree({ groups }: { groups: ListGroup[] }) {
+function GroupBlock({
+  group,
+  wsId,
+  expanded,
+  onToggle,
+}: {
+  group: ResourceGroup;
+  wsId: string | null;
+  expanded: (key: string, fallback: boolean) => boolean;
+  onToggle: (key: string, next: boolean) => void;
+}) {
+  const key = `g:${group.id}`;
+  const isOpen = expanded(key, true);
+  return (
+    <div role="treeitem" aria-expanded={isOpen} data-group={group.id}>
+      <div
+        data-testid="sidebar-tree-group"
+        data-group={group.id}
+        onClick={() => onToggle(key, !isOpen)}
+        className="group relative flex items-center min-h-[32px] rounded-md cursor-pointer px-1.5 transition-colors hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]"
+      >
+        <span className="shrink-0 w-4 flex items-center justify-center">
+          <ChevronRight
+            className={`w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 transition-transform ${
+              isOpen ? 'rotate-90' : ''
+            }`}
+          />
+        </span>
+        <span className="shrink-0 w-5 flex items-center justify-center">
+          <GroupIcon group={group} />
+        </span>
+        <span className="ml-1.5 flex-1 min-w-0 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+          {group.label}
+        </span>
+        <span className="ml-1 shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
+          {group.countLabel}
+        </span>
+        {group.updatedAt > 0 && (
+          <span className="ml-1.5 shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
+            {formatTime(group.updatedAt)}
+          </span>
+        )}
+      </div>
+      {isOpen && (
+        <div role="group">
+          {group.state === 'error' ? (
+            <div
+              className="px-2 py-2 text-[11px] text-red-500"
+              title={group.diagnostics?.join('\n')}
+            >
+              列表加载失败
+            </div>
+          ) : group.roots.length === 0 ? (
+            <div className="px-2 py-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+              {group.empty?.text ?? `暂无${group.label}`}
+            </div>
+          ) : (
+            group.roots.map((node) => (
+              <NodeRow
+                key={node.key}
+                node={node}
+                group={group}
+                depth={1}
+                wsId={wsId}
+                expanded={expanded}
+                onToggle={onToggle}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ResourceTree({
+  groups,
+  collapsed = false,
+}: {
+  groups: ResourceGroup[];
+  collapsed?: boolean;
+}) {
   const wsId = useActiveWorkspaceId();
   const [state, setState] = useState<Record<string, boolean>>({});
   const expanded = (key: string, fallback: boolean): boolean =>
@@ -259,22 +256,29 @@ export function ResourceTree({ groups }: { groups: ListGroup[] }) {
   const onToggle = (key: string, next: boolean): void => {
     setState((current) => ({ ...current, [key]: next }));
   };
-  const nodes = groups.map(
-    (group): TreeNode => ({
-      key: `g:${group.id}`,
-      kind: 'group',
-      label: group.label,
-      group,
-      children: buildNodes(group),
-    }),
-  );
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-1">
+        {groups.map((group) => (
+          <div
+            key={group.id}
+            data-testid="sidebar-tree-group"
+            data-group={group.id}
+            title={group.label}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-[#2a2d2e]"
+          >
+            <GroupIcon group={group} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div role="tree" className="space-y-0.5">
-      {nodes.map((node) => (
-        <TreeRow
-          key={node.key}
-          node={node}
-          depth={0}
+      {groups.map((group) => (
+        <GroupBlock
+          key={group.id}
+          group={group}
           wsId={wsId}
           expanded={expanded}
           onToggle={onToggle}

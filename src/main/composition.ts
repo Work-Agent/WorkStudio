@@ -7,7 +7,7 @@
 
 import type { AppearanceStore } from './platform/appearance.ts';
 import type { StorageLayout } from './platform/paths.ts';
-import type { ListItem } from '../shared/lists.ts';
+import type { ResourceNode } from '../shared/resources.ts';
 import type { TransportRouter } from './transport/router.ts';
 import type { WebCache } from './transport/web-cache.ts';
 import { BrowserCapability } from './domains/browser/capability.ts';
@@ -28,7 +28,7 @@ import type { PluginLifecycle } from './plugin/lifecycle.ts';
 import type { PluginManager } from './plugin/manager.ts';
 import type { PluginService } from './plugin/service.ts';
 import type { PluginStore } from './plugin/store.ts';
-import type { ListService } from './domains/workspace/lists.ts';
+import type { ResourceForestService } from './domains/workspace/resources.ts';
 import type { DomainRegistry } from './registry/registry.ts';
 import { createLog } from './log.ts';
 
@@ -45,11 +45,11 @@ export interface SystemModulesOptions {
   pluginStore: PluginStore;
   pluginService: PluginService;
   pluginFiles: PluginFiles;
-  lists: ListService;
+  resources: ResourceForestService;
   builtinPluginIds?: ReadonlySet<string>;
   appearance: AppearanceStore;
   shellHost?: ShellHost;
-  openItem?: (item: ListItem, workspaceId: string) => Promise<unknown>;
+  openNode?: (node: ResourceNode, workspaceId: string) => Promise<unknown>;
   settingsPages?: SettingsPage[];
 }
 
@@ -100,8 +100,8 @@ export function registerSystemModules(
     new WorkspaceModule(
       repo,
       options.transport,
-      options.lists,
-      options.openItem,
+      options.resources,
+      options.openNode,
     ),
   );
   registry.registerModule(

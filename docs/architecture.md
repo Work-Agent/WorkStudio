@@ -83,11 +83,11 @@
 
 ### 2.1 作用域
 
-| 作用域    | 内容                                                         |
-| --------- | ------------------------------------------------------------ |
-| App       | 模型目录、凭证、插件安装、全局设置、工作区列表、系统视图     |
-| Workspace | 资源、列表、标签视图、布局现场、页面会话、会话记录、网页策略 |
-| Session   | 模型上下文、消息、轮次、队列、技能激活                       |
+| 作用域    | 内容                                                       |
+| --------- | ---------------------------------------------------------- |
+| App       | 模型目录、凭证、插件安装、全局设置、工作区列表、系统视图   |
+| Workspace | 资源森林、标签视图、布局现场、页面会话、会话记录、网页策略 |
+| Session   | 模型上下文、消息、轮次、队列、技能激活                     |
 
 切换语义：
 
@@ -102,7 +102,7 @@
 | 窗口 / 主题 / 布局现场   | 进程      | 窗口与场景资源 |
 | 工作区注册表与当前工作区 | App       | 工作区注册表   |
 | 模型 / 凭证 / 全局设定   | App       | 设置存储       |
-| 资源 / 列表 / 会话记录   | Workspace | 域持有         |
+| 资源森林 / 会话记录      | Workspace | 域持有         |
 | 当前回复与任务           | Session   | 会话服务       |
 | 设置页 / 更新 / 插件任务 | App       | 各自域持有     |
 
@@ -211,7 +211,7 @@ interface WorkStudioBridge {
 ### 4.1 Domain 与 Resource
 
 - **Domain** 是服务边界，按地址前缀区分，例如 `shell`、`workspace`、`agent`、`docx`。它像微服务一样拥有自己的资源、命令与不变量，不是“一个能力一个 Domain”。
-- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/<wsId>/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `workspace/<wsId>/list`、`agent/<wsId>/sessions`。
+- **Resource** 是 Domain 内可订阅、可寻址的聚合根或读模型，地址为 `<domain>/<resource>`。例如 `agent/skills`、`agent/<wsId>/sessions`、`shell/windows`。工作区作用域的资源必须带 `wsId`，例如 `workspace/<wsId>/resources`、`agent/<wsId>/sessions`。
 - **Command** 是唯一的操作单位，地址为 `<domain>/<resource>/<action>`。
 
 聚合根决定一致性与事务边界：命令只修改聚合根，`snapshot` / `patch` 是它的投影；跨 Domain 只引用资源地址或注入端口，不直接拿对方的对象。这样 `agent` 不需要认识 `plugin` 的内部，`plugin` 也不需要认识会话。
@@ -240,7 +240,7 @@ web ────────→ transport / cache（由 browser 模块承载）
 | Domain（服务） | 聚合根 / 主要 resource                               | 读模型                                                                                                                                                                           |
 | -------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shell`        | `windows` · `appearance`                             | `<wsId>/layout` · `<wsId>/views` · `<wsId>/view/<id>` · `<wsId>/dialogs` · `<wsId>/notices` · `pages` · `menu` · `interaction` · `native`                                        |
-| `workspace`    | `registry`                                           | `<wsId>/list` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                                 |
+| `workspace`    | `registry`                                           | `<wsId>/resources` · `<wsId>/search` · `<wsId>/<ref>`                                                                                                                            |
 | `plugin`       | `installed` · `task`                                 | `catalog`                                                                                                                                                                        |
 | `settings`     | `preferences` · `updates`                            | `pages` · `storage`                                                                                                                                                              |
 | `browser`      | `policy`                                             | `<wsId>/tabs` · `<wsId>/automation` · `<wsId>/capture`                                                                                                                           |
@@ -478,14 +478,14 @@ export const workstudio = definePlugin({
       },
     },
   },
-  lists: [{ definition, provider }],
+  resourceGroups: [{ definition, source }],
   events: true,
   lifecycle: { activate, deactivate },
 });
 ```
 
 - 命令键是 `<domain>.<action>`，域必须等于插件 id；
-- `lists` 提供列表定义与现取数据的 provider，条目归属与刷新由宿主编排；
+- `resourceGroups` 提供资源组定义与来源（transport 树或自定义 provider），条目归属与刷新由宿主编排；
 - `events: true` 创建 `<pluginId>/events` 事件资源，插件的后台任务与页面订阅共用它；
 - `lifecycle.activate` 收到插件作用域，跨命令的运行时在此时创建，`deactivate` 后失效。
 
@@ -576,16 +576,16 @@ interface PluginScope {
 
 插件页面是受限页面；能力按发送方身份判定，页面无法自称是别的插件或视图。
 
-| 面           | 规则                                                                                               |
-| ------------ | -------------------------------------------------------------------------------------------------- |
-| 命令         | 只能调本插件域命令；跨域命令与系统敏感命令由宿主鉴权，拒绝返回 `denied`                            |
-| 系统命令例外 | 仅 `shell/native/saveFile`、`shell/native/openExternal` 与本窗口 `workspace/<wsId>/list` 的 `open` |
-| 订阅         | 本插件域与 `shell/appearance`；其余地址拒绝                                                        |
-| 外部文件读   | 页面用 `workStudio.fileToken(file)` 导入复制件，得到不透明 `in:` token，绝对路径不下发             |
-| 另存为       | `saveFile` 对插件来源签发短期 `save:` token；插件写盘后页面只拿到保存结果                          |
-| 密钥         | 只有插件逻辑层能读明文；页面没有密钥读取命令                                                       |
-| 助手         | 插件命令默认不进助手命令表；内容由资源适配器按需读取，只返回文本与元数据                           |
-| 导航         | 只能留在同插件 `plugin://` 页面；外链一律交给系统浏览器（仅 http/https）                           |
+| 面           | 规则                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| 命令         | 只能调本插件域命令；跨域命令与系统敏感命令由宿主鉴权，拒绝返回 `denied`                                 |
+| 系统命令例外 | 仅 `shell/native/saveFile`、`shell/native/openExternal` 与本窗口 `workspace/<wsId>/resources` 的 `open` |
+| 订阅         | 本插件域与 `shell/appearance`；其余地址拒绝                                                             |
+| 外部文件读   | 页面用 `workStudio.fileToken(file)` 导入复制件，得到不透明 `in:` token，绝对路径不下发                  |
+| 另存为       | `saveFile` 对插件来源签发短期 `save:` token；插件写盘后页面只拿到保存结果                               |
+| 密钥         | 只有插件逻辑层能读明文；页面没有密钥读取命令                                                            |
+| 助手         | 插件命令默认不进助手命令表；内容由资源适配器按需读取，只返回文本与元数据                                |
+| 导航         | 只能留在同插件 `plugin://` 页面；外链一律交给系统浏览器（仅 http/https）                                |
 
 ### 8.7 兼容
 
@@ -634,16 +634,26 @@ URA 与 v1 入口一起退役：`exports['./ura']` 不再装载。插件必须�
 
 标签语义：打开、切换、固定；关闭标签只影响页面，不影响资源。内容页在窗口内以受限页面运行，滚动条、主题与快捷键由框架注入。
 
-### 9.5 列表
+### 9.5 资源森林与插件注册表
 
-列表是投影：provider 产出快照，视图只消费。每个工作区一份（`workspace/<wsId>/list`），组可以声明聚合来源（`deps`），来源资源变化时只重算受影响的组。内置列表与插件列表共用同一条流程——注册、取数、分页、选择、动作都由框架处理，插件只提供条目与动作实现。
+文件列表和插件列表是两套独立资源，机制不同，但共用 `ResourceNode` / `ResourceGroup` 的展示与 action 契约。
 
-插件列表随贡献一起导出，定义与数据都归插件，所有者是插件 id：
+**文件列表**（`workspace/<wsId>/resources`）是资源森林：
 
-- 定义在扫描期可见，provider 在每次重算时现取数据，框架不缓存插件内部状态；
-- 每个分组自带标题、计数、状态、空态与条目，框架只做排序、分页与展示；
-- 依赖写在分组定义里，指向插件事件资源；事件到达只触发依赖它的分组；
-- 停用或卸载撤销定义与该插件的全部分组，不影响其它列表。
+- 每个分组是一棵树，整个侧栏是森林；
+- 文档组由 transport 枚举本地文件生成 `ResourceNode` 树；插件可以贡献 `transport` 树或自定义 provider 树；
+- 分组可以声明 `deps`，来源变化时只重算受影响的组；
+- 目录可懒加载：节点带 `hasChildren` 时，展开走资源的 `children` 命令；
+- 插件资源组的所有者是插件 id，停用或卸载时撤销该插件的全部分组。
+
+**插件注册表**（`plugin/registry`）是 App 级平铺列表：
+
+- 不携带 `wsId`，与工作区切换无关；
+- 快照给出已安装与可安装条目、目录状态与当前任务；
+- 安装、卸载、重载、刷新、手动安装、取消都走该资源的显式命令；
+- 插件 settings 页是已安装插件的 home；宿主不在插件页内嵌安装/卸载按钮，管理动作由注册表列表提供。
+
+两套资源都只输出展示与 action 契约，渲染层不直接调用 `plugin/*` 或文件系统命令。
 
 ## 十、约束与验收
 
@@ -692,6 +702,6 @@ URA 与 v1 入口一起退役：`exports['./ura']` 不再装载。插件必须�
 | 设置变更       | 立即生效，重启后保持，未知字段不被覆盖             |
 | 插件页面类型   | 编译期类型正确，运行期非法参数被拒绝               |
 | 插件页面隔离   | 越权命令返回 `denied`，页面拿不到绝对路径          |
-| 插件列表刷新   | 事件到达只重算依赖分组，与内置列表同流程           |
+| 插件资源组刷新 | 事件到达只重算依赖分组，与系统资源组同流程         |
 | 工作区切换     | 资源、会话、布局按新工作区重建，App 级数据不变     |
 | 网页快照       | 自动快照进缓存，保存后成为工作区资源               |

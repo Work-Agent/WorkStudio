@@ -4,13 +4,14 @@ interface Snapshot {
   groups?: Array<{
     id: string;
     section?: string;
-    items: Array<{ title: string }>;
+    roots: Array<{ title: string; children?: unknown[] }>;
   }>;
 }
 
 interface TreeView {
   groups: string[];
   items: string[];
+  text?: string;
 }
 
 export default defineCase({
@@ -19,11 +20,24 @@ export default defineCase({
   tags: ['dev', 'ci'],
   async run(ctx) {
     const expected = await ctx.evaluate(async () => {
+      const leafTitles = (
+        nodes: Array<{ title: string; children?: unknown[] }>,
+      ): string[] =>
+        nodes.flatMap((node) =>
+          node.children?.length
+            ? leafTitles(
+                node.children as Array<{
+                  title: string;
+                  children?: unknown[];
+                }>,
+              )
+            : [node.title],
+        );
       const workspaceId = window.workStudio.workspaceId;
       if (!workspaceId) throw new Error('窗口未绑定工作区');
       const snapshot = (await window.workStudio.subscribe(
         'workspace',
-        `${workspaceId}/list`,
+        `${workspaceId}/resources`,
       )) as Snapshot | null;
       const groups = (snapshot?.groups ?? []).filter(
         (group) => (group.section ?? 'resources') === 'resources',
@@ -31,7 +45,9 @@ export default defineCase({
       return {
         groupIds: groups.map((group) => group.id),
         titles: groups.flatMap((group) =>
-          group.items.map((item) => item.title),
+          leafTitles(
+            group.roots as Array<{ title: string; children?: unknown[] }>,
+          ),
         ),
       };
     });
@@ -54,11 +70,24 @@ export default defineCase({
           items: [
             ...tree.querySelectorAll('[data-testid="sidebar-tree-item"]'),
           ].map((node) => node.getAttribute('title') ?? ''),
+          text: tree.textContent?.slice(0, 160) ?? '',
         };
       })) as TreeView | null;
       if (!view) return false;
-      if (view.groups.join() !== expected.groupIds.join()) return false;
-      return expected.titles.every((title) => view.items.includes(title));
+      if (view.groups.join() !== expected.groupIds.join()) {
+        throw new Error(
+          `groups expected=${expected.groupIds.join(',')} actual=${view.groups.join(',')} tree=${view.text}`,
+        );
+      }
+      const missing = expected.titles.filter(
+        (title) => !view.items.includes(title),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `items missing=${missing.join(',')} actual=${view.items.join(',')}`,
+        );
+      }
+      return true;
     }, '侧栏资源树与工作区列表不一致');
   },
 });

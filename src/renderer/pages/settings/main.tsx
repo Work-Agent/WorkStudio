@@ -2,9 +2,12 @@
  * 单页设置：所有设置项合并成可收起的 card；默认全部收起。
  * 卡片内容直接是 React + next domain，不再内嵌页面。
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { command } from '../../shared/api/bridge.ts';
-import { openListItem, useLists } from '../../shared/domains/lists.ts';
+import {
+  openResourceNode,
+  useResourceForest,
+} from '../../shared/domains/resources.ts';
 import { notifyError } from '../../shared/domains/notices.ts';
 import { createRoot } from 'react-dom/client';
 import {
@@ -64,56 +67,6 @@ interface SkillView {
   pluginId?: string;
   scope: string;
   enabled?: boolean;
-}
-
-interface PluginView {
-  id: string;
-  label: string;
-  version: string;
-  stage: 'installed' | 'ready' | 'error' | 'broken';
-  error?: string;
-  builtin: boolean;
-  hasConfig: boolean;
-}
-
-interface CatalogItemView {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  source: string;
-  sha256: string;
-  repo?: string;
-  icon?: string;
-  category?: string;
-  tags: string[];
-  deprecated?: boolean;
-  state: 'available' | 'installed' | 'update';
-  installedVersion?: string;
-  builtin: boolean;
-}
-
-interface PluginCatalogView {
-  entries: CatalogItemView[];
-  url: string;
-  fetchedAt: number | null;
-  stale: boolean;
-  error: string | null;
-  warnings: string[];
-}
-
-interface PluginTask {
-  id: string;
-  source: string;
-  label: string;
-  status: 'running' | 'ready' | 'error' | 'cancelled';
-  phase: string;
-  received: number;
-  total: number | null;
-  message: string;
-  error: string | null;
-  startedAt: number;
-  finishedAt: number | null;
 }
 
 interface ModelConfig {
@@ -627,424 +580,6 @@ function WorkspacesCard() {
   );
 }
 
-const PLUGIN_STAGE_LABEL: Record<PluginView['stage'], string> = {
-  installed: '已安装',
-  ready: '运行中',
-  error: '加载失败',
-  broken: '包损坏',
-};
-
-const PLUGIN_STAGE_TONE: Record<PluginView['stage'], string> = {
-  installed: 'bg-zinc-100 text-zinc-500 dark:bg-[#23272a] dark:text-zinc-400',
-  ready:
-    'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
-  error: 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400',
-  broken: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400',
-};
-
-const TASK_PHASE_LABEL: Record<string, string> = {
-  resolve: '解析来源',
-  download: '下载',
-  verify: '校验完整性',
-  unpack: '解包',
-  validate: '校验插件包',
-  commit: '提交安装',
-  activate: '激活插件',
-};
-
-function formatAgo(timestamp: number | null): string {
-  if (!timestamp) return '尚未加载';
-  const diff = Math.max(0, Date.now() - timestamp);
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  return `${Math.floor(diff / 86_400_000)} 天前`;
-}
-
-function PluginsCard() {
-  const installed = useResource<PluginView[]>('plugin', 'installed', []);
-  const catalog = useResource<PluginCatalogView>('plugin', 'catalog', {
-    entries: [],
-    url: '',
-    fetchedAt: null,
-    stale: false,
-    error: null,
-    warnings: [],
-  });
-  const task = useResource<PluginTask | null>('plugin', 'task', null);
-  const [source, setSource] = useState('');
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const refreshed = useRef(false);
-  const catalogRef = useRef(catalog);
-  catalogRef.current = catalog;
-  const taskRunning = task?.status === 'running';
-  const locked = busy || taskRunning;
-
-  const act = async (action: () => Promise<unknown>): Promise<void> => {
-    try {
-      setError('');
-      setBusy(true);
-      await action();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // 打开卡片时按需刷新：先等缓存投影到达，再判断新鲜度。
-  useEffect(() => {
-    if (refreshed.current) return;
-    const timer = setTimeout(() => {
-      refreshed.current = true;
-      const fetchedAt = catalogRef.current.fetchedAt;
-      const age = fetchedAt ? Date.now() - fetchedAt : Infinity;
-      if (age < 3_600_000) return;
-      void command('plugin', 'catalog', 'refresh').catch(() => undefined);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const categories = useMemo(() => {
-    const values = new Set<string>();
-    for (const item of catalog.entries) {
-      if (item.category) values.add(item.category);
-    }
-    return [...values].sort();
-  }, [catalog.entries]);
-
-  const available = catalog.entries.filter((item) => {
-    if (item.deprecated) return false;
-    const text = `${item.name} ${item.description} ${item.id}`.toLowerCase();
-    if (query && !text.includes(query.toLowerCase())) return false;
-    if (category && item.category !== category) return false;
-    return true;
-  });
-
-  const install = (target: string): Promise<void> =>
-    act(async () => {
-      await run('plugin', 'installed', 'install', { source: target });
-    });
-
-  const installManual = (): Promise<void> =>
-    act(async () => {
-      await run('plugin', 'installed', 'install', { source });
-      setSource('');
-    });
-
-  const pickFile = (): Promise<void> =>
-    act(async () => {
-      const picked = await run<string | null>('shell', 'native', 'pickFile', {
-        extensions: 'zip',
-      });
-      if (picked) setSource(picked);
-    });
-
-  const pickDirectory = (): Promise<void> =>
-    act(async () => {
-      const picked = await run<string | null>(
-        'shell',
-        'native',
-        'pickDirectory',
-      );
-      if (picked) setSource(picked);
-    });
-
-  const progress =
-    task && task.total
-      ? Math.min(100, Math.round((task.received / task.total) * 100))
-      : null;
-
-  return (
-    <Panel>
-      {task && (
-        <Section title="安装任务">
-          <div className="text-[12px]">
-            <div className="flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{task.label}</div>
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {task.status === 'running'
-                    ? `${TASK_PHASE_LABEL[task.phase] ?? task.phase} · ${task.message}`
-                    : task.message}
-                  {task.status === 'running' && task.total
-                    ? ` · ${task.received}/${task.total}`
-                    : ''}
-                </div>
-              </div>
-              <div className="flex shrink-0 gap-1">
-                {task.status === 'running' &&
-                  task.phase !== 'commit' &&
-                  task.phase !== 'activate' && (
-                    <Button
-                      disabled={busy}
-                      onClick={() =>
-                        void act(() => run('plugin', 'task', 'cancel'))
-                      }
-                    >
-                      取消
-                    </Button>
-                  )}
-                {task.status !== 'running' && (
-                  <>
-                    {task.status === 'error' && (
-                      <Button
-                        disabled={locked}
-                        onClick={() => void install(task.source)}
-                      >
-                        重试
-                      </Button>
-                    )}
-                    <Button
-                      disabled={locked}
-                      onClick={() =>
-                        void act(() => run('plugin', 'task', 'clear'))
-                      }
-                    >
-                      关闭
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-            {task.status === 'running' && (
-              <div className="mt-2 h-1.5 overflow-hidden rounded bg-zinc-100 dark:bg-[#23272a]">
-                <div
-                  className="h-full bg-[#4F6BED] transition-[width]"
-                  style={{
-                    width: progress === null ? '100%' : `${progress}%`,
-                    opacity: progress === null ? 0.25 : 1,
-                  }}
-                />
-              </div>
-            )}
-            {task.error && (
-              <div className="mt-1 text-[11px] text-red-500">{task.error}</div>
-            )}
-          </div>
-        </Section>
-      )}
-
-      <Section title="已安装">
-        <div className="space-y-1">
-          {installed.map((plugin) => (
-            <div
-              key={plugin.id}
-              className="flex items-start gap-2 rounded border border-zinc-200 px-2 py-1.5 dark:border-[#2c3039]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-[12px] font-medium">
-                    {plugin.label}
-                  </span>
-                  {plugin.builtin && (
-                    <span className="rounded bg-indigo-50 px-1 text-[10px] text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-400">
-                      内置
-                    </span>
-                  )}
-                  <span
-                    className={`rounded px-1 text-[10px] ${PLUGIN_STAGE_TONE[plugin.stage]}`}
-                  >
-                    {PLUGIN_STAGE_LABEL[plugin.stage]}
-                  </span>
-                </div>
-                <div className="truncate font-mono text-[10px] text-zinc-400">
-                  v{plugin.version} · {plugin.id}
-                </div>
-                {plugin.error && (
-                  <div className="mt-0.5 text-[11px] text-red-500">
-                    {plugin.error}
-                  </div>
-                )}
-              </div>
-              <div className="flex shrink-0 gap-1">
-                {plugin.stage === 'broken' && (
-                  <Button
-                    disabled={locked}
-                    onClick={() =>
-                      void act(() =>
-                        run('plugin', 'installed', 'reveal', { id: plugin.id }),
-                      )
-                    }
-                  >
-                    目录
-                  </Button>
-                )}
-                {plugin.hasConfig && (
-                  <Button
-                    disabled={locked}
-                    onClick={() =>
-                      void act(() =>
-                        run('plugin', 'installed', 'open', { id: plugin.id }),
-                      )
-                    }
-                  >
-                    配置
-                  </Button>
-                )}
-                <Button
-                  disabled={locked}
-                  onClick={() =>
-                    void act(() =>
-                      run('plugin', 'installed', 'reload', { id: plugin.id }),
-                    )
-                  }
-                >
-                  重载
-                </Button>
-                {!plugin.builtin && (
-                  <Button
-                    disabled={locked}
-                    onClick={() => {
-                      if (!window.confirm(`卸载「${plugin.label}」？`)) return;
-                      void act(() =>
-                        run('plugin', 'installed', 'remove', { id: plugin.id }),
-                      );
-                    }}
-                  >
-                    卸载
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-          {installed.length === 0 && (
-            <p className="text-[12px] text-zinc-500">暂无已安装插件</p>
-          )}
-        </div>
-      </Section>
-
-      <Section title="可安装">
-        <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-          <span className="min-w-0 flex-1 truncate" title={catalog.url}>
-            {catalog.fetchedAt
-              ? `${formatAgo(catalog.fetchedAt)}更新`
-              : '尚未加载'}
-            {catalog.stale
-              ? catalog.entries.length > 0
-                ? ' · 离线缓存'
-                : ' · 离线'
-              : ''}
-            {catalog.warnings?.length
-              ? ` · ${catalog.warnings.length} 条告警`
-              : ''}
-          </span>
-          <Button
-            disabled={locked}
-            onClick={() => void act(() => run('plugin', 'catalog', 'refresh'))}
-          >
-            刷新
-          </Button>
-        </div>
-        {catalog.error && (
-          <p className="mb-2 text-[11px] text-red-500">{catalog.error}</p>
-        )}
-        <div className="flex gap-2">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索插件"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <select
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            className="rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          >
-            <option value="">全部分类</option>
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-2 space-y-1">
-          {available.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-start gap-2 rounded border border-zinc-200 px-2 py-1.5 dark:border-[#2c3039]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-[12px] font-medium">
-                    {item.name}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-400">
-                    v{item.version}
-                  </span>
-                  {item.category && (
-                    <span className="rounded bg-zinc-100 px-1 text-[10px] text-zinc-500 dark:bg-[#23272a] dark:text-zinc-400">
-                      {item.category}
-                    </span>
-                  )}
-                </div>
-                <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {item.description}
-                </div>
-              </div>
-              <Button
-                disabled={locked || item.builtin}
-                onClick={() => void install(`catalog:${item.id}`)}
-              >
-                {item.builtin
-                  ? '内置'
-                  : item.state === 'update'
-                    ? '更新'
-                    : item.state === 'installed'
-                      ? '重装'
-                      : '安装'}
-              </Button>
-            </div>
-          ))}
-          {available.length === 0 && (
-            <p className="text-[12px] text-zinc-500">
-              {catalog.entries.length > 0
-                ? '没有匹配的插件'
-                : catalog.fetchedAt
-                  ? '目录为空'
-                  : '目录尚未加载'}
-            </p>
-          )}
-        </div>
-      </Section>
-
-      <Section title="手动安装">
-        <div className="flex gap-2">
-          <input
-            value={source}
-            onChange={(event) => setSource(event.target.value)}
-            placeholder="zip 地址、本地 zip 或目录"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <Button
-            disabled={locked || !source.trim()}
-            onClick={() => void installManual()}
-          >
-            安装
-          </Button>
-        </div>
-        <div className="mt-2 flex gap-2">
-          <Button disabled={locked} onClick={() => void pickFile()}>
-            选择 zip
-          </Button>
-          <Button disabled={locked} onClick={() => void pickDirectory()}>
-            选择目录
-          </Button>
-        </div>
-        <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
-          插件代码将在主进程以完整权限运行，请只安装可信来源。
-        </p>
-      </Section>
-
-      {error && <p className="text-[11px] text-red-500">{error}</p>}
-    </Panel>
-  );
-}
-
 function sessionsResource(): string {
   const ws = window.workStudio?.workspaceId;
   return ws ? `${ws}/sessions` : 'sessions';
@@ -1459,11 +994,19 @@ function SkillsCard() {
   );
 }
 
+function flattenResourceNodes(
+  nodes: import('@work-studio/sdk').ResourceNode[],
+): import('@work-studio/sdk').ResourceNode[] {
+  return nodes.flatMap((node) =>
+    node.children?.length ? flattenResourceNodes(node.children) : [node],
+  );
+}
+
 function BrowserCard() {
   const policy = useResource<{ allowlist: string[] }>('browser', 'policy', {
     allowlist: [],
   });
-  const lists = useLists();
+  const lists = useResourceForest();
   const sites = lists.filter((group) => group.definitionId === 'web');
   const [domain, setDomain] = useState('');
   const save = async (allowlist: string[]): Promise<void> => {
@@ -1519,30 +1062,32 @@ function BrowserCard() {
                 {group.label} · {group.countLabel}
               </div>
               <div className="space-y-1">
-                {group.items.slice(0, 20).map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() =>
-                      void openListItem(item).catch((error: unknown) =>
-                        notifyError(
-                          error instanceof Error
-                            ? error.message
-                            : String(error),
-                          'browser',
-                        ),
-                      )
-                    }
-                    className="flex w-full items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-left text-[11px] hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {item.title}
-                    </span>
-                    <span className="shrink-0 text-[10px] text-zinc-400">
-                      {String(item.meta?.['url'] ?? '')}
-                    </span>
-                  </button>
-                ))}
+                {flattenResourceNodes(group.roots)
+                  .slice(0, 20)
+                  .map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() =>
+                        void openResourceNode(item).catch((error: unknown) =>
+                          notifyError(
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
+                            'browser',
+                          ),
+                        )
+                      }
+                      className="flex w-full items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-left text-[11px] hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {item.title}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-zinc-400">
+                        {String(item.meta?.['url'] ?? '')}
+                      </span>
+                    </button>
+                  ))}
               </div>
             </div>
           ))}
@@ -1928,7 +1473,6 @@ const CONTENT: Record<string, () => ReactNode> = {
   appearance: () => <AppearanceCard />,
   storage: () => <StorageCard />,
   workspaces: () => <WorkspacesCard />,
-  plugins: () => <PluginsCard />,
   sessions: () => <SessionsCard />,
   models: () => <ModelsCard />,
   skills: () => <SkillsCard />,

@@ -7,7 +7,7 @@
 
 import type { CommandDecl } from './command.ts';
 import type { PluginContext } from './context.ts';
-import type { PluginList } from './list.ts';
+import type { PluginResourceGroup } from './resource-tree.ts';
 import type { ResourceAdapter } from './resource.ts';
 import type { PluginScope } from './scope.ts';
 
@@ -35,8 +35,8 @@ export interface PluginContribution {
   resources: Record<string, ResourceAdapter>;
   /** 命令键 `<domain>.<action>`；插件不解析 argv。 */
   commands: Record<string, PluginCommand>;
-  /** 插件列表：定义 + 现取数据；owner 由宿主编排。 */
-  lists?: readonly PluginList[];
+  /** 插件贡献的文件资源树；owner 由宿主编排。 */
+  resourceGroups?: readonly PluginResourceGroup[];
   /** 是否创建 `<pluginId>/events` 事件资源。 */
   events?: boolean;
   lifecycle?: PluginLifecycle;

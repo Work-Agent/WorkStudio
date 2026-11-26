@@ -29,17 +29,27 @@ export type {
   PluginLifecycle,
 } from './contribution.ts';
 export type {
-  ListActionSpec,
-  ListDefinition,
-  ListFieldSpec,
-  ListGroup,
-  ListItem,
-  ListProviderContext,
-  ListSection,
-  ListSnapshot,
-  ListSourceScope,
-  PluginList,
-} from './list.ts';
+  PluginResourceGroup,
+  ResourceActionRequest,
+  ResourceActionSpec,
+  ResourceChildrenRequest,
+  ResourceContext,
+  ResourceFieldSpec,
+  ResourceForest,
+  ResourceGroup,
+  ResourceGroupDefinition,
+  ResourceNode,
+  ResourceSection,
+  ResourceSource,
+  ResourceSourceScope,
+} from './resource-tree.ts';
+export type {
+  PluginCatalogView,
+  PluginRegistryEntry,
+  PluginRegistrySnapshot,
+  PluginRegistryState,
+  PluginTaskView,
+} from './plugin-registry.ts';
 export type { WorkStudioManifest } from './manifest.ts';
 export type {
   Claim,

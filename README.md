@@ -100,7 +100,7 @@ Workspace（聚合根）
 └─ View collection 打开集合：标签顺序 · 激活位 · 固定位
 
 横向能力
-├─ 插件：资源实现 + 页面 + 列表 + 动作
+├─ 插件：资源实现 + 页面 + 资源组 + 动作
 ├─ 设置：内置页面清单
 └─ 浏览器：在线网页 + 自动化
 ```
@@ -158,11 +158,11 @@ Renderer pages
 Runtime
   DomainRegistry · Dispatcher · 日志 / 存储 / 网络适配
 Domains
-  workspaces · resources · lists · plugins
+  workspaces · resources · plugins
   shell · settings
   sessions · models · skills · thinking · extensions · tools · prompts · themes
 Domain modules
-  workspace：工作区生命周期组合（workspaces + resources + lists + plugins）
+  workspace：工作区生命周期组合（workspaces + resources + plugins）
   shell / settings / agent
 Agent Layer
   pi runtime · harness · tools · 会话持久化
@@ -170,15 +170,15 @@ Agent Layer
      pi SDK / URA
 ```
 
-- **Domain / Resource 是运行单位**：domain 按能力拆分（workspaces / resources / lists / plugins / shell / settings，以及 agent 下的 sessions / models / skills / thinking / extensions / tools / prompts / themes），只声明状态、命令、订阅与推送；生命周期按依赖合并为 workspace / shell / settings / agent 四个 DomainModule，不再有 Capability、controller 或单独的生命周期接口。
-- **工作区是 scope，不是 domain**：工作区作用域的资源在 resource 名里带 wsId（如 `workspace/<wsId>/list`）；窗口与工作区 1:1，窗口按自己绑定的工作区订阅。
+- **Domain / Resource 是运行单位**：domain 按能力拆分（workspaces / resources / plugins / shell / settings，以及 agent 下的 sessions / models / skills / thinking / extensions / tools / prompts / themes），只声明状态、命令、订阅与推送；生命周期按依赖合并为 workspace / shell / settings / agent 四个 DomainModule，不再有 Capability、controller 或单独的生命周期接口。
+- **工作区是 scope，不是 domain**：工作区作用域的资源在 resource 名里带 wsId（如 `workspace/<wsId>/resources`）；窗口与工作区 1:1，窗口按自己绑定的工作区订阅。
 - **Runtime 管框架**：DomainRegistry、Dispatcher 与存储 / 日志 / 网络适配只处理跨领域机制，不承载业务状态。
-- **DomainModule 拥有实现**：workspace module 管理资源 / URA / 列表 / 插件；shell 管理窗口 / 视图 / 布局 / 主题；settings 管理设置 / 更新；Agent 引擎在独立 Agent Layer，由 AgentDomain 持有，并拆成 sessions / models / skills / thinking / extensions / tools / prompts / themes 域。
+- **DomainModule 拥有实现**：workspace module 管理资源 / URA / 资源森林；插件注册表归 App；shell 管理窗口 / 视图 / 布局 / 主题；settings 管理设置 / 更新；Agent 引擎在独立 Agent Layer，由 AgentDomain 持有，并拆成 sessions / models / skills / thinking / extensions / tools / prompts / themes 域。
 - **依赖显式排序**：DomainModule 声明 `dependencies`，DomainRegistry 按拓扑序 start、反向 stop；不引入 DI 容器。
 - **App 是组合根**：只负责进程生命周期、窗口、视图 provider、IPC 与四个 DomainModule 的装配。
 - **视图分两层**：窗口级系统视图（助手 / 浮层 / 捕获层）与内容标签（资源页 / 网页）分离；Views 只做承载、几何、显隐与栈序。
 - **Layout / Scene 是窗口级契约**：布局由主进程计算，拖拽只是临时 preview；提交后写 scene，DOM 与原生视图消费同一份几何。
-- **Lists 是 provider 管道**：文档、会话、插件、设置、站点等列表走同一个 provider → snapshot 流程，渲染层只消费快照。
+- **资源森林是 provider 管道**：文件列表按工作区产出森林，每个组是一棵树；插件注册表是 App 级独立资源，不走工作区森林。
 - **Settings 是单页 domain 消费方**：所有卡片在一个页面内展开，更新状态是 `settings` domain 的 `updates` resource。
 - **IPC 日志内建**：Dispatcher 直接记录请求地址、来源、耗时与结果；不引入 middleware，也不记录 input。
 - **资源页与浏览器分开**：资源页走 URA 的 transport / codec / presenter；浏览器页整段旁路，直接由视图宿主导航。
@@ -317,7 +317,7 @@ table  "季度对比"   table:nth-of-type(1)
 
 ### 5.3 插件：填段
 
-插件就是能把 5.1 的三段填上的东西：它注册 transport / codec / store / consumer / presenter / sidecar，外加列表与动作。框架核心只内建 `file` / `http` / `https` 与少数内置 codec（它们本质上也是插件），其余来源与格式都由插件填。这条管道即 URA；在线网页不进它（见 5.2）。
+插件就是能把 5.1 的三段填上的东西：它注册 transport / codec / store / consumer / presenter / sidecar，外加资源组与动作。框架核心只内建 `file` / `http` / `https` 与少数内置 codec（它们本质上也是插件），其余来源与格式都由插件填。这条管道即 URA；在线网页不进它（见 5.2）。
 
 ```
 读：
@@ -345,11 +345,11 @@ presenter   page / settings / sidecar 都由插件注册；未注册时回退 ra
 | codec     | 声明 `(transport, mime)` → 文档                                 |
 | store     | 绑在 codec 上：文档 → 结构化查询（派生）                        |
 | consumer  | 声明 `(transport, mime, codec)` → 页面（渲染 / 编辑）· 文本出口 |
-| list      | 侧栏列表定义 + 工作区数据 provider                              |
+| resource  | 资源组定义 + 工作区 provider；文件树与插件注册表分开            |
 | action    | 地址栏动作                                                      |
 
 - **段可以拆开填**：一个插件能只填一段（只加一种 codec），也能填整条（来源 + 格式 + 页面）；填哪段由注册接口决定，不要求包办全链。
-- **两类页面归属不同**：`page` 是资源页，入口与键都归 URA；`settings` 是插件配置 / 详情页，页面由插件提供，但清单、入口与 ref 归设置面（设置 → 插件、安装时详情）。两者共用同一套页面装载与白名单桥。
+- **两类页面归属不同**：`page` 是资源页，入口与键都归 URA；`settings` 是插件配置 / 详情页，页面由插件提供，但清单、入口与 ref 归设置面（侧栏插件注册表、安装时详情）。两者共用同一套页面装载与白名单桥。
 - **填段不改身份**：插件只声明能处理什么（`(transport, mime)` 与 codec）；ref、绑定表、写队列仍归框架。
 
 关键决策：
@@ -416,8 +416,8 @@ source（catalog:<id> / URL / zip / 目录）
 设置不碰管道：没有 transport / codec / store，只有页面与清单。它收两类页：框架内置页与插件设置页。
 
 - **框架内置页**：清单与页面都由主进程拥有，页面目录与插件页分开；
-- **插件设置页**：页面由插件提供（`settings` 入口），用来管理该插件的配置；在设置 → 插件列表里打开，安装完成后即可作为该插件的详情页；
-- `settings.list` 投影内置页清单；插件设置页从插件列表进入，`views.open({ type: 'settings' })` 按 ref 打开；
+- **插件设置页**：页面由插件提供（`settings` 入口），用来管理该插件的配置；从侧栏插件列表进入，安装完成后即可作为该插件的 home；
+- `settings.list` 投影内置页清单；插件设置页从侧栏插件列表进入，`views.open({ type: 'settings' })` 按 ref 打开；
 - **ref 自带 scheme**：内置页为 `settings://<id>`，插件设置页为 `settings://plugin.<id>`；标签集合、地址栏与页面会话都按 ref 认它；
 - 物理装载与插件页共用 `app://page` 协议、preload 桥、主题广播与会话生命周期；
 - 新增内置设置 = 加一页 + 一条清单；插件设置页随插件版本走；两者都不单独进安装与信任流程；
@@ -429,7 +429,7 @@ source（catalog:<id> / URL / zip / 目录）
 | 外观与主题       | 浅色 / 深色 / 跟随系统；内容视图按百分比缩放                   |
 | 偏好设置         | 明确区分应用默认与当前工作区覆盖；恢复继承，保存前保护表单修改 |
 | 模型连接         | 先连接供应商，再选择可用默认模型；自定义端点收在高级配置中     |
-| 能力管理         | 文档插件、技能、助手扩展分别展示来源、作用域和真实运行状态     |
+| 能力管理         | 插件注册表、技能、助手扩展分别展示来源、作用域和真实运行状态   |
 | 资源诊断         | 使用资料栏同一份来源状态、计数和错误；高级注册信息按需展开     |
 | 存储、关于与更新 | 常用位置和版本状态优先，高级路径与访问令牌按需展开             |
 
@@ -439,11 +439,11 @@ source（catalog:<id> / URL / zip / 目录）
 
 ### 6.1 三级状态
 
-| 级别          | 拥有                                                                                  | 生命周期   | 持久化                                                                            |
-| ------------- | ------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------- |
-| **App**       | 模型目录、凭证、插件安装、Pi 包、全局设置、系统视图、工作区列表、当前工作区           | 进程       | `agentDir` / 官方凭证链                                                           |
-| **Workspace** | 项目设置、URA、列表、标签视图、UI 现场、页面 / 写会话、会话索引、浏览器策略、派生数据 | 打开工作区 | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
-| **Session**   | pi runtime、消息、轮次、队列、上下文（资源地图版本、AGENTS、技能激活）                | 会话       | `sessions/*.jsonl`                                                                |
+| 级别          | 拥有                                                                                      | 生命周期   | 持久化                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------- |
+| **App**       | 模型目录、凭证、插件安装、Pi 包、全局设置、系统视图、工作区列表、当前工作区               | 进程       | `agentDir` / 官方凭证链                                                           |
+| **Workspace** | 项目设置、URA、资源森林、标签视图、UI 现场、页面 / 写会话、会话索引、浏览器策略、派生数据 | 打开工作区 | `workspace.json` / `ui-state.json` / `settings.json` / `sessions/` / `resources/` |
+| **Session**   | pi runtime、消息、轮次、队列、上下文（资源地图版本、AGENTS、技能激活）                    | 会话       | `sessions/*.jsonl`                                                                |
 
 - **工作区生命周期由 App 管理**：窗口与工作区一一对应；工作区切换释放旧运行时并重绑新运行时。
 - **Session 真相在 pi**：切换会话委托 pi；WorkStudio 只持投影，技能激活随会话上下文解析。
@@ -518,7 +518,7 @@ node node_modules/electron/install.js
 │   ├── main/
 │   │   ├── app.ts / index.ts      # 组合根 / Electron 入口
 │   │   ├── runtime/               # DomainRegistry / Dispatcher / storage / log / net
-│   │   ├── domains/               # workspaces / resources / lists / plugins / shell / settings / agent
+│   │   ├── domains/               # workspaces / resources / plugins / shell / settings / agent
 │   │   └── agent/                 # Agent Layer：pi runtime / harness / tools / sessions
 │   ├── preload/                   # 多页面与内容视图的 preload 契约
 │   ├── renderer/
