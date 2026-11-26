@@ -322,6 +322,7 @@ export function PluginRegistryView({
               <div
                 key={entry.id}
                 data-testid="plugin-registry-installed"
+                data-plugin-id={entry.id}
                 title="打开插件设置"
                 onClick={() => void open(entry)}
                 className="cursor-pointer rounded-lg border border-zinc-200 px-2 py-1.5 transition-colors hover:border-[#4F6BED]/60 dark:border-[#2c3039]"

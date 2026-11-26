@@ -33,7 +33,15 @@ export default defineCase({
         ),
       '侧栏插件注册表未渲染已安装项',
     );
-    await ctx.clickTestId('plugin-registry-installed');
+    await ctx.evaluate(() => {
+      const row = [
+        ...document.querySelectorAll(
+          '[data-testid="plugin-registry-installed"]',
+        ),
+      ].find((item) => item.getAttribute('data-plugin-id') === 'html-viewer');
+      if (!row) throw new Error('插件注册表缺少 html-viewer');
+      (row as HTMLElement).click();
+    });
     const page = await ctx.waitForPage(/html-viewer\/settings/);
     await page.expect.text('body', 'HTML 阅读器');
     await ctx.clickTestId('sidebar-nav-resources');
