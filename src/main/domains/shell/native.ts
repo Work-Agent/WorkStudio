@@ -142,7 +142,10 @@ export class ShellHost {
       backgroundColor: background,
       titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
       ...(isMac
-        ? { trafficLightPosition: { x: 16, y: 12 } }
+        ? {
+            // 40px 标题栏：12px 原生按钮垂直居中；20px 与系统窗口边距一致。
+            trafficLightPosition: { x: 20, y: 14 },
+          }
         : {
             titleBarOverlay: {
               ...(theme === 'light'

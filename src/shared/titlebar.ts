@@ -25,7 +25,7 @@ export const TITLEBAR_OVERLAY_COLORS = {
  *   linux   三键默认在右（DE 也可配置在左；WCO 可用时以实测 rect 为准）
  */
 export const TITLEBAR_FALLBACK_INSET = {
-  darwin: { left: 78, right: 0 },
+  darwin: { left: 72, right: 0 },
   win32: { left: 0, right: 138 },
   linux: { left: 0, right: 138 },
 } as const;
