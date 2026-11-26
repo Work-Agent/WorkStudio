@@ -7,12 +7,15 @@ import { defaultAllowedOrigins, type Plugin } from 'vite';
 
 /**
  * out/plugins 只由打包期的 registry 同步写入（scripts/sync-builtin-plugins.mjs）。
- * 构建先清空，避免上一次同步的包混进新的产物。
+ * 产物构建先清空，避免上一次同步的包混进新的产物。
+ *
+ * dev 下 electron-vite 同样用 build 流程产出 main/preload（mode=development），
+ * 只按 command 判断会把每次 dev 已同步的内置包一起删掉，故按 mode 区分。
  */
 function resetBuiltinPlugins(): Plugin {
   return {
     name: 'ws-reset-builtin-plugins',
-    apply: 'build',
+    apply: (_config, env) => env.mode !== 'development',
     buildStart() {
       rmSync(resolve(__dirname, 'out/plugins'), {
         recursive: true,
