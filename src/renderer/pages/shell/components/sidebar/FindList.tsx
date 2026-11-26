@@ -3,7 +3,7 @@
  *
  * 只发统一标识（ref），不碰路径与内容；点击结果按资源页面打开。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import type { ResourceNode } from '../../../../../shared/resources.ts';
 import { displayPath } from '../../../../shared/api/pathDisplay.ts';
@@ -26,7 +26,6 @@ interface Hit {
 export function FindList() {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
-  const [root, setRoot] = useState('');
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -35,7 +34,6 @@ export function FindList() {
   const workspaceId = useWindowWorkspaceId();
   useEffect(() => {
     inputRef.current?.focus();
-    if (current?.path) setRoot(current.path.replace(/\/$/, ''));
   }, [current?.path]);
 
   useEffect(() => {
@@ -56,7 +54,7 @@ export function FindList() {
             items.map((item) => ({
               ref: item.ref,
               name: item.name,
-              display: item.ref,
+              display: displayPath(item.ref),
             })),
           );
         })
@@ -68,17 +66,7 @@ export function FindList() {
     };
   }, [query, current?.id]);
 
-  const rows = useMemo(
-    () =>
-      hits.map((hit) => ({
-        ...hit,
-        display:
-          root && hit.ref.startsWith(root)
-            ? hit.ref.slice(root.length + 1)
-            : hit.ref,
-      })),
-    [hits, root],
-  );
+  const rows = hits;
 
   const open = (ref: string, name: string): void => {
     const item: ResourceNode = {

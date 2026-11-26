@@ -1,17 +1,26 @@
 /**
- * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件）。
+ * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件 / 查找文件 / 搜索内容）。
  *
- * 设置入口在 TitleBar；本导航只保留资源与插件。
+ * 设置入口在 TitleBar；本导航保留资源、插件与两个独立搜索按钮。
  * 形态随 sidebarCollapsed：
  *   展开 = 横向图标条（直接切换）；
  *   收起（56px 图标列）= 单个「当前视图」按钮 + 原生菜单下拉。
  */
 import { useEffect } from 'react';
-import { ChevronDown, Files, Package, Search } from 'lucide-react';
+import {
+  ChevronDown,
+  FileSearch,
+  Files,
+  Package,
+  TextSearch,
+} from 'lucide-react';
 import type { PopupMenuItem } from '../../../../../shared/types.ts';
 import { popupMenu } from '../../../../shared/api/runtime.ts';
 import { useScene } from '../../domains/scene.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
+
+type NavId = 'main' | 'plugins';
+type SearchId = 'find' | 'grep';
 
 /** 顶层形态（二级形态 docs / data / web 属于 main 家族）。 */
 const ITEMS = [
@@ -24,7 +33,21 @@ const ITEMS = [
   },
 ] as const;
 
-type NavId = (typeof ITEMS)[number]['id'];
+/** 两个独立搜索入口：文件 / 内容。 */
+const SEARCH_ITEMS = [
+  {
+    id: 'find',
+    label: '查找文件',
+    icon: FileSearch,
+    testId: 'sidebar-nav-find',
+  },
+  {
+    id: 'grep',
+    label: '搜索内容',
+    icon: TextSearch,
+    testId: 'sidebar-nav-grep',
+  },
+] as const;
 
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
 const MENU_SOURCE = 'sidebar-nav';
@@ -32,20 +55,36 @@ const MENU_SOURCE = 'sidebar-nav';
 const isNavId = (value: string): value is NavId =>
   value === 'main' || value === 'plugins';
 
+const isSearchId = (value: string): value is SearchId =>
+  value === 'find' || value === 'grep';
+
+function navClass(active: boolean): string {
+  return `h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
+    active
+      ? 'text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10'
+      : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] hover:text-zinc-900 dark:hover:text-zinc-100'
+  }`;
+}
+
 export function SidebarNav() {
   const view = useSidebarStore((s) => s.view);
   const setView = useSidebarStore((s) => s.setView);
   const { scene } = useScene();
   const collapsed = scene.sidebarCollapsed ?? false;
-  const activeId: NavId | null =
-    view === 'plugins' ? 'plugins' : view === 'find' ? null : 'main';
-  const active = ITEMS.find((i) => i.id === activeId) ?? ITEMS[0];
+  const active =
+    view === 'plugins'
+      ? ITEMS[1]
+      : view === 'find'
+        ? SEARCH_ITEMS[0]
+        : view === 'grep'
+          ? SEARCH_ITEMS[1]
+          : ITEMS[0];
 
   // 收起态：原生菜单选中回执（source 路由）
   useEffect(() => {
     return popupMenu.onSelect((e) => {
       if (e.source !== MENU_SOURCE) return;
-      if (e.actionId === 'find') setView('find');
+      if (isSearchId(e.actionId)) setView(e.actionId);
       else if (isNavId(e.actionId)) setView(e.actionId);
     });
   }, [setView]);
@@ -54,9 +93,12 @@ export function SidebarNav() {
     const items: PopupMenuItem[] = [
       ...ITEMS.map((item) => ({
         id: item.id,
-        label: `${item.id === activeId ? '✓ ' : ''}${item.label}`,
+        label: `${view === item.id ? '✓ ' : ''}${item.label}`,
       })),
-      { id: 'find', label: `${view === 'find' ? '✓ ' : ''}查找` },
+      ...SEARCH_ITEMS.map((item) => ({
+        id: item.id,
+        label: `${view === item.id ? '✓ ' : ''}${item.label}`,
+      })),
     ];
     void popupMenu.show({ source: MENU_SOURCE, items });
   };
@@ -82,41 +124,42 @@ export function SidebarNav() {
           <ChevronDown className="w-3 h-3 opacity-70" />
         </button>
       ) : (
-        ITEMS.map((item) => {
-          const isActive = item.id === activeId;
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              data-testid={item.testId}
-              data-active={isActive ? 'true' : 'false'}
-              title={item.label}
-              onClick={() => setView(item.id)}
-              className={`h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
-                isActive
-                  ? 'text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-            </button>
-          );
-        })
-      )}
-      {!collapsed && (
-        <button
-          data-testid="sidebar-nav-find"
-          data-active={view === 'find' ? 'true' : 'false'}
-          title={view === 'find' ? '退出查找' : '查找资源'}
-          onClick={() => setView(view === 'find' ? 'main' : 'find')}
-          className={`ml-auto h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
-            view === 'find'
-              ? 'text-[#4F6BED] dark:text-[#6c86f0] bg-[#4F6BED]/10'
-              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-[#2a2d2e] hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <Search className="w-4 h-4" />
-        </button>
+        <>
+          {ITEMS.map((item) => {
+            const isActive = item.id === view;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                data-testid={item.testId}
+                data-active={isActive ? 'true' : 'false'}
+                title={item.label}
+                onClick={() => setView(item.id)}
+                className={navClass(isActive)}
+              >
+                <Icon className="w-4 h-4" />
+              </button>
+            );
+          })}
+          <div className="ml-auto flex items-center gap-0.5">
+            {SEARCH_ITEMS.map((item) => {
+              const isActive = item.id === view;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  data-testid={item.testId}
+                  data-active={isActive ? 'true' : 'false'}
+                  title={item.label}
+                  onClick={() => setView(isActive ? 'main' : item.id)}
+                  className={navClass(isActive)}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

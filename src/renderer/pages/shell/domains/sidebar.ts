@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SidebarView = 'main' | 'plugins' | 'settings' | 'find';
+export type SidebarView = 'main' | 'plugins' | 'settings' | 'find' | 'grep';
 
 interface SidebarState {
   view: SidebarView;
