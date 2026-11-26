@@ -44,7 +44,7 @@ export function commandDenialOf(
   }
   if (
     origin.workspaceId &&
-    entry.action === 'open' &&
+    entry.action === 'action' &&
     entry.address.domain === 'workspace' &&
     entry.address.resource === `${origin.workspaceId}/resources`
   ) {
