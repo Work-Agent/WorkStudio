@@ -4,6 +4,7 @@
  * 与 workspace 资源森林完全分开：已安装 / 可安装、安装卸载、任务进度都在这里。
  */
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import type {
   PluginRegistryEntry,
   PluginRegistrySnapshot,
@@ -30,7 +31,10 @@ const BUTTON =
   'cursor-pointer whitespace-nowrap rounded-md border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303436] dark:text-zinc-300 dark:hover:bg-[#23272a]';
 
 const PRIMARY =
-  'cursor-pointer rounded-md bg-[#4F6BED] px-2.5 py-1 text-[11px] text-white transition-colors hover:bg-[#3D56E0] disabled:cursor-not-allowed disabled:opacity-40';
+  'cursor-pointer whitespace-nowrap rounded-md border border-[#4F6BED] bg-[#4F6BED] px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-[#3D56E0] disabled:cursor-not-allowed disabled:opacity-40';
+
+const ICON_BUTTON =
+  'flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-[#303436] dark:text-zinc-300 dark:hover:bg-[#23272a]';
 
 function ago(value: number | null): string {
   if (!value) return '尚未加载';
@@ -48,6 +52,7 @@ export function PluginRegistryView() {
     INITIAL,
   );
   const [source, setSource] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const task = state.task;
@@ -128,7 +133,7 @@ export function PluginRegistryView() {
       data-testid="plugin-registry"
       className="flex flex-col gap-2 px-1 pb-2 text-[12px]"
     >
-      <div className="flex items-center gap-2 px-1 pt-1">
+      <div className="flex items-center gap-1 px-1 pt-1">
         <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
           {state.catalog.fetchedAt
             ? `${ago(state.catalog.fetchedAt)}更新`
@@ -137,15 +142,59 @@ export function PluginRegistryView() {
         </span>
         <button
           type="button"
+          data-testid="plugin-registry-manual-toggle"
+          aria-expanded={manualOpen}
+          title={manualOpen ? '收起手动安装' : '手动安装'}
+          onClick={() => setManualOpen((open) => !open)}
+          className={ICON_BUTTON}
+        >
+          <Plus
+            className={`h-3.5 w-3.5 transition-transform ${manualOpen ? 'rotate-45' : ''}`}
+          />
+        </button>
+        <button
+          type="button"
           disabled={locked}
           onClick={() => void act(() => run('refresh'))}
-          className={BUTTON}
+          className={`${BUTTON} h-6`}
         >
           刷新
         </button>
       </div>
       {state.catalog.error && (
         <p className="px-1 text-[11px] text-red-500">{state.catalog.error}</p>
+      )}
+
+      {manualOpen && (
+        <div
+          data-testid="plugin-registry-manual"
+          className="rounded-lg border border-zinc-200 p-2 dark:border-[#2c3039]"
+        >
+          <input
+            value={source}
+            onChange={(event) => setSource(event.target.value)}
+            placeholder="URL / zip / 目录"
+            className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
+          />
+          <div className="mt-1 flex gap-1">
+            <button
+              type="button"
+              disabled={locked || !source.trim()}
+              className={BUTTON}
+              onClick={() => void installManual()}
+            >
+              安装
+            </button>
+            <button
+              type="button"
+              disabled={locked}
+              className={BUTTON}
+              onClick={() => void pickFile()}
+            >
+              zip
+            </button>
+          </div>
+        </div>
       )}
 
       {task && (
@@ -323,36 +372,6 @@ export function PluginRegistryView() {
           {state.available.length === 0 && (
             <p className="px-1 text-[11px] text-zinc-400">目录为空</p>
           )}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-zinc-200 p-2 dark:border-[#2c3039]">
-        <h3 className="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-          手动安装
-        </h3>
-        <input
-          value={source}
-          onChange={(event) => setSource(event.target.value)}
-          placeholder="URL / zip / 目录"
-          className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-        />
-        <div className="mt-1 flex gap-1">
-          <button
-            type="button"
-            disabled={locked || !source.trim()}
-            className={BUTTON}
-            onClick={() => void installManual()}
-          >
-            安装
-          </button>
-          <button
-            type="button"
-            disabled={locked}
-            className={BUTTON}
-            onClick={() => void pickFile()}
-          >
-            zip
-          </button>
         </div>
       </section>
 
