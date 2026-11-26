@@ -60,7 +60,7 @@ workflow 对已存在的 npm 版本会跳过 publish，便于重跑。
 
 ## 当前基线
 
-`@work-studio/sdk@0.1.0` 已发布，npm 记录对应的 `gitHead` 是 `835ff94`。下一次 release 从该提交开始比较 `packages/sdk` 的变化：没有变化就跳过，有变化则要求 bump SDK 版本。
+`@work-studio/sdk@0.1.1` 已发布，npm 记录对应的 `gitHead` 是 `c481013`。下一次 release 从该提交开始比较 `packages/sdk` 的变化：没有变化就跳过，有变化则要求 bump SDK 版本。
 
 ## 手动检查
 
