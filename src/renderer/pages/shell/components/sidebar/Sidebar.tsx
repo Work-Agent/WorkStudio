@@ -51,7 +51,7 @@ export function Sidebar() {
           ) : view === 'plugins' ? (
             <PluginRegistryView collapsed={collapsed} onExpand={expand} />
           ) : collapsed ? (
-            <OpenViewsRail onExpand={expand} />
+            <OpenViewsRail />
           ) : (
             <ResourceTree groups={visible} />
           )}

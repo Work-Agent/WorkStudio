@@ -3,13 +3,7 @@
  *
  * 完整资源森林只在展开状态渲染；收起后回到“打开项”图标列。
  */
-import {
-  FileText,
-  Globe,
-  PanelLeftOpen,
-  Settings,
-  Sparkles,
-} from 'lucide-react';
+import { FileText, Globe, Settings, Sparkles } from 'lucide-react';
 import {
   command,
   useResource,
@@ -34,7 +28,7 @@ function iconOf(view: ViewInfo) {
   return view.type === 'web' ? Globe : FileText;
 }
 
-export function OpenViewsRail({ onExpand }: { onExpand?: () => void }) {
+export function OpenViewsRail() {
   const workspaceId = useWorkspaceId();
   const views = useResource<ViewInfo[]>(
     'shell',
@@ -61,14 +55,6 @@ export function OpenViewsRail({ onExpand }: { onExpand?: () => void }) {
       data-testid="open-view-rail"
       className="flex flex-col items-center gap-1 pt-1"
     >
-      <button
-        type="button"
-        title="展开资源列表"
-        onClick={onExpand}
-        className={BUTTON}
-      >
-        <PanelLeftOpen className="h-4 w-4" />
-      </button>
       {open.map((view) => {
         const Icon = iconOf(view);
         return (
