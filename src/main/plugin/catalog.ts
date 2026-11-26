@@ -15,11 +15,11 @@ import type { PluginFetcher } from './network.ts';
 const log = createLog('plugin-catalog');
 
 export const DEFAULT_CATALOG_URL =
-  'https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@main/index.json';
+  'https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json';
 
-/** 旧默认地址：启动时迁移到 CDN，避免国内网络下 raw.githubusercontent 不可达。 */
+/** 旧默认地址：启动时迁移到 GitHub raw，避免继续使用 CDN / API 代理。 */
 const LEGACY_DEFAULT_URLS = new Set([
-  'https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json',
+  'https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@main/index.json',
   'https://api.github.com/repos/Work-Agent/PluginRegistry/contents/index.json',
 ]);
 
@@ -159,7 +159,7 @@ export class PluginCatalogService {
     await this.writeMeta(null);
   }
 
-  /** 拉取 index.json；fresh 时用查询参数绕过 jsDelivr 的分支缓存。 */
+  /** 拉取 index.json；fresh 时用查询参数绕过分支地址的缓存。 */
   async load(
     url?: string,
     options: { fresh?: boolean } = {},
@@ -167,7 +167,7 @@ export class PluginCatalogService {
     if (url !== undefined) await this.setUrl(url);
     const target = this.url;
     const requestUrl =
-      options.fresh && isJsDelivr(target) ? withCacheBust(target) : target;
+      options.fresh && isBranchUrl(target) ? withCacheBust(target) : target;
     const previous = this.last;
     const meta = await this.readMeta();
     const headers: Record<string, string> = {
@@ -281,10 +281,14 @@ export class PluginCatalogService {
   }
 }
 
-function isJsDelivr(url: string): boolean {
-  return url.startsWith(
-    'https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@',
-  );
+/** 分支地址（GitHub raw / CDN）显式刷新时穿透缓存。 */
+function isBranchUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'raw.githubusercontent.com' || host === 'cdn.jsdelivr.net';
+  } catch {
+    return false;
+  }
 }
 
 function withCacheBust(url: string): string {

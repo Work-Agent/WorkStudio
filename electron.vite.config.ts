@@ -1,35 +1,23 @@
-import { cpSync, existsSync, readdirSync, rmSync, statSync } from 'fs';
+import { rmSync } from 'fs';
 import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { defaultAllowedOrigins, type Plugin } from 'vite';
-import { buildPlugin } from '@work-studio/sdk/build';
 
 /**
- * 内置插件（src/plugins：manifest + 静态页面）不参与打包，直接拷贝到 out/plugins。
- * PluginRegistry 生产环境扫 out/plugins（dev 扫 src/plugins），两处必须同形。
+ * out/plugins 只由打包期的 registry 同步写入（scripts/sync-builtin-plugins.mjs）。
+ * 构建先清空，避免上一次同步的包混进新的产物。
  */
-function copyBuiltinPlugins(): Plugin {
+function resetBuiltinPlugins(): Plugin {
   return {
-    name: 'ws-copy-builtin-plugins',
-    async writeBundle() {
-      const from = resolve(__dirname, 'src/plugins');
-      const to = resolve(__dirname, 'out/plugins');
-      rmSync(to, { recursive: true, force: true });
-      if (existsSync(from)) {
-        cpSync(from, to, { recursive: true });
-        for (const name of readdirSync(to)) {
-          const root = resolve(to, name);
-          if (!statSync(root).isDirectory()) continue;
-          const sdkSource = resolve(__dirname, 'packages/sdk');
-          const sdkTarget = resolve(root, 'node_modules/@work-studio/sdk');
-          rmSync(sdkTarget, { recursive: true, force: true });
-          cpSync(sdkSource, sdkTarget, { recursive: true });
-          await buildPlugin(root);
-        }
-      }
-      this.info(`copied + built builtin plugins → ${to}`);
+    name: 'ws-reset-builtin-plugins',
+    apply: 'build',
+    buildStart() {
+      rmSync(resolve(__dirname, 'out/plugins'), {
+        recursive: true,
+        force: true,
+      });
     },
   };
 }
@@ -113,7 +101,7 @@ function workPageDevAssets(): Plugin {
  */
 export default defineConfig({
   main: {
-    plugins: [renamePiNodeGlobals(), copyBuiltinPlugins()],
+    plugins: [renamePiNodeGlobals(), resetBuiltinPlugins()],
     build: {
       outDir: 'out/main',
       // 依赖全部打进主进程 bundle（pi + 其依赖）：打包时不再依赖 node_modules

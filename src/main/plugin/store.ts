@@ -7,7 +7,6 @@
  */
 
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -23,6 +22,7 @@ import { unzipSync } from 'fflate';
 import type { WorkStudioManifest } from '@work-studio/sdk';
 import type { StorageLayout } from '../platform/paths.ts';
 import { readJson, writeJson } from '../platform/json.ts';
+import { compareVersions } from './catalog.ts';
 import { isReservedPluginId, type PluginPackage } from './manifest.ts';
 
 export interface BuiltinPackage {
@@ -171,7 +171,7 @@ export class PluginStore {
       `stage-${randomUUID()}`,
     );
     rmSync(cleanupRoot, { recursive: true, force: true });
-    cpSync(sourceDir, cleanupRoot, { recursive: true });
+    copyTree(sourceDir, cleanupRoot);
     try {
       const pkg = this.inspectAt(cleanupRoot);
       return { package: pkg, cleanupRoot };
@@ -276,14 +276,15 @@ export class PluginStore {
     rmSync(staged.cleanupRoot, { recursive: true, force: true });
   }
 
-  /** 内置包播种：同版本跳过，新版本替换包体，保留 plugins/data。 */
+  /** 内置包播种：新版覆盖，同版或用户已装的更新版本保留，保留 plugins/data。 */
   seedBuiltin(builtin: BuiltinPackage): boolean {
     this.ensure();
     const current = this.read(builtin.id);
+    const nextVersion = readVersion(builtin.sourceDir);
     if (
       current &&
-      readVersion(builtin.sourceDir) === current.version &&
-      current.version !== '0.0.0'
+      current.version !== '0.0.0' &&
+      compareVersions(current.version, nextVersion) >= 0
     ) {
       return false;
     }
@@ -371,6 +372,20 @@ export class PluginStore {
       contentPage,
       ...(settingsPage ? { settingsPage } : {}),
     };
+  }
+}
+
+/** asar 内的目录不支持 cpSync；用 read/write 递归复制，dev 与打包产物同一条路径。 */
+function copyTree(source: string, target: string): void {
+  mkdirSync(target, { recursive: true });
+  for (const name of readdirSync(source)) {
+    const from = join(source, name);
+    const to = join(target, name);
+    if (statSync(from).isDirectory()) {
+      copyTree(from, to);
+    } else {
+      writeFileSync(to, readFileSync(from));
+    }
   }
 }
 

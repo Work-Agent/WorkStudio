@@ -1,6 +1,6 @@
 # 插件注册表
 
-官方注册表是 [Work-Agent/PluginRegistry](https://github.com/Work-Agent/PluginRegistry)。它是一个独立仓库：插件作者在自己的仓库发布自包含 zip，注册表只保存发现信息与完整性校验值。应用启动不联网，打开插件设置页或手动刷新时才读取注册表生成的 `index.json`。默认从 `https://cdn.jsdelivr.net/gh/Work-Agent/PluginRegistry@main/index.json` 读取；显式刷新会带缓存穿透参数，避免 CDN 分支缓存导致列表滞后。网络请求使用偏好设置里的代理（支持 socks5）。
+官方注册表是 [Work-Agent/PluginRegistry](https://github.com/Work-Agent/PluginRegistry)。它是一个独立仓库：插件作者在自己的仓库发布自包含 zip，注册表只保存发现信息与完整性校验值。应用启动不联网，打开插件设置页或手动刷新时才读取注册表生成的 `index.json`。默认从 `https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json` 读取；显式刷新会带缓存穿透参数，避免分支地址缓存导致列表滞后。网络请求使用偏好设置里的代理（支持 socks5）。
 
 ## 契约
 
@@ -22,6 +22,7 @@ interface RegistryEntry {
   category?: string;
   tags?: string[];
   deprecated?: boolean;
+  builtin?: boolean;
 }
 ```
 
@@ -33,6 +34,7 @@ interface RegistryEntry {
 | `sha256`     | 64 位小写十六进制，固定具体产物                                           |
 | `repo`       | 源码仓库，用于审计                                                        |
 | `deprecated` | 不再推荐安装；应用隐藏入口，已安装实例不受影响                            |
+| `builtin`    | 由注册表白名单注入；为 true 时随安装包分发，并在启动时播种到 `installed/` |
 
 注册表仓库一个插件一个 `plugins/<id>.json`，CI 校验后生成确定性的 `index.json`；应用只读取 `index.json`，不直接访问单条文件。
 
@@ -51,6 +53,21 @@ interface RegistryEntry {
 - 应用不自动更新插件：目录版本高于已安装版本时只显示「可更新」；
 - 注册表条目不写入安装记录，安装记录就是 `installed/<id>/package.json`；
 - 内置插件 id 保留，注册表条目不得占用。
+
+## 内置插件
+
+`builtin` 不是条目字段，而是注册表白名单注入到 `index.json` 的结果。打包流程据此决定哪些插件随安装包分发：
+
+```text
+index.json 中 builtin: true
+  ─► 打包脚本下载 source zip ─► 校验 sha256 ─► 解包到 out/plugins/<id>
+  ─► 应用启动 ─► seedBuiltins 复制到数据根 plugins/installed/<id>
+```
+
+- 同步发生在打包阶段（`pnpm plugins:sync`，由 `package` / `make` / `release` 与 release workflow 调用），普通构建不联网；
+- 每个包仍按 sha256 固定，构建与运行时都不信任未校验的 zip；
+- 播种只向前：包版本高于已安装版本时覆盖，同版或用户已装的更新版本保留，不降级；
+- 内置插件在侧栏不可卸载；`plugins/data/<id>` 与普通插件一样保留。
 
 ## 注册表 CI
 

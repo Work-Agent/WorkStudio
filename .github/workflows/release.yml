@@ -199,6 +199,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Sync builtin plugins
+        run: pnpm plugins:sync
+
       - name: Import macOS signing certificate
         if: matrix.platform == 'mac'
         env:

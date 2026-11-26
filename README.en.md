@@ -386,9 +386,9 @@ plugin-docx.zip
 
 - One JSON entry per plugin; CI validates fields, id, version and sha256, then generates `index.json` on merge;
 - Entry fields: `id` / `name` / `description` / `version` / `source` / `sha256` / `repo` / `tags` / `category`; `source` must be a self-contained zip and `sha256` pins the exact artifact;
-- The app reads only its cache at startup; it fetches `index.json` when the plugin settings page opens or on manual refresh. It uses the jsDelivr CDN by default, busts the CDN cache on explicit refresh, sends conditional requests, and falls back to the stale cache;
+- The app reads only its cache at startup; it fetches `index.json` when the plugin settings page opens or on manual refresh. It uses GitHub raw by default, busts the branch cache on explicit refresh, sends conditional requests, and falls back to the stale cache;
 - The catalog is for discovery only: installation always trusts the zip manifest, and the catalog id must match the manifest id;
-- Built-in plugins ship with the app, stay out of the registry, and reserve their ids; external packages cannot replace them;
+- The registry marks plugins that ship with the installer with `builtin: true`; packaging downloads each entry, verifies sha256, places it under `out/plugins/`, and startup seeds it into `installed/`. Their ids are reserved and external packages cannot replace them;
 - No auto-update: when the catalog version is newer than the installed version the UI shows "update"; installation only happens when the user clicks.
 
 The registry contract is in [`docs/plugin-registry.md`](./docs/plugin-registry.md).
@@ -503,6 +503,7 @@ node node_modules/electron/install.js
 | `pnpm run build`     | Compile main / preload / renderer into `out/`, no packaging |
 | `pnpm run preview`   | Start the app from built output (verify production build)   |
 | `pnpm run package`   | Package an unpacked app directory into `dist/`              |
+| `pnpm plugins:sync`  | Sync registry `builtin` plugins into `out/plugins/`         |
 | `pnpm run make`      | Build the installer for the current platform into `dist/`   |
 | `pnpm run release`   | Build and publish (needs publish credentials)               |
 | `pnpm run typecheck` | TypeScript type check                                       |
@@ -525,8 +526,8 @@ node node_modules/electron/install.js
 │   ├── renderer/
 │   │   ├── pages/                 # shell / assistant / overlay / settings / welcome
 │   │   └── shared/                # cross-page API, domains and styles
-│   ├── plugins/                   # built-in plugins (shipped with the app)
 │   └── shared/                    # types and styles shared by main / renderer
+├── scripts/                       # release and built-in plugin sync scripts
 ├── RELEASING.md                   # release and SDK publishing rules
 ├── docs/                          # systematic design (architecture / plugin-registry)
 ├── electron.vite.config.ts        # build config for main / preload / renderer
