@@ -57,6 +57,7 @@ export type {
   Item,
   ListOptions,
   Locator,
+  OpenTarget,
   ReadOptions,
   ResourceAdapter,
 } from './resource.ts';

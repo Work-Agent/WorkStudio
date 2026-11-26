@@ -12,7 +12,12 @@ import type { PluginManager } from './plugin/manager.ts';
 export type PageTarget =
   | { type: 'welcome'; workspaceId: string }
   | { type: 'settings'; workspaceId: string; pageId?: string }
-  | { type: 'resource'; workspaceId: string; ref: string }
+  | {
+      type: 'resource';
+      workspaceId: string;
+      ref: string;
+      locator?: string;
+    }
   | {
       type: 'plugin';
       workspaceId: string;
@@ -29,6 +34,7 @@ export interface ResolvedPage {
   /** 标签复用键：资源 ref、插件页地址或网页 URL。 */
   contentPath: string;
   ref?: string;
+  locator?: string;
   pluginId?: string;
 }
 
@@ -93,10 +99,14 @@ export class PageRouter {
         this.options.openRef?.(target.ref, target.workspaceId);
         return {
           type: 'resource',
-          url: pluginUrl(plugin.id, 'content', { ref: target.ref }),
+          url: pluginUrl(plugin.id, 'content', {
+            ref: target.ref,
+            ...(target.locator ? { locator: target.locator } : {}),
+          }),
           title: plugin.label,
           contentPath: `plugin:${plugin.id}:content:${target.ref}`,
           ref: target.ref,
+          ...(target.locator ? { locator: target.locator } : {}),
           pluginId: plugin.id,
         };
       }

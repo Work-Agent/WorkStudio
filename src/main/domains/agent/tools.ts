@@ -48,6 +48,7 @@ const TOOLS: readonly ToolInfo[] = [
   { name: 'find', summary: '按条件过滤结构', write: false },
   { name: 'read', summary: '读取内容条目（带 locator）', write: false },
   { name: 'grep', summary: '按查询匹配内容', write: false },
+  { name: 'open', summary: '按 locator 打开资源位置', write: false },
   { name: 'bash', summary: '执行命令（写与改的唯一入口）', write: true },
   {
     name: 'command',
@@ -72,6 +73,10 @@ export class ToolSurface {
     private readonly registry: DomainRegistry,
     private readonly browser: BrowserCapability,
     private readonly cache?: WebCache,
+    private readonly openLocation?: (
+      ref: string,
+      locator?: string,
+    ) => Promise<unknown>,
   ) {}
 
   list(): readonly ToolInfo[] {
@@ -92,6 +97,11 @@ export class ToolSurface {
 
   async grep(ref: string, query: string): Promise<Item[]> {
     return this.transport.grep(ref, query);
+  }
+
+  async open(ref: string, locator?: string): Promise<unknown> {
+    if (!this.openLocation) throw new CallFailure('failed', '打开能力未接入');
+    return this.openLocation(ref, locator);
   }
 
   /**

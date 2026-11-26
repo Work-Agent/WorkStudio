@@ -13,6 +13,7 @@ export type {
   Item,
   ListOptions,
   Locator,
+  OpenTarget,
   ReadOptions,
   ResourceAdapter,
 } from '@work-studio/sdk';

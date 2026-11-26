@@ -18,6 +18,7 @@ import {
 
 interface Match {
   ref: string;
+  locator: string;
   name: string;
   line: number | null;
   snippet: string;
@@ -66,19 +67,17 @@ export function GrepList() {
           if (request.current !== id) return;
           setHits(
             items.flatMap((item) => {
-              if (typeof item.locator !== 'string') return [];
-              const parsed = splitLocator(item.locator);
-              return parsed
-                ? [
-                    {
-                      ref: parsed.ref,
-                      name: nameOf(parsed.ref),
-                      line: parsed.line,
-                      snippet:
-                        typeof item.snippet === 'string' ? item.snippet : '',
-                    },
-                  ]
-                : [];
+              const ref = typeof item.ref === 'string' ? item.ref : '';
+              if (!ref || typeof item.locator !== 'string') return [];
+              return [
+                {
+                  ref,
+                  locator: item.locator,
+                  name: nameOf(ref),
+                  line: typeof item.line === 'number' ? item.line : null,
+                  snippet: typeof item.snippet === 'string' ? item.snippet : '',
+                },
+              ];
             }),
           );
         })
@@ -114,12 +113,12 @@ export function GrepList() {
     return [...map.values()];
   }, [hits]);
 
-  const open = (ref: string, name: string): void => {
+  const open = (ref: string, name: string, locator?: string): void => {
     const item: ResourceNode = {
       key: ref,
       type: 'file',
       title: name,
-      meta: { ref },
+      meta: { ref, ...(locator ? { locator } : {}) },
     };
     void openResourceNode(item).catch((reason: unknown) =>
       notifyError(
@@ -147,7 +146,11 @@ export function GrepList() {
                 useSidebarStore.getState().setView('main');
               }
               if (event.key === 'Enter' && groups[0])
-                open(groups[0].ref, groups[0].name);
+                open(
+                  groups[0].ref,
+                  groups[0].name,
+                  groups[0].matches[0]?.locator,
+                );
             }}
             placeholder="搜索文件内容…"
             spellCheck={false}
@@ -170,7 +173,9 @@ export function GrepList() {
             <div
               data-testid="sidebar-grep-group"
               title={group.ref}
-              onClick={() => open(group.ref, group.name)}
+              onClick={() =>
+                open(group.ref, group.name, group.matches[0]?.locator)
+              }
               className="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer text-[11.5px] font-medium text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-[#2a2d2e] transition-colors"
             >
               <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
@@ -181,12 +186,10 @@ export function GrepList() {
             </div>
             {group.matches.map((match, index) => (
               <div
-                key={`${match.ref}#${match.line ?? index}`}
+                key={`${match.locator}-${index}`}
                 data-testid="sidebar-grep-item"
-                title={displayPath(
-                  match.line ? `${match.ref}#L${match.line}` : match.ref,
-                )}
-                onClick={() => open(match.ref, match.name)}
+                title={displayPath(match.locator)}
+                onClick={() => open(match.ref, match.name, match.locator)}
                 className="flex items-start gap-2 pl-5 pr-2 py-1 rounded-md cursor-pointer hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e] transition-colors"
               >
                 <span className="w-8 shrink-0 pt-0.5 text-right font-mono text-[10px] text-zinc-400 dark:text-zinc-500">

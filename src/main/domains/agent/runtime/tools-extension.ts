@@ -69,6 +69,17 @@ export function createAgentToolsExtension(
         text(await tools.grep(input.ref, input.query)),
     }),
     defineTool({
+      name: 'open',
+      label: '打开定位',
+      description: 'Open a resource at a locator returned by grep.',
+      parameters: Type.Object({
+        ref: Type.String(),
+        locator: Type.Optional(Type.String()),
+      }),
+      execute: async (_id, input) =>
+        text(await tools.open(input.ref, input.locator)),
+    }),
+    defineTool({
       name: 'bash',
       label: '执行命令',
       description:

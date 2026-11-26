@@ -50,6 +50,7 @@ export interface SystemModulesOptions {
   appearance: AppearanceStore;
   shellHost?: ShellHost;
   openNode?: (node: ResourceNode, workspaceId: string) => Promise<unknown>;
+  openLocation?: (ref: string, locator?: string) => Promise<unknown>;
   settingsPages?: SettingsPage[];
 }
 
@@ -84,6 +85,7 @@ export function registerSystemModules(
     registry,
     browser,
     options.cache,
+    options.openLocation,
   );
   const repo = new WorkspaceRepository(options.storage, options.workspaceRoot);
 

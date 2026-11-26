@@ -133,6 +133,8 @@ export class WorkspaceFiles implements ResourceAdapter {
         if (!regex.test(line)) continue;
         result.push({
           locator: `${this.refOf(path)}#L${index + 1}`,
+          ref: this.refOf(path),
+          line: index + 1,
           snippet: line.slice(0, 240),
         });
         if (result.length >= MAX_ITEMS) break;

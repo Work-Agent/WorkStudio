@@ -172,6 +172,7 @@ export class NextApp {
       appearance: this.appearance,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
       openNode: (node, workspaceId) => this.openResourceNode(node, workspaceId),
+      openLocation: (ref, locator) => this.openLocation(ref, locator),
       ...(options.settingsPages
         ? { settingsPages: options.settingsPages }
         : {}),
@@ -188,6 +189,21 @@ export class NextApp {
     this.ipc = ipc;
   }
 
+  /** GUI / agent 共用的定位打开入口：窗口与工作区 1:1。 */
+  async openLocation(ref: string, locator?: string): Promise<unknown> {
+    const workspaceId = this.shellHost?.activeWindow();
+    if (!workspaceId) throw new Error('没有活动窗口');
+    return this.openResourceNode(
+      {
+        key: ref,
+        type: 'file',
+        title: ref,
+        meta: { ref, ...(locator ? { locator } : {}) },
+      },
+      workspaceId,
+    );
+  }
+
   private async openResourceNode(
     item: ResourceNode,
     workspaceId: string,
@@ -198,9 +214,17 @@ export class NextApp {
     const pluginId =
       typeof meta['pluginId'] === 'string' ? meta['pluginId'] : '';
     const url = typeof meta['url'] === 'string' ? meta['url'] : '';
+    const locator =
+      typeof meta['locator'] === 'string' ? meta['locator'] : undefined;
     let target: PageTarget;
     if (ref) {
-      target = { type: 'resource', workspaceId, ref };
+      const opened = await this.transport.open(ref, locator);
+      target = {
+        type: 'resource',
+        workspaceId,
+        ref: opened.ref,
+        ...(opened.locator ? { locator: opened.locator } : {}),
+      };
     } else if (pageId) {
       target = { type: 'settings', workspaceId, pageId };
     } else if (pluginId) {

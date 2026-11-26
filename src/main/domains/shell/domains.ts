@@ -248,6 +248,15 @@ export function defineViewsResources(
         const id = String(input.id);
         const existing = records.get(id);
         if (existing) {
+          // 同一 contentPath 再次打开时，用新 URL（如 locator）导航已有页面。
+          if (typeof input.url === 'string' && input.url !== existing.url) {
+            host?.navigateView(windowId, id, input.url);
+            records.set(id, { ...existing, url: input.url });
+            registry
+              .define('shell')
+              .resource(viewResourceName(windowId, id))
+              .publish();
+          }
           host?.activateView(windowId, id);
           for (const [otherId, other] of records) {
             records.set(otherId, { ...other, active: otherId === id });

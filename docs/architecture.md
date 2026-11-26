@@ -283,17 +283,24 @@ Biz Domain 由插件持有，每个插件一个，地址前缀即插件标识。
 域适配器提供四个读接口，框架只做路由：
 
 ```ts
+interface OpenTarget {
+  ref: string;
+  locator?: Locator;
+}
+
 interface ResourceAdapter {
   ls(ref: string, opts?: ListOptions): Promise<Entry[]>;
   find(ref: string, query: string): Promise<Entry[]>;
   read(ref: string, opts?: ReadOptions): Promise<Item[]>;
   grep(ref: string, query: string): Promise<Item[]>;
+  open?(ref: string, locator?: Locator): Promise<OpenTarget | null>;
 }
 ```
 
 - `ls` / `find` 描述结构，`read` / `grep` 描述内容；只提供内容的域可以省略前两个，由框架按工作区路径枚举。
 - `Entry` 描述结构：名称、类型、大小、修改时间、`ref`。
 - `Item` 描述内容：至少带 `locator`，其余字段由域定义。
+- `open` 只把 `ref + locator` 解析成打开目标，不创建窗口；真正打开由宿主统一执行。省略时宿主按 `ref` 打开。
 - 框架不校验 `Item` 的字段、不做统一文本化、不做分页切片；只限制条数并原样透传 `locator`。
 
 枚举方式由域自己决定：文件系统按目录、压缩包按容器、邮件按账号。框架不持有目录状态，每次调用现枚举。
@@ -399,6 +406,7 @@ type ArgSpec =
 | `find`         | 同上，按条件过滤      | 结果有界                              |
 | `read`         | 相邻 Biz 域的内容接口 | 返回条目列表，每条带 locator          |
 | `grep`         | 同上，按查询匹配      | 默认跨域，带预算                      |
+| `open`         | 域适配器的 `open`     | 把 locator 交给宿主打开，不直接改页面 |
 | `bash`         | 命令实现              | 命令行方式；退出码区分失败类型        |
 | `command`      | 命令表                | 结构化输入调用同一命令地址            |
 | `command_list` | 命令表                | 发现 domain / action / args           |

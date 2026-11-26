@@ -11,6 +11,7 @@ import type {
   Entry,
   Item,
   ListOptions,
+  OpenTarget,
   ReadOptions,
   ResourceAdapter,
 } from './resource.ts';
@@ -114,6 +115,16 @@ export class TransportRouter {
       throw new CallFailure('not_found', `没有可检索的域：${ref}`);
     }
     return bound(await target.adapter.grep(ref, query));
+  }
+
+  /** 解析打开目标；adapter 不知道窗口，只返回 ref / locator。 */
+  async open(ref: string, locator?: string): Promise<OpenTarget> {
+    const target = this.resolve(ref);
+    if (target?.adapter.open) {
+      const opened = await target.adapter.open(ref, locator);
+      if (opened) return opened;
+    }
+    return locator ? { ref, locator } : { ref };
   }
 
   /** 插件上下文的原始字节读写；不经过格式层。 */
