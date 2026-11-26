@@ -378,6 +378,12 @@ export class SessionAgent {
     this.emitStatus();
   }
 
+  /** API Key 路线：只对未声明授权页的供应商开放，判据在 AgentApp。 */
+  async configureApiKey(providerId: string, apiKey: string): Promise<void> {
+    await this.app.configureApiKey(providerId, apiKey);
+    this.emitStatus();
+  }
+
   async logoutProvider(providerId: string): Promise<void> {
     await this.app.logoutProvider(providerId);
     this.emitStatus();

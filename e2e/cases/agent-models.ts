@@ -110,8 +110,8 @@ export default defineCase({
           ) as Promise<ProviderModels | null> | ProviderModels | null,
       )) as ProviderModels | null;
       return Boolean(
-        scoped?.providerId === PROVIDER &&
-        scoped.configured.some((model) => model.id === MODEL),
+        scoped?.providerId === 'e2e-models-provider' &&
+        scoped.configured.some((model) => model.id === 'e2e-models-model'),
       );
     }, 'provider/<id>/models 未包含该供应商的模型');
 

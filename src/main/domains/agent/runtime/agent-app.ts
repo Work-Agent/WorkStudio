@@ -37,6 +37,7 @@ import {
   migrateLegacyAuthFile,
 } from './credentials.ts';
 import { loginViaLoopback } from './page-login.ts';
+import { isLoginOnly } from './model-catalog.ts';
 
 function hostOfUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
@@ -298,6 +299,18 @@ export class AgentApp {
   async deleteModel(providerId: string, modelId: string): Promise<void> {
     await this.modelStore.deleteModel(providerId, modelId);
     await this.refreshModels();
+  }
+
+  /**
+   * API Key 路线：声明了授权页的供应商只走登录，这里按同一判据拒绝；
+   * 拒绝在写入前，页面与命令通道共用一个入口。
+   */
+  async configureApiKey(providerId: string, apiKey: string): Promise<void> {
+    const config = this.modelStore.readView().providers[providerId];
+    if (isLoginOnly(config)) {
+      throw new Error(`该供应商只支持登录：${providerId}`);
+    }
+    await this.applyCredential(providerId, { accessToken: apiKey });
   }
 
   /**

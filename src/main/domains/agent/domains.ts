@@ -871,9 +871,7 @@ export function defineModelsResources(
       run: async (input) => {
         const runtime = host?.();
         if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-        await runtime.applyCredential(providerId, {
-          accessToken: String(input.apiKey),
-        });
+        await runtime.configureApiKey(providerId, String(input.apiKey));
         resource.publish();
         return null;
       },
