@@ -113,6 +113,11 @@ export class AgentModule implements DomainModule {
     this.agents = new SessionAgents((input) => this.bootstrapSession(input));
   }
 
+  /** 插件引擎命令的开关：已激活插件技能所属的插件。 */
+  activeSkillOwners(): string[] {
+    return this.app?.skills.activeOwners() ?? [];
+  }
+
   /** 插件写凭证：校验 provider 存在 + 落主进程存储 + 刷新投影。 */
   async writeCredential(
     providerId: string,

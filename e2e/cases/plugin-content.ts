@@ -1,7 +1,14 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { defineCase } from '../runner/contract.ts';
 import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+
+interface AccessProbe {
+  own: boolean;
+  scoped: boolean;
+  other: unknown;
+}
 
 export default defineCase({
   id: 'plugin.content',
@@ -14,10 +21,11 @@ export default defineCase({
     )) as { current?: { path: string } | null };
     const root = workspace.current?.path;
     if (!root) throw new Error('没有当前工作区');
-    const file = join(root, '.e2e-plugin-content.html');
+    // 文件名带中文：ref 必然是百分号编码形式，和传输层产出的 ref 一致。
+    const file = join(root, '前赤壁赋-e2e.html');
     try {
       writeFileSync(file, '<html><body><h1>PLUGIN CONTENT</h1></body></html>');
-      const ref = `file://${file}`;
+      const ref = pathToFileURL(file).toString();
       const result = await ctx.evaluate(async (target) => {
         const registry = (await window.workStudio.subscribe(
           'workspace',
@@ -48,6 +56,28 @@ export default defineCase({
       const page = await ctx.waitForPage(/^plugin:\/\/html-viewer\//);
       await page.expect.text('h1', 'HTML 阅读器');
       await page.expect.text('body', 'PLUGIN CONTENT');
+
+      // 内容页能读自己这个 ref（新旧两种地址名都认），读不到别的 ref。
+      const access = (await page.evaluate(async (raw) => {
+        const target = String(raw);
+        const own = await window.workStudio.subscribe('workspace', target);
+        const scoped = await window.workStudio.subscribe(
+          'workspace',
+          `${String(window.workStudio.workspaceId)}/${target}`,
+        );
+        const other = await window.workStudio.subscribe(
+          'workspace',
+          'file:///etc/hosts',
+        );
+        return {
+          own: Array.isArray(own),
+          scoped: Array.isArray(scoped),
+          other,
+        };
+      }, ref)) as AccessProbe;
+      if (!access.own) throw new Error('内容页读不到自己打开的 ref');
+      if (!access.scoped) throw new Error('内容页读不到带 wsId 的资源地址');
+      if (access.other !== null) throw new Error('内容页读到了无关资源');
     } finally {
       rmSync(file, { force: true });
     }

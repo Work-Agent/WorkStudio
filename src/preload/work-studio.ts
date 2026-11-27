@@ -23,8 +23,35 @@ function argvOf(): readonly string[] {
   }
 }
 
+const workspaceId = workspaceIdOfArgv(argvOf());
+
+/**
+ * 取数面直接落到工作区搜索资源：与助手 ls / find / read / grep 同一份实现，
+ * 页面不需要自己拼 transport。
+ */
+function access<T>(action: string, input: unknown): Promise<T> {
+  if (!workspaceId) return Promise.reject(new Error('工作区未就绪'));
+  return ipcRenderer
+    .invoke(
+      BRIDGE_CHANNELS.command,
+      'workspace',
+      `${workspaceId}/search`,
+      action,
+      input,
+    )
+    .then((result: CallResult<T>) => {
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    });
+}
+
 const bridge: WorkStudioBridge = {
-  workspaceId: workspaceIdOfArgv(argvOf()),
+  workspaceId,
+  ls: (ref, options) => access('ls', { ref, ...options }),
+  find: (ref, query) => access('find', { ref, query }),
+  read: (ref, options) => access('read', { ref, ...options }),
+  grep: (ref, query) => access('grep', { ref, query }),
+
   subscribe: (domain, resource) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.subscribe, domain, resource),
 

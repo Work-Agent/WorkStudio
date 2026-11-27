@@ -114,16 +114,25 @@ export function validateCommandInput(
 
 export interface ParsedCommandLine {
   domain: string;
+  /** 省略时与 domain 同名：域级命令的地址就是 `<domain>/<domain>`。 */
+  resource: string;
   action: string;
   input: CommandInput;
 }
 
-/** `ws <domain> <action> <ref> [--arg value]` → 命令表入参。 */
+/**
+ * `ws <domain>/<resource> <action> <ref> [--arg value]` → 命令表入参。
+ * 地址与命令表里的 domain / resource 一致，resource 可省略。
+ */
 export function parseCommandLine(
   argv: readonly string[],
 ): ParsedCommandLine | null {
-  const [head, domain, action, ref, ...rest] = argv;
-  if (head !== 'ws' || !domain || !action || !ref) return null;
+  const [head, target, action, ref, ...rest] = argv;
+  if (head !== 'ws' || !target || !action || !ref) return null;
+  const slash = target.indexOf('/');
+  const domain = slash < 0 ? target : target.slice(0, slash);
+  const resource = slash < 0 ? target : target.slice(slash + 1);
+  if (!domain) return null;
 
   const input: CommandInput = { ref };
   for (let index = 0; index < rest.length; index += 1) {
@@ -145,5 +154,5 @@ export function parseCommandLine(
       input[name] = true;
     }
   }
-  return { domain, action, input };
+  return { domain, resource: resource || domain, action, input };
 }

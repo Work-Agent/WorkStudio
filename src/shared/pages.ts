@@ -51,18 +51,20 @@ export function parseWorkUrl(
   }
 }
 
-/** 解析 plugin://<id>/<kind>[/<rest...>]。 */
+/** 解析 plugin://<id>/<kind>[/<rest...>]?ref=...。 */
 export function parsePluginUrl(
   value: string,
-): { id: string; kind: string; rest: string[] } | null {
+): { id: string; kind: string; rest: string[]; ref?: string } | null {
   try {
     const url = new URL(value);
     if (url.protocol !== 'plugin:') return null;
     const parts = url.pathname.split('/').filter(Boolean);
+    const ref = url.searchParams.get('ref');
     return {
       id: url.hostname,
       kind: parts[0] ?? '',
       rest: parts.slice(1),
+      ...(ref ? { ref } : {}),
     };
   } catch {
     return null;

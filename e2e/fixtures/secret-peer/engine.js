@@ -24,6 +24,9 @@ export const workstudio = {
         if (String(input.action) === 'set') {
           await scope.secrets.set(key, String(input.value ?? ''));
         }
+        if (String(input.action) === 'clear') {
+          await scope.secrets.set(key, null);
+        }
         return { value: await scope.secrets.get(key) };
       },
     },

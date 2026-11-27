@@ -1,16 +1,13 @@
 /**
  * 工具面：ls / find / read / grep / bash + 浏览器工具。
  *
- * 取数路径不同、工具名稳定：前四个走传输层，bash 走命令表，
- * browser_* 走 Browser 模块。没有 write 与 edit。
+ * 前四个是取数面（与页面 bridge、插件上下文同一份实现），
+ * bash 是写与改的唯一通道（技能说明怎么调），browser_* 走 Browser 模块。
+ * 没有 write / edit / open / command：写走命令，导航归页面。
  */
 
-import {
-  CallFailure,
-  exitCodeOf,
-  type CallResult,
-  type Origin,
-} from '../../contract.ts';
+import type { ResourceAccess } from '@work-studio/sdk';
+import { CallFailure, exitCodeOf, type CallResult } from '../../contract.ts';
 import type {
   Entry,
   Item,
@@ -18,9 +15,10 @@ import type {
   ReadOptions,
   ResourceRoot,
 } from '../../transport/resource.ts';
+import { TransportAccess } from '../../transport/access.ts';
 import type { TransportRouter } from '../../transport/router.ts';
 import { createLog } from '../../log.ts';
-import type { CommandContext } from '../../registry/command.ts';
+import type { CommandInput } from '../../registry/command.ts';
 import { parseCommandLine } from '../../registry/command.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { WebCache } from '../../transport/web-cache.ts';
@@ -45,22 +43,16 @@ export interface CommandOutcome {
 }
 
 const TOOLS: readonly ToolInfo[] = [
-  { name: 'ls', summary: '列出相邻业务域的结构', write: false },
-  { name: 'find', summary: '按条件过滤结构', write: false },
-  { name: 'read', summary: '读取内容条目（带 locator）', write: false },
-  { name: 'grep', summary: '按查询匹配内容', write: false },
-  { name: 'open', summary: '按 locator 打开资源位置', write: false },
-  { name: 'bash', summary: '执行命令（写与改的唯一入口）', write: true },
+  { name: 'ls', summary: '结构：认领者并发聚合', write: false },
+  { name: 'find', summary: '结构：按名字过滤', write: false },
+  { name: 'read', summary: '内容：条目带 locator', write: false },
+  { name: 'grep', summary: '内容：按查询匹配', write: false },
   {
-    name: 'command',
-    summary: '按 domain / action / args 调用命令表',
-    write: true,
-  },
-  {
-    name: 'command_list',
-    summary: '列出命令表（domain / action / args）',
+    name: 'open',
+    summary: '把 locator 交给宿主打开（与侧栏同一入口）',
     write: false,
   },
+  { name: 'bash', summary: '写与改：按技能说明执行命令', write: true },
   { name: 'browser_open', summary: '打开网页', write: false },
   { name: 'browser_click', summary: '点击网页元素', write: true },
   { name: 'browser_type', summary: '输入网页文本', write: true },
@@ -68,17 +60,30 @@ const TOOLS: readonly ToolInfo[] = [
   { name: 'browser_snapshot', summary: '采集网页快照', write: false },
 ];
 
-export class ToolSurface {
+export class ToolSurface implements ResourceAccess {
+  /** 插件引擎命令的开关：已激活的插件技能所属插件。 */
+  private skillOwners: () => readonly string[] = () => [];
+  /** 取数面：与页面 bridge、插件上下文同一份实现。 */
+  private readonly access: TransportAccess;
+
   constructor(
     private readonly transport: TransportRouter,
     private readonly registry: DomainRegistry,
     private readonly browser: BrowserCapability,
     private readonly cache?: WebCache,
+    /** 打开入口：与侧栏点击同一条路（点位、插件页、外链都由宿主解释）。 */
     private readonly openLocation?: (
       ref: string,
       locator?: string,
     ) => Promise<unknown>,
-  ) {}
+  ) {
+    this.access = new TransportAccess(transport);
+  }
+
+  /** 技能在 AgentApp 里才就绪：组合根在装配完成后回填这个开关。 */
+  bindSkillOwners(owners: () => readonly string[]): void {
+    this.skillOwners = owners;
+  }
 
   list(): readonly ToolInfo[] {
     return TOOLS;
@@ -89,25 +94,26 @@ export class ToolSurface {
     return this.transport.resourceRoots();
   }
 
-  async ls(ref: string, options?: ListOptions): Promise<Entry[]> {
-    return this.transport.ls(ref, options);
-  }
-
-  async find(ref: string, query: string): Promise<Entry[]> {
-    return this.transport.find(ref, query);
-  }
-
-  async read(ref: string, options?: ReadOptions): Promise<Item[]> {
-    return this.transport.read(ref, options);
-  }
-
-  async grep(ref: string, query: string): Promise<Item[]> {
-    return this.transport.grep(ref, query);
-  }
-
+  /** 打开：人看到的就是助手打开的那个页面，两种交互共用同一入口。 */
   async open(ref: string, locator?: string): Promise<unknown> {
     if (!this.openLocation) throw new CallFailure('failed', '打开能力未接入');
     return this.openLocation(ref, locator);
+  }
+
+  ls(ref: string, options?: ListOptions): Promise<Entry[]> {
+    return this.access.ls(ref, options);
+  }
+
+  find(ref: string, query: string): Promise<Entry[]> {
+    return this.access.find(ref, query);
+  }
+
+  read(ref: string, options?: ReadOptions): Promise<Item[]> {
+    return this.access.read(ref, options);
+  }
+
+  grep(ref: string, query: string): Promise<Item[]> {
+    return this.access.grep(ref, query);
   }
 
   /**
@@ -121,37 +127,25 @@ export class ToolSurface {
     summary: string;
     args: unknown;
   }> {
-    return this.registry
-      .commandTable()
-      .filter((entry) => entry.agentExposed !== false)
-      .map((entry) => ({
-        domain: entry.address.domain,
-        resource: entry.address.resource,
-        action: entry.action,
-        summary: entry.decl.summary,
-        args: entry.decl.args,
-      }));
-  }
-
-  async command(
-    domain: string,
-    action: string,
-    input: Record<string, unknown> = {},
-    resource = domain,
-  ): Promise<CommandOutcome> {
-    const origin: Origin = { type: 'tool', name: 'command' };
-    const ctx: CommandContext = {
-      origin,
-      changed: (ref, type) => this.registry.changed(ref, type),
-      log: createLog(`tool:command:${domain}`),
-    };
-    const result = await this.registry.dispatchCommand(
-      { domain, resource },
-      action,
-      input,
-      ctx,
+    const owners = this.skillOwners();
+    return (
+      this.registry
+        .commandTable()
+        // 插件引擎命令随技能开启：选中某个技能，它的域才进命令表。
+        .filter(
+          (entry) =>
+            entry.agentExposed !== false ||
+            (entry.address.resource === entry.owner &&
+              owners.includes(entry.owner)),
+        )
+        .map((entry) => ({
+          domain: entry.address.domain,
+          resource: entry.address.resource,
+          action: entry.action,
+          summary: entry.decl.summary,
+          args: entry.decl.args,
+        }))
     );
-    return outcomeOf(result);
   }
 
   async bash(argv: readonly string[]): Promise<CommandOutcome> {
@@ -159,22 +153,58 @@ export class ToolSurface {
     if (!parsed) {
       throw new CallFailure(
         'invalid',
-        '命令格式：ws <domain> <action> <ref> [--arg value]',
+        '命令格式：ws <domain>/<resource> <action> <ref> [--arg value]',
       );
     }
-    const origin: Origin = { type: 'tool', name: 'bash' };
-    const ctx: CommandContext = {
-      origin,
-      changed: (ref, type) => this.registry.changed(ref, type),
-      log: createLog(`tool:bash:${parsed.domain}`),
-    };
-    const result = await this.registry.dispatchCommand(
-      { domain: parsed.domain, resource: parsed.domain },
+    return this.dispatch(
+      { domain: parsed.domain, resource: parsed.resource },
       parsed.action,
       parsed.input,
-      ctx,
+      'bash',
     );
-    return outcomeOf(result);
+  }
+
+  /**
+   * 命令分发：未知地址时把命令表里的候选回给模型。
+   * 猜 `fs/fs/write` 这类不存在的地址只是一次无信息的往返，
+   * 把真实可用的 domain / action 写回 stdout 才能让它自己收敛。
+   */
+  private async dispatch(
+    address: { domain: string; resource: string },
+    action: string,
+    input: CommandInput,
+    tool: 'bash',
+  ): Promise<CommandOutcome> {
+    const result = await this.registry.dispatchCommand(address, action, input, {
+      origin: {
+        type: 'tool',
+        name: tool,
+        skills: this.skillOwners(),
+      },
+      changed: (ref, type) => this.registry.changed(ref, type),
+      log: createLog(`tool:${tool}:${address.domain}`),
+    });
+    const outcome = outcomeOf(result);
+    if (result.ok || result.error.code !== 'unknown') return outcome;
+    return {
+      ...outcome,
+      stdout: `${outcome.stdout}\n${this.unknownHint(address)}`,
+    };
+  }
+
+  private unknownHint(address: { domain: string; resource: string }): string {
+    const rows = this.commandList();
+    const scoped = rows.filter(
+      (entry) =>
+        entry.domain === address.domain && entry.resource === address.resource,
+    );
+    if (scoped.length) {
+      const actions = [...new Set(scoped.map((entry) => entry.action))];
+      return `可用命令（${address.domain}/${address.resource}）：${actions.join(' / ')}`;
+    }
+    const domains = [...new Set(rows.map((entry) => entry.domain))].sort();
+    const shown = domains.slice(0, 24).join(' / ');
+    return `可用域：${shown}${domains.length > 24 ? ' …' : ''}；命令形如 <domain>/<domain>/<action>，具体用法见对应技能`;
   }
 
   async browserOpen(url: string): Promise<BrowserTab> {

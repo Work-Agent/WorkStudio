@@ -41,6 +41,20 @@ export class SkillsManager {
     return [...this.active];
   }
 
+  /**
+   * 已激活的插件技能 → 所属插件 id。
+   * 助手能用哪些插件引擎命令由它决定：技能是这些命令的开关层。
+   */
+  activeOwners(): string[] {
+    const owners = new Set<string>();
+    for (const info of this.infos) {
+      if (!this.active.has(info.name)) continue;
+      if (!info.pluginId || info.pluginId === 'builtin') continue;
+      owners.add(info.pluginId);
+    }
+    return [...owners];
+  }
+
   /** 官方装载结果登记（UI 只读清单数据源 + 装载诊断）。 */
   registerLoaded(
     skills: Skill[],

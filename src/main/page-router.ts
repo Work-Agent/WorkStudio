@@ -6,6 +6,7 @@
  */
 
 import { pluginUrl, workUrl } from '../shared/pages.ts';
+import { canonicalRef } from './transport/ref.ts';
 import type { Protocols } from './protocols.ts';
 import type { PluginManager } from './plugin/manager.ts';
 
@@ -94,18 +95,20 @@ export class PageRouter {
         };
       }
       case 'resource': {
-        const plugin = this.plugins.pluginOfRef(target.ref);
-        if (!plugin) throw new Error(`没有插件认领资源：${target.ref}`);
-        this.options.openRef?.(target.ref, target.workspaceId);
+        // 同一个文件只有一种 ref 写法：标签身份与订阅地址都取归一后的值。
+        const ref = canonicalRef(target.ref);
+        const plugin = this.plugins.pluginOfRef(ref);
+        if (!plugin) throw new Error(`没有插件认领资源：${ref}`);
+        this.options.openRef?.(ref, target.workspaceId);
         return {
           type: 'resource',
           url: pluginUrl(plugin.id, 'content', {
-            ref: target.ref,
+            ref,
             ...(target.locator ? { locator: target.locator } : {}),
           }),
           title: plugin.label,
-          contentPath: `plugin:${plugin.id}:content:${target.ref}`,
-          ref: target.ref,
+          contentPath: `plugin:${plugin.id}:content:${ref}`,
+          ref,
           ...(target.locator ? { locator: target.locator } : {}),
           pluginId: plugin.id,
         };

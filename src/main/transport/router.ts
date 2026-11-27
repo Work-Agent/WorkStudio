@@ -98,7 +98,13 @@ export class TransportRouter {
   }
 
   resolve(ref: string): { domain: string; adapter: ResourceAdapter } | null {
-    const candidates = this.registrations
+    const top = this.claimants(ref)[0];
+    return top ? { domain: top.domain, adapter: top.adapter } : null;
+  }
+
+  /** 认领该 ref 的全部适配器：优先级高的在前，同一优先级按登记顺序。 */
+  private claimants(ref: string): Registration[] {
+    return this.registrations
       .map((registration) => ({
         registration,
         priority: claimPriority(ref, registration.claims),
@@ -108,27 +114,38 @@ export class TransportRouter {
         (a, b) =>
           b.priority - a.priority ||
           a.registration.order - b.registration.order,
-      );
-    const top = candidates[0];
-    return top
-      ? { domain: top.registration.domain, adapter: top.registration.adapter }
-      : null;
+      )
+      .map((item) => item.registration);
   }
 
+  /**
+   * 结构是聚合视图：认领同一 ref 的适配器并发执行，结果按 ref 合并去重。
+   * 单个来源失败不拖垮整层，全部失败才把错误抛出来。
+   */
   async ls(ref: string, options?: ListOptions): Promise<Entry[]> {
-    const target = this.resolve(ref);
-    const items = target?.adapter.ls
-      ? await target.adapter.ls(ref, options)
-      : await this.workspace.ls(ref, options);
-    return bound(items);
+    const claimants = this.claimants(ref);
+    if (claimants.length === 0) {
+      return bound(await this.workspace.ls(ref, options));
+    }
+    const lists = await Promise.allSettled(
+      claimants
+        .filter((claimant) => claimant.adapter.ls)
+        .map((claimant) => claimant.adapter.ls!(ref, options)),
+    );
+    return bound(mergeEntries(lists));
   }
 
   async find(ref: string, query: string): Promise<Entry[]> {
-    const target = this.resolve(ref);
-    const items = target?.adapter.find
-      ? await target.adapter.find(ref, query)
-      : await this.workspace.find(ref, query);
-    return bound(items);
+    const claimants = this.claimants(ref);
+    if (claimants.length === 0) {
+      return bound(await this.workspace.find(ref, query));
+    }
+    const lists = await Promise.allSettled(
+      claimants
+        .filter((claimant) => claimant.adapter.find)
+        .map((claimant) => claimant.adapter.find!(ref, query)),
+    );
+    return bound(mergeEntries(lists));
   }
 
   async read(ref: string, options?: ReadOptions): Promise<Item[]> {
@@ -178,4 +195,28 @@ function claimPriority(ref: string, claims: readonly Claim[]): number {
 
 function bound<T>(items: T[]): T[] {
   return items.length > MAX_ITEMS ? items.slice(0, MAX_ITEMS) : items;
+}
+
+/** 多来源合并：同一 ref 只保留第一个（优先级高的在前），全部失败则抛错。 */
+function mergeEntries(results: Array<PromiseSettledResult<Entry[]>>): Entry[] {
+  if (
+    results.length > 0 &&
+    results.every((result) => result.status === 'rejected')
+  ) {
+    const first = results[0];
+    throw first.status === 'rejected'
+      ? first.reason
+      : new Error('结构聚合失败');
+  }
+  const seen = new Set<string>();
+  const merged: Entry[] = [];
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
+    for (const entry of result.value) {
+      if (seen.has(entry.ref)) continue;
+      seen.add(entry.ref);
+      merged.push(entry);
+    }
+  }
+  return merged;
 }

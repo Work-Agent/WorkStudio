@@ -16,18 +16,22 @@ export default defineCase({
         return {
           extensions,
           tools: Array.isArray(tools),
-          commandTool: Array.isArray(tools)
-            ? tools.some((tool) => tool?.name === 'command')
-            : false,
+          names: Array.isArray(tools)
+            ? tools.map((tool) => String(tool?.name ?? ''))
+            : [],
           prompts: Array.isArray(prompts),
           themes: Array.isArray(themes),
         };
       });
+      // 基础工具：取数面四个 + 打开 + 写通道。
+      const basic = ['ls', 'find', 'read', 'grep', 'open', 'bash'];
+      const removed = ['command', 'command_list', 'write', 'edit'];
       return (
         typeof result.extensions === 'object' &&
         result.extensions !== null &&
         result.tools &&
-        result.commandTool &&
+        basic.every((name) => result.names.includes(name)) &&
+        !removed.some((name) => result.names.includes(name)) &&
         result.prompts &&
         result.themes
       );

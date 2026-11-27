@@ -14,6 +14,7 @@ export type {
   FileToken,
   WorkStudioBridge,
 } from './bridge.ts';
+export type { ResourceAccess } from './access.ts';
 export type { ArgSpec, CommandDecl, CommandDescriptor } from './command.ts';
 export type {
   Log,

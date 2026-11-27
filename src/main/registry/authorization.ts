@@ -19,9 +19,14 @@ export function commandDenialOf(
   entry: CommandEntry,
 ): string | null {
   if (origin.type === 'tool') {
-    return entry.agentExposed === false
-      ? `命令未向助手开放：${entry.address.domain}/${entry.address.resource}/${entry.action}`
-      : null;
+    // 插件引擎命令随技能开启：选中技能 = 授权它的域给助手。
+    // 只认域级地址（<plugin>/<plugin>/<action>），插件自己的设置写入不在此列。
+    if (entry.agentExposed === false) {
+      const engine = entry.address.resource === entry.owner;
+      if (engine && origin.skills?.includes(entry.owner)) return null;
+      return `命令未向助手开放：${entry.address.domain}/${entry.address.resource}/${entry.action}`;
+    }
+    return null;
   }
   // 外部网页只开放「回传授权凭证」：provider 由地址决定，主进程再校验其存在。
   // 外部网页不注入 bridge，也没有任何可调用命令。
@@ -60,6 +65,14 @@ export function subscriptionDenialOf(
   const pluginId = pluginIdOf(origin);
   if (!pluginId) return null;
   if (address.startsWith(`${pluginId}/`)) return null;
+  // 内容页只能读它自己被打开的那个资源，新旧两种地址名都认。
+  if (origin.type === 'view' && origin.ref) {
+    const names = [`workspace/${origin.ref}`];
+    if (origin.workspaceId) {
+      names.push(`workspace/${origin.workspaceId}/${origin.ref}`);
+    }
+    if (names.includes(address)) return null;
+  }
   if (address === 'shell/appearance') return null;
   if (address === 'agent/providers' || address.startsWith('agent/provider/')) {
     return null;

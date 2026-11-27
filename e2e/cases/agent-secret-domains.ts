@@ -9,7 +9,7 @@ interface SecretResult {
 
 interface ProbeInput {
   pluginId: string;
-  action: 'set' | 'get';
+  action: 'set' | 'get' | 'clear';
   value?: string;
 }
 
@@ -39,6 +39,11 @@ export default defineCase({
   async run(ctx) {
     await ensureFixturePlugin(ctx, 'html-viewer');
     await ensureFixturePlugin(ctx, 'secret-peer');
+
+    // 密钥域会跨轮保留：先清干净，否则上一轮的写入会把隔离断言弄假。
+    for (const pluginId of ['html-viewer', 'secret-peer']) {
+      await probe(ctx, { pluginId, action: 'clear' });
+    }
 
     const setOwn = await probe(ctx, {
       pluginId: 'html-viewer',

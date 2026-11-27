@@ -11,6 +11,8 @@ import type { AppearanceSettings } from '../../../shared/appearance.ts';
 import { resolveAppearance } from '../../../shared/appearance.ts';
 import type { ViewType } from '../../contract.ts';
 import { CallFailure } from '../../contract.ts';
+import { createLog } from '../../log.ts';
+import { parsePluginUrl } from '../../../shared/pages.ts';
 import type { Protocols } from '../../protocols.ts';
 import type { PluginFiles } from '../../plugin/files.ts';
 import type { ShellHost, ViewOpenInput } from './native.ts';
@@ -162,6 +164,22 @@ export function defineViewsResources(
     return records;
   };
 
+  /**
+   * 激活且只激活一个：记录、原生视图与订阅者一起切。
+   * 关闭与打开都走这里，避免出现「没有 active」或「两个 active」。
+   */
+  const activate = (windowId: string, id: string): void => {
+    if (!recordsOf(windowId).has(id)) return;
+    host?.activateView(windowId, id);
+    for (const [viewId, record] of recordsOf(windowId)) {
+      recordsOf(windowId).set(viewId, { ...record, active: viewId === id });
+      registry
+        .define('shell')
+        .resource(viewResourceName(windowId, viewId))
+        .publish();
+    }
+  };
+
   const ensureViewResource = (windowId: string, viewId: string): void => {
     const domain = registry.define('shell');
     const name = viewResourceName(windowId, viewId);
@@ -224,6 +242,25 @@ export function defineViewsResources(
     const list = domain.resource(name);
     list.snapshot(() => [...records.values()]);
 
+    /** 关标签即释放它打开的资源：`closeRef` 才会被走到。 */
+    const releaseRef = (
+      url: string | undefined,
+      viewWindowId: string,
+    ): void => {
+      const ref = url ? parsePluginUrl(url)?.ref : undefined;
+      if (!ref) return;
+      void registry.dispatchCommand(
+        { domain: 'workspace', resource: 'registry' },
+        'closeRef',
+        { ref, workspaceId: viewWindowId },
+        {
+          origin: { type: 'service', id: 'shell' },
+          changed: (target, type) => registry.changed(target, type),
+          log: createLog('shell'),
+        },
+      );
+    };
+
     const ensureWelcome = (): void => {
       if (records.size > 0 || !host) return;
       const record = host.openWelcome(windowId);
@@ -257,10 +294,7 @@ export function defineViewsResources(
               .resource(viewResourceName(windowId, id))
               .publish();
           }
-          host?.activateView(windowId, id);
-          for (const [otherId, other] of records) {
-            records.set(otherId, { ...other, active: otherId === id });
-          }
+          activate(windowId, id);
           list.publish();
           return records.get(id) ?? existing;
         }
@@ -281,10 +315,8 @@ export function defineViewsResources(
               dirty: false,
               pinned: false,
             };
-        for (const [otherId, other] of records) {
-          records.set(otherId, { ...other, active: otherId === record.id });
-        }
         records.set(record.id, record);
+        activate(windowId, record.id);
         ensureViewResource(windowId, record.id);
         registry
           .define('shell')
@@ -331,14 +363,7 @@ export function defineViewsResources(
         if (!records.has(target)) {
           throw new CallFailure('not_found', `视图不存在：${target}`);
         }
-        host?.activateView(windowId, target);
-        for (const [id, record] of records) {
-          records.set(id, { ...record, active: id === target });
-          registry
-            .define('shell')
-            .resource(viewResourceName(windowId, id))
-            .publish();
-        }
+        activate(windowId, target);
         list.publish();
         return [...records.values()];
       },
@@ -349,19 +374,16 @@ export function defineViewsResources(
       run: (input) => {
         const id = String(input.id);
         const closed = records.get(id);
+        const order = [...records.keys()];
+        const index = order.indexOf(id);
         host?.closeView(windowId, id);
         records.delete(id);
         registry.define('shell').remove(viewResourceName(windowId, id));
+        releaseRef(closed?.url, windowId);
+        // 关掉的是当前页时接右邻，其次左邻；只剩空窗口才回欢迎页。
         if (closed?.active) {
-          const next = [...records.values()][0];
-          if (next) {
-            records.set(next.id, { ...next, active: true });
-            host?.activateView(windowId, next.id);
-            registry
-              .define('shell')
-              .resource(viewResourceName(windowId, next.id))
-              .publish();
-          }
+          const nextId = order[index + 1] ?? order[index - 1];
+          if (nextId && records.has(nextId)) activate(windowId, nextId);
         }
         ensureWelcome();
         list.publish();
@@ -479,11 +501,14 @@ export function defineViewsResources(
       if (index < 0) return [...records.values()];
       const remove =
         side === 'left' ? ids.slice(0, index) : ids.slice(index + 1);
+      const lostActive = remove.some((viewId) => records.get(viewId)?.active);
       for (const viewId of remove) {
         host?.closeView(windowId, viewId);
         records.delete(viewId);
         registry.define('shell').remove(viewResourceName(windowId, viewId));
       }
+      if (lostActive && records.has(id)) activate(windowId, id);
+      ensureWelcome();
       list.publish();
       return [...records.values()];
     }
@@ -945,9 +970,10 @@ export function defineNativeResource(
 export function definePagesResource(
   registry: DomainRegistry,
   protocols: Protocols,
-  openPage?: (url: string) => Promise<unknown>,
 ): void {
   const resource = registry.define('shell').resource('pages');
+  // 只是页面清单投影：打开页面必须经 page-router 推导身份，
+  // 否则同一个页面会以 URL 为 id 再开一份标签。
   resource.snapshot(() => ({
     system: protocols.systemPages(),
     // 只投影身份与名称；页面文件路径不出主进程。
@@ -956,14 +982,6 @@ export function definePagesResource(
       label: page.label,
     })),
   }));
-  resource.command('open', {
-    summary: '打开页面地址',
-    args: { url: { type: 'string', required: true } },
-    run: async (input) => {
-      if (!openPage) throw new CallFailure('failed', '页面宿主未接入');
-      return openPage(String(input.url));
-    },
-  });
 }
 
 // ─── appearance ──────────────────────────────────────────────

@@ -141,6 +141,8 @@ export function registerSystemModules(
     createPageOpener(registry, options.shellHost),
   );
   registry.registerModule(agent);
+  // 技能层是插件引擎命令的开关：技能未选中时，它的域不进命令表也拒绝执行。
+  tools.bindSkillOwners(() => agent.activeSkillOwners());
   // 插件写凭证走这里：provider 存在性由 agent 校验，范围由插件清单声明。
   options.plugins?.bindCredentials({
     write: (providerId, input) => agent.writeCredential(providerId, input),

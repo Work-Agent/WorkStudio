@@ -9,6 +9,7 @@ import settingsOpen from '../cases/settings-open.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
 import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
+import tabsIdentity from '../cases/tabs-identity.ts';
 import themeToggle from '../cases/theme-toggle.ts';
 import settingsStorage from '../cases/settings-storage.ts';
 import browserAutomation from '../cases/browser-automation.ts';
@@ -74,6 +75,7 @@ export const cases: readonly E2ECase[] = [
   settingsOpen,
   settingsSidebar,
   tabs,
+  tabsIdentity,
   tabsActions,
   viewLifecycle,
   pathDisplay,

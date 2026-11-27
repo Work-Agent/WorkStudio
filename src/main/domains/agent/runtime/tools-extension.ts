@@ -21,7 +21,8 @@ export function createAgentToolsExtension(
     defineTool({
       name: 'ls',
       label: '列出结构',
-      description: 'List structure entries for a resource ref.',
+      description:
+        'List structure entries under a resource ref. Adapters that claim the ref run concurrently and the results are merged; this is not the OS ls.',
       parameters: Type.Object({
         ref: Type.String(),
         limit: Type.Optional(Type.Number()),
@@ -32,7 +33,8 @@ export function createAgentToolsExtension(
     defineTool({
       name: 'find',
       label: '查找结构',
-      description: 'Find structure entries by name/pattern.',
+      description:
+        'Filter structure entries of a resource ref by name pattern. Same aggregation as ls; this is not the OS find.',
       parameters: Type.Object({
         ref: Type.String(),
         query: Type.String(),
@@ -43,7 +45,8 @@ export function createAgentToolsExtension(
     defineTool({
       name: 'read',
       label: '读取内容',
-      description: 'Read content items for a resource ref.',
+      description:
+        'Read content entries for a resource ref; returns items with locators.',
       parameters: Type.Object({
         ref: Type.String(),
         offset: Type.Optional(Type.Number()),
@@ -60,7 +63,8 @@ export function createAgentToolsExtension(
     defineTool({
       name: 'grep',
       label: '内容检索',
-      description: 'Search content entries by query.',
+      description:
+        'Search content entries within a scope; results carry locators.',
       parameters: Type.Object({
         ref: Type.String(),
         query: Type.String(),
@@ -70,8 +74,9 @@ export function createAgentToolsExtension(
     }),
     defineTool({
       name: 'open',
-      label: '打开定位',
-      description: 'Open a resource at a locator returned by grep.',
+      label: '打开资源',
+      description:
+        'Open a resource at a locator in the host UI. Same entry as clicking it in the sidebar, so the user sees exactly what you open.',
       parameters: Type.Object({
         ref: Type.String(),
         locator: Type.Optional(Type.String()),
@@ -83,7 +88,7 @@ export function createAgentToolsExtension(
       name: 'bash',
       label: '执行命令',
       description:
-        'Run a workspace command: ws <domain> <action> <ref> [--arg value].',
+        'The write channel: run an engine command in line form ws <domain>/<resource> <action> <ref> [--arg value]. Not an OS shell; the skill for the document type names the command and its arguments.',
       parameters: Type.Object({
         argv: Type.Array(Type.String()),
       }),
@@ -94,37 +99,6 @@ export function createAgentToolsExtension(
           ...(result.data === undefined ? {} : { data: result.data }),
         });
       },
-    }),
-    defineTool({
-      name: 'command',
-      label: '执行命令',
-      description:
-        'Invoke a command-table entry by domain, action and structured input.',
-      parameters: Type.Object({
-        domain: Type.String(),
-        action: Type.String(),
-        resource: Type.Optional(Type.String()),
-        input: Type.Optional(Type.Any()),
-      }),
-      execute: async (_id, input) => {
-        const result = await tools.command(
-          input.domain,
-          input.action,
-          isRecord(input.input) ? input.input : {},
-          input.resource,
-        );
-        return text(result.stdout, {
-          exitCode: result.exitCode,
-          ...(result.data === undefined ? {} : { data: result.data }),
-        });
-      },
-    }),
-    defineTool({
-      name: 'command_list',
-      label: '命令目录',
-      description: 'List command-table entries with domain, action and args.',
-      parameters: Type.Object({}),
-      execute: async () => text(tools.commandList()),
     }),
     defineTool({
       name: 'browser_open',
@@ -190,10 +164,6 @@ export function createAgentToolsExtension(
   return (pi) => {
     for (const tool of definitions) pi.registerTool(tool);
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function text(value: unknown, details?: unknown) {

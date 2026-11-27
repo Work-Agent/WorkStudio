@@ -63,6 +63,16 @@ export interface NextAppOptions {
   shell?: Omit<ShellHostOptions, 'origins'>;
 }
 
+/** 资源地址的最后一段：标签标题用它的解码形式。 */
+function fileNameOf(ref: string): string {
+  const tail = ref.split(/[?#]/, 1)[0]?.split('/').filter(Boolean).pop() ?? ref;
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
+  }
+}
+
 function seedBuiltins(
   store: PluginStore,
   root: string | undefined,
@@ -191,7 +201,7 @@ export class NextApp {
     this.ipc = ipc;
   }
 
-  /** GUI / agent 共用的定位打开入口：窗口与工作区 1:1。 */
+  /** GUI 与助手共用的定位打开入口：窗口与工作区 1:1。 */
   async openLocation(ref: string, locator?: string): Promise<unknown> {
     const workspaceId = this.shellHost?.activeWindow();
     if (!workspaceId) throw new Error('没有活动窗口');
@@ -199,7 +209,8 @@ export class NextApp {
       {
         key: ref,
         type: 'file',
-        title: ref,
+        // 标签显示文件名，不显示整条 ref。
+        title: fileNameOf(ref),
         meta: { ref, ...(locator ? { locator } : {}) },
       },
       workspaceId,

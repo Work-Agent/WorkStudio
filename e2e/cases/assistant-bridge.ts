@@ -17,6 +17,26 @@ export default defineCase({
         ),
       '助手没有使用 workStudio',
     );
+    // 取数面与助手工具同一契约：页面也有 ls / find / read / grep。
+    const access = await assistant.evaluate(() =>
+      ['ls', 'find', 'read', 'grep'].every(
+        (name) =>
+          typeof (window.workStudio as unknown as Record<string, unknown>)[
+            name
+          ] === 'function',
+      ),
+    );
+    if (!access) throw new Error('页面 bridge 缺少取数面');
+    const listed = await assistant.evaluate(async () => {
+      const registry = (await window.workStudio.subscribe(
+        'workspace',
+        'registry',
+      )) as { current?: { path?: string } };
+      const root = 'file://' + (registry.current?.path ?? '/');
+      const entries = await window.workStudio.ls(root);
+      return Array.isArray(entries) ? entries.length : -1;
+    });
+    if (listed < 0) throw new Error('页面 ls 失败');
     const ok = await assistant.evaluate(async () => {
       const state = (await window.workStudio.subscribe('agent', 'skills')) as {
         catalog?: unknown[];

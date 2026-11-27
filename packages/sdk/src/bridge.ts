@@ -5,6 +5,8 @@
  * 页面只发 domain / resource / action，不指定目标。
  */
 
+import type { ResourceAccess } from './access.ts';
+
 export type CallErrorCode =
   | 'unknown'
   | 'denied'
@@ -51,7 +53,11 @@ export interface FileToken {
   size: number;
 }
 
-export interface WorkStudioBridge {
+/**
+ * 页面与插件拿到的统一入口：取数面（ResourceAccess）+ 订阅 / 命令。
+ * 取数面与助手工具是同一份实现，页面 ls 与助手 ls 看到的结果一致。
+ */
+export interface WorkStudioBridge extends ResourceAccess {
   /** 当前窗口绑定的工作区（窗口与工作区 1:1）；宿主未注入时为 null。 */
   readonly workspaceId: string | null;
   /** 把用户选择的 File 交给宿主托管，返回逻辑层可解析的 token。 */

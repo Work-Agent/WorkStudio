@@ -33,9 +33,16 @@ export type Origin =
       workspaceId?: string;
       /** 插件视图所属插件；由 URL（plugin://<id>/...）推导，不读取入参。 */
       pluginId?: string;
+      /** 内容页打开的那个资源；同样只从 URL 推导，页面改不了。 */
+      ref?: string;
     }
   | { type: 'service'; id: string }
-  | { type: 'tool'; name: string };
+  | {
+      type: 'tool';
+      name: string;
+      /** 已激活的插件技能所属插件：引擎命令的开关。 */
+      skills?: readonly string[];
+    };
 
 export interface ChangeEvent {
   ref: string;

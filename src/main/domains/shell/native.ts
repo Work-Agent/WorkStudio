@@ -410,13 +410,15 @@ export class ShellHost {
     this.views.set(ShellHost.viewKey(windowId, id), entry);
     this.resizeWindow(windowEntry.record.id);
     // 插件页身份只从 URL 推导；页面自身与页面来源都改不了它。
-    const pluginId = input.url ? parsePluginUrl(input.url)?.id : undefined;
+    const pluginUrl = input.url ? parsePluginUrl(input.url) : null;
+    const pluginId = pluginUrl?.id;
     this.options.origins.register(senderId, {
       type: 'view',
       viewId: id,
       viewType: input.type,
       workspaceId: windowEntry.record.workspaceId,
       ...(pluginId ? { pluginId } : {}),
+      ...(pluginUrl?.ref ? { ref: pluginUrl.ref } : {}),
     });
     if (input.type === 'web') {
       // 本地回调（OAuth loopback）命中后收尾：给服务一点时间响应，再关标签页。

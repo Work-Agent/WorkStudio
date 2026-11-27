@@ -5,6 +5,7 @@
  * 变更通过 changed 通知同一 ref 的所有订阅者。
  */
 
+import type { ResourceAccess } from './access.ts';
 import type { ChangeType } from './bridge.ts';
 import type { PluginCredentials } from './credentials.ts';
 
@@ -26,6 +27,8 @@ export interface PluginSettings {
 
 export interface PluginContext {
   fs: PluginFs;
+  /** 取数与助手、页面同一份实现：插件不必自己扫目录。 */
+  access: ResourceAccess;
   settings: PluginSettings;
   /** 供应商凭证：只写不读，范围由清单 `credentials` 声明。 */
   credentials: PluginCredentials;

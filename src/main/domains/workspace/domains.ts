@@ -10,6 +10,8 @@ import type { ResourceNode } from '../../../shared/resources.ts';
 import { CallFailure } from '../../contract.ts';
 import { pending } from '../../registry/command.ts';
 import type { TransportRouter } from '../../transport/router.ts';
+import { TransportAccess } from '../../transport/access.ts';
+import { canonicalRef } from '../../transport/ref.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { WorkspaceRepository } from './repo.ts';
 
@@ -128,24 +130,34 @@ export class WorkspaceScope {
   }
 
   /** `workspace/<wsId>/<ref>`：打开的资源才建立订阅地址。 */
-  openRef(workspaceId: string, ref: string): void {
+  openRef(workspaceId: string, inputRef: string): void {
     const registry = this.registry;
     if (!registry) throw new CallFailure('failed', '注册表未接入');
     if (!workspaceId) throw new CallFailure('failed', '没有当前工作区');
+    const ref = canonicalRef(inputRef);
     const name = refResourceName(workspaceId, ref);
     if (this.opened.has(name)) return;
     this.opened.set(name, { workspaceId, ref, snapshot: null });
-    const resource = registry.define('workspace').resource(name);
+    const domain = registry.define('workspace');
+    const resource = domain.resource(name);
     resource.snapshot(() => this.opened.get(name)?.snapshot ?? null);
     resource.command('refresh', {
       summary: '重新读取资源',
       args: {},
       run: () => this.refreshRef(workspaceId, ref),
     });
+    // 内容页按裸 ref 订阅（`workspace/<ref>`）：同一份快照挂两个地址，
+    // 免得多工作区同开一个 ref 时各自维护一份。
+    if (!domain.resourceOf(ref)) {
+      domain
+        .resource(ref)
+        .snapshot(() => this.opened.get(name)?.snapshot ?? null);
+    }
     void this.refreshRef(workspaceId, ref);
   }
 
-  async refreshRef(workspaceId: string, ref: string): Promise<unknown> {
+  async refreshRef(workspaceId: string, inputRef: string): Promise<unknown> {
+    const ref = canonicalRef(inputRef);
     const name = refResourceName(workspaceId, ref);
     if (!this.opened.has(name)) return null;
     const snapshot = this.transport
@@ -154,14 +166,23 @@ export class WorkspaceScope {
         }))
       : null;
     this.opened.set(name, { workspaceId, ref, snapshot });
-    this.registry?.define('workspace').resource(name).publish();
+    const domain = this.registry?.define('workspace');
+    domain?.resource(name).publish();
+    if (domain?.resourceOf(ref)) domain.resource(ref).publish();
     return snapshot;
   }
 
-  closeRef(workspaceId: string, ref: string): void {
+  closeRef(workspaceId: string, inputRef: string): void {
+    const ref = canonicalRef(inputRef);
     const name = refResourceName(workspaceId, ref);
     this.opened.delete(name);
-    this.registry?.define('workspace').remove(name);
+    const domain = this.registry?.define('workspace');
+    domain?.remove(name);
+    // 裸 ref 别名只在最后一个引用关闭时才撤。
+    const stillOpen = [...this.opened.values()].some(
+      (opened) => opened.ref === ref,
+    );
+    if (!stillOpen && domain?.resourceOf(ref)) domain.remove(ref);
   }
 
   private publish(): void {
@@ -330,6 +351,8 @@ export function defineWorkspaceSearchResource(
     .define('workspace')
     .resource(searchResourceName(workspaceId));
   const scope = () => ({ workspaceId, workspacePath: pathOf() });
+  // 页面 bridge 的 ls / find / read / grep 落到这四个命令上，与助手工具同源。
+  const access = new TransportAccess(transport);
   resource.snapshot(() => ({
     workspaceId: scope().workspaceId,
     workspacePath: scope().workspacePath,
@@ -339,7 +362,7 @@ export function defineWorkspaceSearchResource(
     summary: '列出工作区结构',
     args: { ref: { type: 'string' } },
     run: (input) =>
-      transport.ls(
+      access.ls(
         typeof input.ref === 'string' && input.ref
           ? input.ref
           : fileRefOf(scope().workspacePath),
@@ -349,12 +372,12 @@ export function defineWorkspaceSearchResource(
     summary: '按名称查找工作区资源',
     args: { query: { type: 'string', required: true } },
     run: (input) =>
-      transport.find(fileRefOf(scope().workspacePath), String(input.query)),
+      access.find(fileRefOf(scope().workspacePath), String(input.query)),
   });
   resource.command('read', {
     summary: '读取工作区资源',
     args: { ref: { type: 'string', required: true } },
-    run: (input) => transport.read(String(input.ref)),
+    run: (input) => access.read(String(input.ref)),
   });
   resource.command('grep', {
     summary: '检索工作区内容',
@@ -363,7 +386,7 @@ export function defineWorkspaceSearchResource(
       ref: { type: 'string' },
     },
     run: (input) =>
-      transport.grep(
+      access.grep(
         typeof input.ref === 'string' && input.ref
           ? input.ref
           : fileRefOf(scope().workspacePath),

@@ -1,7 +1,9 @@
 /**
  * 资源树构建：transport 枚举本地文件，或插件提供自定义节点。
  *
- * 文件树是有界的：默认最多 800 个叶子、8 层目录，避免把整个仓库塞进侧栏。
+ * 遍历本身是 `transport/listing.ts` 的整树实现——页面资源树与助手的
+ * ls / find 共用同一套可见性、去重与并发规则；这里只把树投影成
+ * 侧栏需要的节点形状。
  */
 
 import type {
@@ -12,6 +14,7 @@ import type {
   ResourceNode,
   ResourceSource,
 } from '../../../shared/resources.ts';
+import { listTree, type TreeNode } from '../../transport/listing.ts';
 import type { TransportRouter } from '../../transport/router.ts';
 
 export interface TransportTreeOptions {
@@ -20,18 +23,6 @@ export interface TransportTreeOptions {
   maxNodes?: number;
   maxDepth?: number;
 }
-
-const DEFAULT_EXCLUDES = new Set([
-  'node_modules',
-  'sites',
-  'dist',
-  'out',
-  'test-results',
-  'coverage',
-]);
-
-const DEFAULT_MAX_NODES = 800;
-const DEFAULT_MAX_DEPTH = 8;
 
 /** 工作区路径 → file:// ref。 */
 export function fileRef(path: string): string {
@@ -44,72 +35,37 @@ export async function buildTransportRoots(
   rootRef: string,
   options: TransportTreeOptions = {},
 ): Promise<{ roots: ResourceNode[]; count: number }> {
-  const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
-  const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
-  const include = options.include?.length ? new Set(options.include) : null;
-  const exclude = new Set([...DEFAULT_EXCLUDES, ...(options.exclude ?? [])]);
-  const visited = new Set<string>();
-  let count = 0;
-
-  const walk = async (
-    ref: string,
-    relativePath: string,
-    depth: number,
-  ): Promise<ResourceNode[]> => {
-    if (depth > maxDepth || count >= maxNodes) return [];
-    if (visited.has(ref)) return [];
-    visited.add(ref);
-    const entries = await transport.ls(ref, { limit: 500 });
-    const nodes: ResourceNode[] = [];
-    for (const entry of entries) {
-      if (count >= maxNodes) break;
-      const name = entry.name;
-      if (
-        name.startsWith('.') ||
-        name === 'AGENTS.md' ||
-        exclude.has(name) ||
-        (include && !include.has(name))
-      ) {
-        continue;
-      }
-      const childRelative = relativePath ? `${relativePath}/${name}` : name;
-      if (entry.type === 'dir') {
-        const children = await walk(entry.ref, childRelative, depth + 1);
-        if (children.length === 0) continue;
-        nodes.push({
-          key: entry.ref,
-          type: 'dir',
-          title: name,
-          meta: {
-            ref: entry.ref,
-            relativePath: childRelative,
-            ...(entry.modifiedAt ? { updatedAt: entry.modifiedAt } : {}),
-          },
-          children,
-        });
-        continue;
-      }
-      if (entry.type !== 'file') continue;
-      count += 1;
-      nodes.push({
-        key: entry.ref,
-        type: 'file',
-        title: name,
-        meta: {
-          ref: entry.ref,
-          relativePath: childRelative,
-          source: 'docs',
-          sourceLabel: '本地文档',
-          ...(entry.modifiedAt ? { updatedAt: entry.modifiedAt } : {}),
-        },
-        actions: ['open'],
-      });
-    }
-    return nodes;
+  const tree = await listTree(transport, rootRef, options);
+  return {
+    roots: tree.roots.map((node) => projectNode(node, '')),
+    count: tree.count,
   };
+}
 
-  const roots = await walk(rootRef, '', 0);
-  return { roots, count };
+function projectNode(node: TreeNode, parentPath: string): ResourceNode {
+  const entry = node.entry;
+  const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+  const meta = {
+    ref: entry.ref,
+    relativePath,
+    ...(entry.modifiedAt ? { updatedAt: entry.modifiedAt } : {}),
+  };
+  if (entry.type === 'dir') {
+    return {
+      key: entry.ref,
+      type: 'dir',
+      title: entry.name,
+      meta,
+      children: node.children.map((child) => projectNode(child, relativePath)),
+    };
+  }
+  return {
+    key: entry.ref,
+    type: 'file',
+    title: entry.name,
+    meta: { ...meta, source: 'docs', sourceLabel: '本地文档' },
+    actions: ['open'],
+  };
 }
 
 export function countLeaves(nodes: readonly ResourceNode[]): number {

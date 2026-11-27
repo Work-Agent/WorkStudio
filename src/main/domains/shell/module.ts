@@ -124,28 +124,7 @@ export class ShellModule implements DomainModule {
         : {},
     );
     defineNativeResource(registry, this.options.host, this.options.files);
-    definePagesResource(registry, this.options.protocols, async (url) => {
-      const windowId = activeWindowId(registry);
-      if (!windowId) throw new CallFailure('failed', '没有活动窗口');
-      const result = await registry.dispatchCommand(
-        { domain: 'shell', resource: `${windowId}/views` },
-        'open',
-        {
-          id: url,
-          type: 'page',
-          title: url,
-          url,
-        },
-        {
-          origin: { type: 'service', id: 'shell' },
-          changed: (ref, type) => registry.changed(ref, type),
-          log: createLog('shell'),
-        },
-      );
-      if (!result.ok)
-        throw new CallFailure(result.error.code, result.error.message);
-      return result.data;
-    });
+    definePagesResource(registry, this.options.protocols);
     defineAppearanceResource(
       registry,
       this.appearance,

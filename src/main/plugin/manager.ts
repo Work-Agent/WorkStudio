@@ -19,6 +19,7 @@ import type { CallResult, ChangeType } from '../contract.ts';
 import { CallFailure } from '../contract.ts';
 import { createLog } from '../log.ts';
 import type { TransportRouter } from '../transport/router.ts';
+import { TransportAccess } from '../transport/access.ts';
 import type { Address } from '../registry/address.ts';
 import { parseAddress } from '../registry/address.ts';
 import type { CommandContext, CommandInput } from '../registry/command.ts';
@@ -55,6 +56,8 @@ export interface PluginRegistration {
 
 export class PluginManager {
   private credentialPort: ProviderCredentialPort | null = null;
+  /** 插件上下文的取数面：与助手 / 页面同源。 */
+  private readonly access: TransportAccess;
 
   /** 组合根绑定凭证端口；未绑定或未声明时插件调用一律拒绝。 */
   bindCredentials(port: ProviderCredentialPort | null): void {
@@ -126,7 +129,9 @@ export class PluginManager {
     private readonly registry: DomainRegistry,
     private readonly transport: TransportRouter,
     private readonly options: PluginManagerOptions = {},
-  ) {}
+  ) {
+    this.access = new TransportAccess(this.transport);
+  }
 
   /** 激活期登记：把贡献注册成一个 Biz 域；生命周期归 DomainRegistry。 */
   register(pkg: PluginPackage, contribution: PluginContribution): void {
@@ -480,6 +485,7 @@ export class PluginManager {
         read: (ref) => this.transport.readBytes(ref),
         write: (ref, bytes) => this.transport.writeBytes(ref, bytes),
       },
+      access: this.access,
       settings: this.settingsOf(id),
       credentials: this.credentialsFor(pkg),
       changed: (ref, type) => ctx.changed(ref, type),
