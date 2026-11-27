@@ -115,6 +115,8 @@ async function upload(cos, options) {
     }
     const body = await readFile(file);
     const key = `${PREFIX}/${tag}/${name}`;
+    // 跨境上传可能持续很久，先打印开始行，避免看起来像卡住。
+    console.log(`开始上传 ${key}（${(body.length / 1048576).toFixed(1)} MB）`);
     await put(cos, key, body, 'application/octet-stream');
     const info = await stat(file);
     assets[`${PLATFORM_KEYS[platform]}-${arch}`] = {
