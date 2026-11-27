@@ -1,6 +1,6 @@
 {
   "name": "@work-studio/sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "WorkStudio plugin SDK: engine, page and manifest contracts",
   "repository": {
     "type": "git",
