@@ -3,13 +3,14 @@
  *
  * 与 workspace 资源森林完全分开：已安装 / 可安装、安装卸载、任务进度都在这里。
  */
-import { useState } from 'react';
-import { Download, Package, Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Download, Package, Plus } from 'lucide-react';
 import type {
   PluginRegistryEntry,
   PluginRegistrySnapshot,
 } from '@work-studio/sdk';
 import { command, useResource } from '../../../../shared/api/bridge.ts';
+import { useSidebarStore } from '../../domains/sidebar.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
 import { rendererIcon } from '../titlebar/icons.ts';
 
@@ -65,6 +66,7 @@ export function PluginRegistryView({
     'registry',
     INITIAL,
   );
+  const setView = useSidebarStore((s) => s.setView);
   const [source, setSource] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,6 +91,14 @@ export function PluginRegistryView({
 
   const run = (action: string, input?: unknown): Promise<unknown> =>
     command('plugin', 'registry', action, input);
+
+  // 进面板就同步一次目录：用户不该先看到一个「未加载」的中间态。
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || state.catalog.fetchedAt) return;
+    synced.current = true;
+    void act(() => run('refresh'));
+  }, [state.catalog.fetchedAt]);
 
   const install = (entry: PluginRegistryEntry): Promise<void> =>
     act(() => run('install', { id: entry.id }));
@@ -200,10 +210,26 @@ export function PluginRegistryView({
       className="flex flex-col gap-2 px-1 pb-2 text-[12px]"
     >
       <div className="flex items-center gap-1 px-1 pt-1">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+        <button
+          type="button"
+          data-testid="sidebar-back"
+          title="返回资源"
+          onClick={() => setView('main')}
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-[#2a2d2e] dark:hover:text-zinc-100"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span
+          className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400"
+          title={
+            state.catalog.fetchedAt
+              ? '插件目录来自注册表'
+              : '插件目录来自注册表，点右侧「刷新」同步'
+          }
+        >
           {state.catalog.fetchedAt
             ? `${ago(state.catalog.fetchedAt)}更新`
-            : '尚未加载'}
+            : '插件目录未加载'}
           {state.catalog.stale ? ' · 离线缓存' : ''}
         </span>
         <button

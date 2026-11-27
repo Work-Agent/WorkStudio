@@ -52,6 +52,25 @@ export default defineCase({
       };
     });
 
+    // 侧栏视图是渲染层局部状态：先回到资源树，避免上一个用例留下的面板。
+    await ctx.evaluate(async () => {
+      const id = window.workStudio.workspaceId;
+      if (!id) return;
+      await window.workStudio.command('shell', `${id}/layout`, 'scene', {
+        patch: { sidebarCollapsed: false },
+      });
+    });
+    await ctx.expect.poll(
+      async () =>
+        ctx.evaluate(() =>
+          Boolean(
+            document.querySelector('[data-testid="sidebar-nav-resources"]'),
+          ),
+        ),
+      '侧栏未展开',
+    );
+    await ctx.clickTestId('sidebar-nav-resources');
+
     await ctx.expect.poll(async () => {
       const view = (await ctx.evaluate(() => {
         const tree = document.querySelector('[role="tree"]');

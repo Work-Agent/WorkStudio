@@ -1,26 +1,19 @@
 /**
- * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件 / 查找文件 / 搜索内容）。
+ * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件 / 搜索）。
  *
- * 设置入口在 TitleBar；本导航保留资源、插件与两个独立搜索按钮。
+ * 设置入口在 TitleBar；搜索只有一个入口，文件 / 内容在面板内部切换。
  * 形态随 sidebarCollapsed：
  *   展开 = 横向图标条（直接切换）；
  *   收起（56px 图标列）= 单个「当前视图」按钮 + 原生菜单下拉。
  */
 import { useEffect } from 'react';
-import {
-  ChevronDown,
-  FileSearch,
-  Files,
-  Package,
-  TextSearch,
-} from 'lucide-react';
+import { ChevronDown, Files, Package, Search } from 'lucide-react';
 import type { PopupMenuItem } from '../../../../../shared/types.ts';
 import { popupMenu } from '../../../../shared/api/runtime.ts';
 import { useScene } from '../../domains/scene.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
 
-type NavId = 'main' | 'plugins';
-type SearchId = 'find' | 'grep';
+type NavId = 'main' | 'plugins' | 'search';
 
 /** 顶层形态（二级形态 docs / data / web 属于 main 家族）。 */
 const ITEMS = [
@@ -33,30 +26,19 @@ const ITEMS = [
   },
 ] as const;
 
-/** 两个独立搜索入口：文件 / 内容。 */
-const SEARCH_ITEMS = [
-  {
-    id: 'find',
-    label: '查找文件',
-    icon: FileSearch,
-    testId: 'sidebar-nav-find',
-  },
-  {
-    id: 'grep',
-    label: '搜索内容',
-    icon: TextSearch,
-    testId: 'sidebar-nav-grep',
-  },
-] as const;
+/** 唯一的搜索入口：文件 / 内容在面板内部切换。 */
+const SEARCH_ITEM = {
+  id: 'search',
+  label: '搜索',
+  icon: Search,
+  testId: 'sidebar-nav-search',
+} as const;
 
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
 const MENU_SOURCE = 'sidebar-nav';
 
 const isNavId = (value: string): value is NavId =>
-  value === 'main' || value === 'plugins';
-
-const isSearchId = (value: string): value is SearchId =>
-  value === 'find' || value === 'grep';
+  value === 'main' || value === 'plugins' || value === 'search';
 
 function navClass(active: boolean): string {
   return `h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
@@ -72,20 +54,13 @@ export function SidebarNav() {
   const { scene } = useScene();
   const collapsed = scene.sidebarCollapsed ?? false;
   const active =
-    view === 'plugins'
-      ? ITEMS[1]
-      : view === 'find'
-        ? SEARCH_ITEMS[0]
-        : view === 'grep'
-          ? SEARCH_ITEMS[1]
-          : ITEMS[0];
+    view === 'plugins' ? ITEMS[1] : view === 'search' ? SEARCH_ITEM : ITEMS[0];
 
   // 收起态：原生菜单选中回执（source 路由）
   useEffect(() => {
     return popupMenu.onSelect((e) => {
       if (e.source !== MENU_SOURCE) return;
-      if (isSearchId(e.actionId)) setView(e.actionId);
-      else if (isNavId(e.actionId)) setView(e.actionId);
+      if (isNavId(e.actionId)) setView(e.actionId);
     });
   }, [setView]);
 
@@ -95,10 +70,10 @@ export function SidebarNav() {
         id: item.id,
         label: `${view === item.id ? '✓ ' : ''}${item.label}`,
       })),
-      ...SEARCH_ITEMS.map((item) => ({
-        id: item.id,
-        label: `${view === item.id ? '✓ ' : ''}${item.label}`,
-      })),
+      {
+        id: SEARCH_ITEM.id,
+        label: `${view === SEARCH_ITEM.id ? '✓ ' : ''}${SEARCH_ITEM.label}`,
+      },
     ];
     void popupMenu.show({ source: MENU_SOURCE, items });
   };
@@ -142,22 +117,15 @@ export function SidebarNav() {
             );
           })}
           <div className="ml-auto flex items-center gap-0.5">
-            {SEARCH_ITEMS.map((item) => {
-              const isActive = item.id === view;
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  data-testid={item.testId}
-                  data-active={isActive ? 'true' : 'false'}
-                  title={item.label}
-                  onClick={() => setView(isActive ? 'main' : item.id)}
-                  className={navClass(isActive)}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              );
-            })}
+            <button
+              data-testid={SEARCH_ITEM.testId}
+              data-active={view === 'search' ? 'true' : 'false'}
+              title={SEARCH_ITEM.label}
+              onClick={() => setView('search')}
+              className={navClass(view === 'search')}
+            >
+              <SEARCH_ITEM.icon className="w-4 h-4" />
+            </button>
           </div>
         </>
       )}
