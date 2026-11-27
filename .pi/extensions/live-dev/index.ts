@@ -636,24 +636,85 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
     if (child.pid) writeFileSync(DEV_PID, String(child.pid));
   }
 
-  /** 确保窗口就绪：在线复用；离线则清残留后后台拉起，轮询到 CDP 就绪（最长约 60s） */
-  async function ensureDevWindow(ctx: ExtensionContext): Promise<boolean> {
+  /** dev 日志尾巴：拉起失败时直接给出原因，不用再翻日志。 */
+  function devLogTail(lines = 14): string {
+    try {
+      const text = readFileSync(DEV_LOG, 'utf-8')
+        .trimEnd()
+        .split('\n')
+        .slice(-lines)
+        .join('\n');
+      return text ? `\n最近 dev 输出：\n${text}` : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** 拉起的进程还活着吗：单实例锁被占这类启动失败会立刻退出，不必等满超时。 */
+  function devLaunched(): boolean {
+    const pid = readPid();
+    if (!pid) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 单飞：同一时刻只跑一次拉起诉求。 */
+  let ensuring: Promise<boolean> | null = null;
+
+  /**
+   * 确保窗口就绪：在线复用；离线则拉起并轮询到 CDP 就绪。
+   *
+   * 三条硬约束，避免「调用卡住」再次发生：
+   *   - 单飞：并发调用共享同一次拉起，不会互相 kill；
+   *   - 有上限：整次最多约 20s，调用一定有结果；
+   *   - 快失败：进程 4s 内就退出（单实例锁被占、启动报错）立刻清理重试一次，
+   *     再失败就返回 false，由调用方带上日志尾巴报告。
+   */
+  function ensureDevWindow(ctx: ExtensionContext): Promise<boolean> {
+    ensuring ??= (async () => {
+      try {
+        return await ensureDevWindowOnce(ctx);
+      } finally {
+        ensuring = null;
+      }
+    })();
+    return ensuring;
+  }
+
+  async function ensureDevWindowOnce(ctx: ExtensionContext): Promise<boolean> {
     if (await refreshWindowState(ctx)) return true;
     const cwd = ctx.sessionManager.getCwd();
-    killDev(); // 无残留时为空操作
-    startDev(cwd);
-    let retried = false;
-    // 前 12s 细粒度（150ms）抢冷启动尾巴，之后放粗；上限 60s（Windows 冷启动 + 杀软扫盘偏慢）
-    for (let i = 0; i < 400; i++) {
-      await new Promise((r) => setTimeout(r, i < 80 ? 150 : 500));
-      // 12s 仍未就绪：多半是另一个实例占着单实例锁（本扩展拉起的已由 killDev 处理）
-      if (i === 80 && !retried) {
-        retried = true;
-        killOrphanDev(cwd);
-        killDev();
+    const deadline = Date.now() + 20_000;
+    let attempts = 0;
+    let launchedAt = Date.now();
+
+    const launch = (): boolean => {
+      killDev(); // 无残留时为空操作
+      try {
         startDev(cwd);
+      } catch (error) {
+        console.warn('[live-dev] 拉起失败：', error);
+        return false;
       }
+      attempts += 1;
+      launchedAt = Date.now();
+      return true;
+    };
+
+    if (!launch()) return false;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
       if (await refreshWindowState(ctx)) return true;
+      // 刚 spawn 完的几秒内不判死：冷启动、pnpm 解析脚本都要时间。
+      if (devLaunched() || Date.now() - launchedAt < 4_000) continue;
+      // 进程已经退出：多半是残留实例占着锁——清一次、换一次重启机会。
+      if (attempts >= 2) return false;
+      killOrphanDev(cwd);
+      if (!launch()) return false;
     }
     return false;
   }
@@ -872,7 +933,7 @@ export default function liveDevExtension(pi: ExtensionAPI): void {
         const text = changed
           ? online
             ? 'live-dev 模式已开启，dev 窗口已由扩展确保就绪（CDP 127.0.0.1:9222 在线，勿重复拉起）。开发规则已注入系统提示 [LIVE DEV] 部分，等待第一个开发需求即可。'
-            : `live-dev 模式已开启，但 dev 窗口拉起超时（日志：${DEV_LOG}）。可先开始不受影响的工作，或按 [LIVE DEV] 规则自行恢复联通。`
+            : `live-dev 模式已开启，但 dev 窗口没能就绪（日志：${DEV_LOG}）。${devLogTail()}可先开始不受影响的工作，或按 [LIVE DEV] 规则自行恢复联通。`
           : `live-dev 模式已处于开启状态（dev 窗口${online ? '在线' : '离线'}），无需重复开启。`;
         return {
           content: [{ type: 'text', text }],
