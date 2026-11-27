@@ -27,8 +27,8 @@ export interface PageLoginOptions {
   timeoutMs?: number;
 }
 
-const SUCCESS_HTML = `<!doctype html><meta charset="utf-8"><title>登录完成</title>
-<body style="font:14px/1.7 system-ui;padding:48px;text-align:center">
+const SUCCESS_HTML = `<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>登录完成</title>
+<body style="font:14px/1.7 system-ui;padding:48px;text-align:center;background:Canvas;color:CanvasText">
 <h2>登录完成</h2><p>凭证已交给 WorkStudio，可以关闭此页面。</p></body>`;
 
 const FAILURE_HTML = `<!doctype html><meta charset="utf-8"><title>登录失败</title>

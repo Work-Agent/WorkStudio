@@ -215,7 +215,9 @@ export class AgentApp {
     const key =
       credential?.type === 'api_key' ? credential.key : credential?.access;
     if (!key) throw new Error(`供应商未登录：${providerId}`);
-    const response = await fetch(new URL('models', baseUrl), {
+    const endpoint = new URL(baseUrl);
+    endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/`;
+    const response = await fetch(new URL('models', endpoint), {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(8000),
     });
