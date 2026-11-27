@@ -172,26 +172,14 @@ export function SnapshotsPanel({
     if (adding) inputRef.current?.focus();
   }, [adding]);
 
-  /** 打开一条快照：快照文件是 .md，交给 markdown 编辑器；旧缓存回落到只读视图。 */
+  /** 打开一条快照：`sites://…md` 由站点引擎供给，markdown 编辑器承接渲染。 */
   const openSnapshot = (item: SnapshotEntry): void => {
     if (!wsId) return;
-    const title = item.title || hostOf(item.url);
-    if (item.ref.startsWith('file://')) {
-      void openResourceNode({
-        key: item.ref,
-        type: 'file',
-        title,
-        meta: { ref: item.ref },
-      }).catch((reason: unknown) =>
-        notifyError(errorText(reason), 'snapshots'),
-      );
-      return;
-    }
-    void command('shell', `${wsId}/views`, 'open', {
-      id: item.ref,
-      type: 'page',
-      title,
-      url: item.ref,
+    void openResourceNode({
+      key: item.ref,
+      type: 'file',
+      title: item.title || hostOf(item.url),
+      meta: { ref: item.ref },
     }).catch((reason: unknown) => notifyError(errorText(reason), 'snapshots'));
   };
 

@@ -5,6 +5,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { snapshotFileName, snapshotKey } from './snapshot-doc.ts';
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile, writeJson } from '../platform/json.ts';
@@ -28,6 +29,20 @@ export class WebCache {
   /** 快照的只读投影地址；来源地址与资源地址不重合。 */
   refOf(url: string): string {
     return `work://studio/snapshot?url=${encodeURIComponent(url)}`;
+  }
+
+  /** 快照的资源地址：域 → 页两级，`.md` 后缀让 markdown 插件认领。 */
+  refOfPage(url: string): string {
+    return `sites://${snapshotFileName(url)}`;
+  }
+
+  /** 快照文档 → 资源地址；优先用已落盘的文件名，保证同一页只有一个地址。 */
+  refOfDoc(doc: SnapshotDoc): string {
+    const file = doc.fileRef ?? '';
+    const marker = '/sites/';
+    const index = file.indexOf(marker);
+    if (index >= 0) return `sites://${file.slice(index + marker.length)}`;
+    return this.refOfPage(doc.url);
   }
 
   async get(url: string): Promise<SnapshotDoc | null> {
@@ -55,11 +70,21 @@ export class WebCache {
     rmSync(this.fileOf(sourceUrlOf(url)), { force: true });
   }
 
-  /** 删除某个域名的全部快照（缓存文件）。 */
+  /** 删除某个域名的全部快照（按目录逐个删，含旧 key 的残留文件）。 */
   removeDomain(domain: string): void {
-    for (const doc of this.list()) {
+    let names: string[];
+    try {
+      names = readdirSync(this.directory);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const path = join(this.directory, name);
+      const doc = readJsonFile<SnapshotDoc>(path);
+      if (!doc || typeof doc.url !== 'string') continue;
       try {
-        if (new URL(doc.url).hostname === domain) this.remove(doc.url);
+        if (new URL(doc.url).hostname === domain) rmSync(path, { force: true });
       } catch {
         /* 坏地址跳过 */
       }
@@ -82,12 +107,29 @@ export class WebCache {
       if (typeof doc.markdown !== 'string') continue;
       docs.push(doc);
     }
-    return docs.sort((a, b) => b.capturedAt - a.capturedAt);
+    docs.sort((a, b) => b.capturedAt - a.capturedAt);
+    // 快照身份是 origin + pathname：同一页的不同 query 只保留最新一份。
+    const seen = new Set<string>();
+    return docs.filter((doc) => {
+      const key = pageKey(doc.url);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   private fileOf(url: string): string {
-    const key = createHash('sha1').update(url).digest('hex');
+    const key = createHash('sha1').update(pageKey(url)).digest('hex');
     return join(this.directory, `${key}.json`);
+  }
+}
+
+/** 快照身份：origin + pathname；无法解析时退回原值。 */
+function pageKey(value: string): string {
+  try {
+    return snapshotKey(sourceUrlOf(value));
+  } catch {
+    return value;
   }
 }
 

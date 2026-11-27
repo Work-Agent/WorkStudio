@@ -189,10 +189,6 @@ export class WorkspaceScope {
     this.transport?.setWorkspaceRoots(
       [...this.known.values()].map((meta) => meta.path),
     );
-    // 网页快照写在应用管理的 `sites/`：可写根跟着已知工作区一起更新。
-    this.transport?.setWriteRoots(
-      [...this.known.keys()].map((id) => this.repo.sitesDir(id)),
-    );
     this.registry?.define('workspace').resource('registry').publish();
   }
 }

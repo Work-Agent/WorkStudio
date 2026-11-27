@@ -11,7 +11,6 @@ import type { DomainModule } from '../../registry/module.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import { session } from 'electron';
-import { createHash } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +20,10 @@ import {
   writeWorkspacePolicy,
 } from '../../platform/preferences.ts';
 import { BrowserCapability } from './capability.ts';
+import {
+  snapshotFileName,
+  snapshotMarkdown,
+} from '../../transport/snapshot-doc.ts';
 import {
   createAutomationStates,
   createCaptureStates,
@@ -36,52 +39,6 @@ import {
   type CaptureStates,
   type PolicyState,
 } from './domains.ts';
-
-/** 文件名 = 域名 / 路径 slug + URL 哈希：同一地址重抓覆盖同一份。 */
-function snapshotFileName(url: string): string {
-  const parsed = new URL(url);
-  const domain = parsed.hostname || 'site';
-  const segments = parsed.pathname.split('/').filter(Boolean);
-  const tail = segments.at(-1) ?? 'index';
-  const slug =
-    tail
-      .replace(/\.[a-z0-9]+$/i, '')
-      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
-      .slice(0, 48) || 'index';
-  const hash = createHash('sha1').update(url).digest('hex').slice(0, 8);
-  return `${domain}/${slug}-${hash}.md`;
-}
-
-/** 快照文件：头部固定来源信息，正文是提取出来的 Markdown。 */
-function snapshotMarkdown(doc: {
-  url: string;
-  title: string;
-  excerpt?: string;
-  markdown: string;
-  capturedAt: number;
-  icon?: string;
-}): string {
-  const domain = (() => {
-    try {
-      return new URL(doc.url).hostname;
-    } catch {
-      return '';
-    }
-  })();
-  const front = [
-    '---',
-    `url: ${JSON.stringify(doc.url)}`,
-    `title: ${JSON.stringify(doc.title)}`,
-    ...(doc.excerpt ? [`excerpt: ${JSON.stringify(doc.excerpt)}`] : []),
-    `domain: ${JSON.stringify(domain)}`,
-    `capturedAt: ${JSON.stringify(new Date(doc.capturedAt).toISOString())}`,
-    ...(doc.icon ? [`icon: ${JSON.stringify(doc.icon)}`] : []),
-    '---',
-    '',
-    '',
-  ].join('\n');
-  return `${front}${doc.markdown.trim()}\n`;
-}
 
 export class BrowserModule implements DomainModule {
   readonly id = 'browser';

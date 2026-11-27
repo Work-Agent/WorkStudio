@@ -33,8 +33,6 @@ export class WorkspaceFiles implements ResourceAdapter {
   private root: string;
   /** 已登记的工作区根：读操作可跨工作区（多窗口并行）。 */
   private roots: string[];
-  /** 额外可写根（如应用管理的 `sites/`）：缺省只有当前工作区。 */
-  private writes: string[] = [];
 
   constructor(root: string) {
     this.root = resolve(root);
@@ -48,11 +46,6 @@ export class WorkspaceFiles implements ResourceAdapter {
 
   setRoots(roots: readonly string[]): void {
     this.roots = roots.map((root) => resolve(root));
-  }
-
-  /** 应用管理的可写目录（网页快照）；随工作区切换重设。 */
-  setWriteRoots(roots: readonly string[]): void {
-    this.writes = roots.map((root) => resolve(root));
   }
 
   refOf(path: string): string {
@@ -202,7 +195,7 @@ export class WorkspaceFiles implements ResourceAdapter {
       throw new CallFailure('invalid', `不是 file:// 地址：${ref}`);
     }
     const absolute = resolve(path);
-    const roots = access === 'read' ? this.roots : [this.root, ...this.writes];
+    const roots = access === 'read' ? this.roots : [this.root];
     if (!roots.some((root) => isWithin(root, absolute))) {
       throw new CallFailure('denied', `路径不在工作区：${ref}`);
     }

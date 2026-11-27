@@ -394,7 +394,8 @@ export function defineWebResource(
         const file = await save(page.url);
         cache.attachFile(page.url, file.ref);
         resource.publish();
-        return file;
+        const doc = await cache.get(page.url);
+        return { ref: doc ? cache.refOfDoc(doc) : file.ref };
       }
       resource.publish();
       return saved;

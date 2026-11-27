@@ -17,6 +17,7 @@ import type { DomainUpdate } from './contract.ts';
 import type { ResourceNode } from '../shared/resources.ts';
 import { TransportRouter } from './transport/router.ts';
 import { WebCache } from './transport/web-cache.ts';
+import { registerSitesAdapter } from './transport/sites.ts';
 import { WorkspaceFiles } from './transport/workspace-files.ts';
 import { registerSystemModules, type SettingsPage } from './composition.ts';
 import { createStorageLayout, type StorageLayout } from './platform/paths.ts';
@@ -127,8 +128,9 @@ export class NextApp {
 
     const files = new WorkspaceFiles(options.workspaceRoot ?? process.cwd());
     this.transport = new TransportRouter(files);
-    // 工作区文件是内建传输适配器；内容读取经由 ref → 域 → adapter。
+    // 内建传输适配器：工作区文件与站点快照；内容读取经由 ref → 域 → adapter。
     this.transport.register('files', files, [{ prefixes: ['file://'] }]);
+    registerSitesAdapter(this.transport, this.cache);
 
     this.pluginStore = new PluginStore(this.storage);
     this.builtinPluginIds = seedBuiltins(

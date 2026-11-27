@@ -133,10 +133,26 @@ export const captureCase = defineCase({
         return result.data as { ref: string };
       }, url);
       if (
-        !captured.ref.startsWith('file://') ||
+        !captured.ref.startsWith('sites://') ||
         !captured.ref.endsWith('.md')
       ) {
-        throw new Error(`快照文件地址不对：${captured.ref}`);
+        throw new Error(`快照资源地址不对：${captured.ref}`);
+      }
+
+      // 助手通道：sites:// 就是取数面，ls 能逐级看到域与页。
+      const listing = await ctx.evaluate(async () => {
+        const domains = await window.workStudio.ls('sites://');
+        const pages = await window.workStudio.ls('sites://127.0.0.1');
+        return {
+          domains: domains.map((entry) => entry.name),
+          pages: pages.map((entry) => entry.ref),
+        };
+      });
+      if (!listing.domains.includes('127.0.0.1')) {
+        throw new Error(`sites:// 根没有域名：${listing.domains.join(',')}`);
+      }
+      if (!listing.pages.includes(captured.ref)) {
+        throw new Error(`sites:// 域下没有页面：${listing.pages.join(',')}`);
       }
 
       // 文件资源树里出现同一个「域 → 页」分组：点页面走实时网页。
@@ -242,8 +258,65 @@ export const captureCase = defineCase({
         }
       }
 
-      // 同域的第二个页面：站点删除要一次清掉整棵站点。
-      const second = `${url}?page=2`;
+      // 同一页换 query：更新同一份快照，不新增条目。
+      const variant = `${url}?page=2`;
+      await ctx.evaluate(async (input) => {
+        const windowId = window.workStudio.workspaceId;
+        await window.workStudio.command('browser', `${windowId}/tabs`, 'open', {
+          url: input as string,
+        });
+      }, variant);
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async () => {
+            const windowId = window.workStudio.workspaceId;
+            const page = (await window.workStudio.command(
+              'browser',
+              `${windowId}/tabs`,
+              'read',
+              {},
+            )) as { ok: boolean; data?: { text?: string } };
+            return page.ok && (page.data?.text ?? '').includes('季度报告');
+          }),
+        'query 变体页面没有就绪',
+      );
+      const variantRef = await ctx.evaluate(async (input) => {
+        const result = await window.workStudio.command(
+          'web',
+          'web',
+          'capture',
+          { url: input as string },
+        );
+        if (!result.ok) throw new Error(result.error.message);
+        return (result.data as { ref: string }).ref;
+      }, variant);
+      if (variantRef !== captured.ref) {
+        throw new Error(
+          `同一页换 query 换了地址：${variantRef} ≠ ${captured.ref}`,
+        );
+      }
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async (base) => {
+            const result = await window.workStudio.command(
+              'web',
+              'web',
+              'list',
+              {},
+            );
+            if (!result.ok) return false;
+            const items = result.data as Array<{ url: string }>;
+            // 路径相同 → 只有一条，且 url 是最后一次采集的那个 query。
+            const samePath = items.filter((item) =>
+              (item.url as string).startsWith(base as string),
+            );
+            return samePath.length === 1 && samePath[0]!.url.endsWith('page=2');
+          }, url),
+        '同一路径的不同 query 没有合并成一份快照',
+      );
+
+      // 同域的第二个路径：站点删除要一次清掉整棵站点。
+      const second = url.replace(/\/report$/, '/other');
       await ctx.evaluate(async (input) => {
         const windowId = window.workStudio.workspaceId;
         await window.workStudio.command('browser', `${windowId}/tabs`, 'open', {

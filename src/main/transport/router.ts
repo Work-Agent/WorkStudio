@@ -45,10 +45,6 @@ export class TransportRouter {
     this.workspace.setRoots(roots);
   }
 
-  setWriteRoots(roots: readonly string[]): void {
-    this.workspace.setWriteRoots(roots);
-  }
-
   /** 域注册自己的传输适配器；同一域可覆盖旧实现（热更新）。 */
   register(
     domain: string,

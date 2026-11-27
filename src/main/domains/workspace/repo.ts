@@ -38,11 +38,6 @@ export class WorkspaceRepository {
     private readonly defaultWorkspacePath?: string,
   ) {}
 
-  /** 应用管理的站点快照目录。 */
-  sitesDir(workspaceId: string): string {
-    return this.layout.sitesDir(workspaceId);
-  }
-
   list(): WorkspaceMeta[] {
     const root = this.layout.workspacesRoot;
     if (!existsSync(root)) return [];
