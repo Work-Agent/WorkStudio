@@ -8,15 +8,21 @@
 export const THEME_GATE_STYLE =
   'html{background:#f4f4f5;color-scheme:light}@media (prefers-color-scheme:dark){html{background:#1a1c1d;color-scheme:dark}}';
 
+/**
+ * 注入标记：不能拿 `prefers-color-scheme` 当判据——插件自己的样式表也常带
+ * 这条媒体查询，会把首帧底色误判成「已注入」而跳过。
+ */
+export const THEME_GATE_MARKER = 'data-theme-gate';
+
 /** 是否已经带首帧底色（避免重复注入）。 */
 export function hasThemeGate(html: string): boolean {
-  return html.includes('prefers-color-scheme:dark');
+  return html.includes(THEME_GATE_MARKER);
 }
 
 /** 在 <head> 后注入首帧底色；没有 head 时插到文档开头。 */
 export function injectThemeGate(html: string): string {
   if (hasThemeGate(html)) return html;
-  const style = `<style>${THEME_GATE_STYLE}</style>`;
+  const style = `<style ${THEME_GATE_MARKER}>${THEME_GATE_STYLE}</style>`;
   return html.includes('<head>')
     ? html.replace('<head>', `<head>${style}`)
     : `${style}${html}`;

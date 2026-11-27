@@ -33,13 +33,18 @@ function renamePiNodeGlobals(): Plugin {
 function initialThemeBackground(): Plugin {
   const style =
     'html{background:#f4f4f5;color-scheme:light}@media (prefers-color-scheme:dark){html{background:#1a1c1d;color-scheme:dark}}';
+  // 标记而不能用媒体查询当判据：页面自己的 CSS 也常带 prefers-color-scheme。
+  const marker = 'data-theme-gate';
   return {
     name: 'ws-initial-theme-background',
     transformIndexHtml: {
       order: 'pre',
       handler(html: string) {
-        if (html.includes('prefers-color-scheme:dark')) return html;
-        return html.replace('<head>', `<head><style>${style}</style>`);
+        if (html.includes(marker)) return html;
+        return html.replace(
+          '<head>',
+          `<head><style ${marker}>${style}</style>`,
+        );
       },
     },
   };
