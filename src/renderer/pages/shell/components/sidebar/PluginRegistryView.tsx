@@ -100,6 +100,16 @@ export function PluginRegistryView({
     void act(() => run('refresh'));
   }, [state.catalog.fetchedAt]);
 
+  // 装成功不留「安装完成 x/x」的卡片：结果已经在已安装列表里。
+  // 失败 / 取消保留，那才是用户唯一线索。
+  useEffect(() => {
+    if (!task || task.status !== 'ready') return;
+    const timer = setTimeout(() => {
+      void run('clearTask').catch(() => undefined);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [task?.id, task?.status]);
+
   const install = (entry: PluginRegistryEntry): Promise<void> =>
     act(() => run('install', { id: entry.id }));
 
