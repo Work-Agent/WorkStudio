@@ -657,6 +657,8 @@ function ModelsCard() {
   const [baseUrl, setBaseUrl] = useState('');
   const [providerQuery, setProviderQuery] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  // 集成供应商里未配置的一大批默认收起，点分隔行再展开。
+  const [showOthers, setShowOthers] = useState(false);
   const [keyFor, setKeyFor] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -727,87 +729,31 @@ function ModelsCard() {
   );
   type ProviderRow =
     | { kind: 'provider'; provider: ProviderView }
-    | { kind: 'divider'; label: string };
+    | { kind: 'divider'; count: number; expanded: boolean };
+  // 有已配置的供应商时，其余收进分隔行；筛选时直接展开结果。
+  const grouped = credentialProviders.length > 0 && otherProviders.length > 0;
+  const othersVisible =
+    !grouped || showOthers || providerQuery.trim().length > 0;
   const providerRows: ProviderRow[] = [
-    ...credentialProviders.map(
+    ...(grouped ? credentialProviders : []).map(
       (provider): ProviderRow => ({ kind: 'provider', provider }),
     ),
-    ...(credentialProviders.length > 0 && otherProviders.length > 0
-      ? [{ kind: 'divider' as const, label: '未登录 / 未配置' }]
+    ...(grouped
+      ? [
+          {
+            kind: 'divider' as const,
+            count: otherProviders.length,
+            expanded: othersVisible,
+          },
+        ]
       : []),
-    ...otherProviders.map(
+    ...(grouped ? (othersVisible ? otherProviders : []) : matchedProviders).map(
       (provider): ProviderRow => ({ kind: 'provider', provider }),
     ),
   ];
 
   return (
     <Panel>
-      <Section title="新增 / 更新自定义供应商">
-        <div className="flex gap-2">
-          <input
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
-            placeholder="provider id（小写）"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <input
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="https://api.example.com/v1"
-            className="min-w-0 flex-[2] rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <Button
-            disabled={!providerId.trim() || !baseUrl.trim() || busy !== null}
-            onClick={() =>
-              void run('agent', 'providers', 'save', {
-                providerId: providerId.trim(),
-                config: { baseUrl: baseUrl.trim() },
-              })
-                .then(() => {
-                  setProviderId('');
-                  setBaseUrl('');
-                })
-                .catch(report)
-            }
-          >
-            保存
-          </Button>
-        </div>
-        <div className="mt-2 space-y-1">
-          {Object.entries(config.providers).map(([id, provider]) => (
-            <div
-              key={id}
-              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
-            >
-              <span className="min-w-0 flex-1 truncate font-mono">
-                {id}
-                {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
-              </span>
-              <Button
-                onClick={() => {
-                  setProviderId(id);
-                  setBaseUrl(provider.baseUrl ?? '');
-                }}
-              >
-                编辑
-              </Button>
-              <Button
-                onClick={() =>
-                  void run('agent', 'providers', 'delete', {
-                    providerId: id,
-                  }).catch(report)
-                }
-              >
-                删除
-              </Button>
-            </div>
-          ))}
-          {Object.keys(config.providers).length === 0 && (
-            <p className="text-[11px] text-zinc-500">暂无自定义供应商</p>
-          )}
-        </div>
-      </Section>
-
       <Section title="供应商">
         <input
           value={providerQuery}
@@ -819,13 +765,21 @@ function ModelsCard() {
           {providerRows.map((row) => {
             if (row.kind === 'divider') {
               return (
-                <div
+                <button
                   key="provider-divider"
-                  className="flex items-center gap-2 pt-1 text-[10px] text-zinc-400 dark:text-zinc-500"
+                  type="button"
+                  data-testid="providers-unconfigured-toggle"
+                  onClick={() => setShowOthers((value) => !value)}
+                  className="flex w-full items-center gap-2 pt-1 pb-0.5 text-[10px] text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
                 >
-                  <span>{row.label}</span>
+                  <ChevronRight
+                    className={`h-3 w-3 transition-transform ${
+                      row.expanded ? 'rotate-90' : ''
+                    }`}
+                  />
+                  <span>未登录 / 未配置 · {row.count}</span>
                   <span className="h-px flex-1 bg-zinc-200 dark:bg-[#2c3039]" />
-                </div>
+                </button>
               );
             }
             const provider = row.provider;
@@ -972,6 +926,71 @@ function ModelsCard() {
           })}
           {models.providers.length === 0 && (
             <p className="text-[12px] text-zinc-500">暂无供应商目录</p>
+          )}
+        </div>
+      </Section>
+      <Section title="新增 / 更新自定义供应商">
+        <div className="flex gap-2">
+          <input
+            value={providerId}
+            onChange={(event) => setProviderId(event.target.value)}
+            placeholder="provider id（小写）"
+            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
+          />
+          <input
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="https://api.example.com/v1"
+            className="min-w-0 flex-[2] rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
+          />
+          <Button
+            disabled={!providerId.trim() || !baseUrl.trim() || busy !== null}
+            onClick={() =>
+              void run('agent', 'providers', 'save', {
+                providerId: providerId.trim(),
+                config: { baseUrl: baseUrl.trim() },
+              })
+                .then(() => {
+                  setProviderId('');
+                  setBaseUrl('');
+                })
+                .catch(report)
+            }
+          >
+            保存
+          </Button>
+        </div>
+        <div className="mt-2 space-y-1">
+          {Object.entries(config.providers).map(([id, provider]) => (
+            <div
+              key={id}
+              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono">
+                {id}
+                {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
+              </span>
+              <Button
+                onClick={() => {
+                  setProviderId(id);
+                  setBaseUrl(provider.baseUrl ?? '');
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                onClick={() =>
+                  void run('agent', 'providers', 'delete', {
+                    providerId: id,
+                  }).catch(report)
+                }
+              >
+                删除
+              </Button>
+            </div>
+          ))}
+          {Object.keys(config.providers).length === 0 && (
+            <p className="text-[11px] text-zinc-500">暂无自定义供应商</p>
           )}
         </div>
       </Section>
