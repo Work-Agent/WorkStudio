@@ -1,7 +1,7 @@
 /**
- * browser 模块的 Domain：browser · policy · automation · capture · web。
+ * browser 模块的 Domain：browser · automation · capture · web。
  *
- * browser 服务的 resources：tabs · policy · automation · capture；
+ * browser 服务的 resources：tabs · automation · capture；
  * web 是独立的内建 Biz Domain：读快照、检索、采集与保存。
  */
 
@@ -80,43 +80,6 @@ export function defineTabsResources(
       registry.define('browser').remove(tabsResourceName(windowId));
     },
   };
-}
-
-// ─── policy ──────────────────────────────────────────────────
-
-export interface PolicyState {
-  allowlist: string[];
-}
-
-export function createPolicyState(): PolicyState {
-  return { allowlist: [] };
-}
-
-export function definePolicyResource(
-  registry: DomainRegistry,
-  state: PolicyState,
-  persist?: (allowlist: string[]) => void,
-): void {
-  const resource = registry.define('browser').resource('policy');
-  resource.snapshot(() => ({ allowlist: state.allowlist }));
-  resource.command('set', {
-    summary: '更新导航白名单',
-    args: {},
-    run: (input) => {
-      if (Array.isArray(input.allowlist)) {
-        state.allowlist = [
-          ...new Set(
-            input.allowlist.filter(
-              (value): value is string => typeof value === 'string',
-            ),
-          ),
-        ];
-        persist?.(state.allowlist);
-        resource.patch({ allowlist: state.allowlist });
-      }
-      return { allowlist: state.allowlist };
-    },
-  });
 }
 
 // ─── automation ──────────────────────────────────────────────

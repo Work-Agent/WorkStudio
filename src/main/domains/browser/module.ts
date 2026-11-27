@@ -14,11 +14,7 @@ import { session } from 'electron';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  readUserPreferences,
-  readWorkspacePolicy,
-  writeWorkspacePolicy,
-} from '../../platform/preferences.ts';
+import { readUserPreferences } from '../../platform/preferences.ts';
 import { BrowserCapability } from './capability.ts';
 import {
   snapshotFileName,
@@ -27,24 +23,20 @@ import {
 import {
   createAutomationStates,
   createCaptureStates,
-  createPolicyState,
   defineAutomationResources,
   defineTabsResources,
   defineCaptureResources,
-  definePolicyResource,
   defineWebResource,
   registerWebAdapter,
   unregisterWebAdapter,
   type AutomationStates,
   type CaptureStates,
-  type PolicyState,
 } from './domains.ts';
 
 export class BrowserModule implements DomainModule {
   readonly id = 'browser';
   readonly dependencies = ['shell', 'workspace'] as const;
 
-  private readonly policy: PolicyState = createPolicyState();
   private readonly automation: AutomationStates = createAutomationStates();
   private readonly capture: CaptureStates = createCaptureStates();
   private readonly windowResources = new Set<string>();
@@ -76,7 +68,6 @@ export class BrowserModule implements DomainModule {
   attach(registry: DomainRegistry): void {
     this.registry = registry;
     this.tabResources = defineTabsResources(registry, this.capability);
-    definePolicyResource(registry, this.policy);
     this.automationResources = defineAutomationResources(
       registry,
       this.automation,
@@ -96,19 +87,9 @@ export class BrowserModule implements DomainModule {
     registerWebAdapter(this.transport, this.cache);
     const registry = this.registry;
     if (registry) {
-      this.loadPolicy();
       if (this.layout) {
         this.applyProxy(readUserPreferences(this.layout).proxy);
       }
-      this.offWorkspace = registry.onUpdate((update) => {
-        if (
-          update.domain === 'workspace' &&
-          update.resource === 'registry' &&
-          update.type === 'snapshot'
-        ) {
-          this.loadPolicy();
-        }
-      });
       // 标签 / 自动化 / 采集按窗口资源化，跟随窗口生命周期。
       this.offWindows = registry.onUpdate((update) => {
         if (
@@ -169,7 +150,6 @@ export class BrowserModule implements DomainModule {
     this.tabResources = null;
     this.automationResources = null;
     this.captureResources = null;
-    this.policy.allowlist = [];
     this.automation.byWindow.clear();
     this.capture.byWindow.clear();
     this.registry = null;
@@ -238,37 +218,6 @@ export class BrowserModule implements DomainModule {
       await rm(join(layout.sitesDir(id), domain), {
         recursive: true,
         force: true,
-      });
-    }
-  }
-
-  private loadPolicy(): void {
-    const registry = this.registry;
-    const layout = this.layout;
-    if (!registry || !layout) return;
-    const snapshot = registry.snapshot({
-      domain: 'workspace',
-      resource: 'registry',
-    }) as { current?: { id?: string } | null } | null;
-    const workspaceId = snapshot?.current?.id;
-    this.policy.allowlist = workspaceId
-      ? readWorkspacePolicy(layout, workspaceId).browser.allowlist
-      : [];
-    registry.define('browser').resource('policy').publish();
-  }
-
-  private persist(allowlist: string[]): void {
-    const registry = this.registry;
-    const layout = this.layout;
-    if (!registry || !layout) return;
-    const snapshot = registry.snapshot({
-      domain: 'workspace',
-      resource: 'registry',
-    }) as { current?: { id?: string } | null } | null;
-    const workspaceId = snapshot?.current?.id;
-    if (workspaceId) {
-      writeWorkspacePolicy(layout, workspaceId, {
-        browser: { allowlist },
       });
     }
   }

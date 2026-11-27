@@ -1361,114 +1361,6 @@ function SkillsCard() {
   );
 }
 
-function flattenResourceNodes(
-  nodes: import('@work-studio/sdk').ResourceNode[],
-): import('@work-studio/sdk').ResourceNode[] {
-  return nodes.flatMap((node) =>
-    node.children?.length ? flattenResourceNodes(node.children) : [node],
-  );
-}
-
-function BrowserCard() {
-  const policy = useResource<{ allowlist: string[] }>('browser', 'policy', {
-    allowlist: [],
-  });
-  const lists = useResourceForest();
-  const sites = lists.filter((group) => group.definitionId === 'web');
-  const [domain, setDomain] = useState('');
-  const save = async (allowlist: string[]): Promise<void> => {
-    await run('browser', 'policy', 'set', { allowlist });
-  };
-  return (
-    <Panel>
-      <Section title="归档白名单">
-        <div className="flex gap-2">
-          <input
-            value={domain}
-            onChange={(event) => setDomain(event.target.value)}
-            placeholder="example.com"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <Button
-            disabled={!domain.trim()}
-            onClick={() => {
-              void save([...policy.allowlist, domain.trim()]).then(() =>
-                setDomain(''),
-              );
-            }}
-          >
-            添加域名
-          </Button>
-        </div>
-        <div className="mt-2 space-y-1">
-          {policy.allowlist.map((item) => (
-            <div
-              key={item}
-              className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-[11px] dark:border-[#2c3039]"
-            >
-              <span className="min-w-0 flex-1 font-mono">{item}</span>
-              <Button
-                onClick={() =>
-                  void save(policy.allowlist.filter((value) => value !== item))
-                }
-              >
-                移除
-              </Button>
-            </div>
-          ))}
-          {policy.allowlist.length === 0 && (
-            <p className="text-[12px] text-zinc-500">暂无白名单域名</p>
-          )}
-        </div>
-      </Section>
-      <Section title="站点资料">
-        <div className="space-y-2">
-          {sites.map((group) => (
-            <div key={group.id}>
-              <div className="mb-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
-                {group.label} · {group.countLabel}
-              </div>
-              <div className="space-y-1">
-                {flattenResourceNodes(group.roots)
-                  .slice(0, 20)
-                  .map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() =>
-                        void openResourceNode(item).catch((error: unknown) =>
-                          notifyError(
-                            error instanceof Error
-                              ? error.message
-                              : String(error),
-                            'browser',
-                          ),
-                        )
-                      }
-                      className="flex w-full items-center gap-2 rounded border border-zinc-200 px-2 py-1.5 text-left text-[11px] hover:border-[#4F6BED]/60 dark:border-[#2c3039]"
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {item.title}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-zinc-400">
-                        {String(item.meta?.['url'] ?? '')}
-                      </span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          ))}
-          {sites.length === 0 && (
-            <p className="text-[12px] text-zinc-500">
-              暂无站点资料；浏览器采集后会出现在这里。
-            </p>
-          )}
-        </div>
-      </Section>
-    </Panel>
-  );
-}
-
 function ResourcesCard() {
   const workspace = useResource<WorkspaceMeta | null>(
     'workspaces',
@@ -1571,9 +1463,7 @@ function PreferencesCard() {
           <Button onClick={save}>保存 App 默认</Button>
         </div>
       </Section>
-      <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
-        技能开关请使用「技能」卡片；浏览器白名单在「网站采集」。
-      </p>
+      <p className="text-[12px] text-zinc-500 dark:text-zinc-400"></p>
     </Panel>
   );
 }
@@ -1900,7 +1790,6 @@ const CONTENT: Record<string, () => ReactNode> = {
   sessions: () => <SessionsCard />,
   models: () => <ModelsCard />,
   skills: () => <SkillsCard />,
-  browser: () => <BrowserCard />,
   resources: () => <ResourcesCard />,
   updates: () => <UpdatesCard />,
   preferences: () => <PreferencesCard />,

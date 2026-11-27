@@ -27,12 +27,6 @@ export const DEFAULT_SETTINGS_PAGES: SettingsPage[] = [
     icon: 'sliders',
   },
   {
-    id: 'browser',
-    label: '网站采集',
-    desc: '归档白名单 · 域名分组',
-    icon: 'globe',
-  },
-  {
     id: 'updates',
     label: '关于与更新',
     desc: '版本检查 · 安装包下载',
