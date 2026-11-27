@@ -30,7 +30,13 @@ import '../../shared/styles/index.css';
 import { bridge } from './bridge.ts';
 import { matchCommands, runBuiltinCommand, useCommands } from './commands.ts';
 import { DockResizeHandle, MessageRow, ResizeHandles } from './components.tsx';
-import { formatTokens, tabLabel } from './format.ts';
+import {
+  CONTEXT_WARN_PERCENT,
+  contextStatusText,
+  contextStatusTitle,
+  formatTokens,
+  tabLabel,
+} from './format.ts';
 import { useMessages } from './messages.ts';
 import { useAppTask } from './appState.ts';
 import { useAgent, useModels, useSessions, useShell } from './session.ts';
@@ -67,6 +73,7 @@ function Assistant() {
   const floating = ui?.aiFloating ?? false;
   const [inputExpanded, setInputExpanded] = useState(false);
   const activeTokens = sessions.find((s) => s.path === activePath)?.tokens;
+  const contextUsage = agent?.contextUsage;
 
   const [text, setText] = useState('');
   const [commandTag, setCommandTag] = useState<string | null>(null);
@@ -614,15 +621,39 @@ function Assistant() {
         </div>
       )}
 
-      {/* token 状态行（会话 token 统计；与消息流同源） */}
-      {activeTokens && (
+      {/* 用量状态行：会话累计 token + 当前上下文占用（与消息流同源） */}
+      {(activeTokens || contextUsage) && (
         <div className="shrink-0 px-3 pt-1 flex justify-end text-[10.5px] text-zinc-400 dark:text-zinc-500">
           <span
             className="tabular-nums cursor-default"
-            title={`输入 ${activeTokens.input.toLocaleString()} · 输出 ${activeTokens.output.toLocaleString()} tokens`}
+            title={[
+              activeTokens
+                ? `输入 ${activeTokens.input.toLocaleString()} · 输出 ${activeTokens.output.toLocaleString()} tokens`
+                : '',
+              contextUsage ? contextStatusTitle(contextUsage) : '',
+            ]
+              .filter(Boolean)
+              .join('\n')}
           >
-            ↑{formatTokens(activeTokens.input)} · ↓
-            {formatTokens(activeTokens.output)}
+            {activeTokens && (
+              <>
+                ↑{formatTokens(activeTokens.input)} · ↓
+                {formatTokens(activeTokens.output)}
+              </>
+            )}
+            {activeTokens && contextUsage ? ' · ' : null}
+            {contextUsage && (
+              <span
+                data-testid="context-usage"
+                className={
+                  (contextUsage.percent ?? 0) >= CONTEXT_WARN_PERCENT
+                    ? 'text-amber-500 dark:text-amber-400'
+                    : undefined
+                }
+              >
+                {contextStatusText(contextUsage)}
+              </span>
+            )}
           </span>
         </div>
       )}

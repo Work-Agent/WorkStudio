@@ -20,6 +20,7 @@ import type { StorageLayout } from '../../../platform/paths.ts';
 import type {
   AgentSnapshot,
   AppInternalEvent,
+  ContextUsageView,
   LoadedResourcesView,
   ModelCatalogItem,
   ModelOption,
@@ -80,6 +81,12 @@ export class SessionAgent {
   private pendingReason = 'replace';
   private dialogHost: DialogHost | null = null;
   private editorText = '';
+  /**
+   * 上下文占用缓存：算一次要遍历会话投影，而快照是逐帧取的。
+   * 只在产生新 usage / 压缩 / 切会话 / 换模型时失效，其余时候直接复用。
+   */
+  private contextUsageCache: { view: ContextUsageView | null } | null = null;
+  private contextUsageOff: (() => void) | null = null;
 
   private constructor(private readonly options: SessionAgentOptions) {
     this.workspacePath = options.workspacePath;
@@ -113,6 +120,7 @@ export class SessionAgent {
     });
     host.installRebindHooks();
     host.bridge.attach(host.runtime.session);
+    host.watchContextUsage(host.runtime.session);
     await host.bindCurrentSessionExtensions();
     return host;
   }
@@ -173,6 +181,7 @@ export class SessionAgent {
       | undefined;
     const configured =
       model != null && model.provider !== 'unknown' && model.id !== 'unknown';
+    const contextUsage = this.contextUsage();
     return {
       configured,
       ...(configured
@@ -194,7 +203,45 @@ export class SessionAgent {
       pendingMessageCount: s.pendingMessageCount,
       cwd: this.workspacePath,
       workspacePath: this.workspacePath,
+      ...(contextUsage ? { contextUsage } : {}),
     };
+  }
+
+  /**
+   * 跟随会话的事件失效缓存：新 usage（message_end / turn_end）与压缩会改变
+   * 上下文占用，切会话 / 换模型则需要重算窗口，所以也走这里。
+   */
+  private watchContextUsage(session: PiAgentSession): void {
+    this.contextUsageOff?.();
+    this.contextUsageCache = null;
+    this.contextUsageOff = session.subscribe((event) => {
+      switch (event.type) {
+        case 'message_end':
+        case 'turn_end':
+        case 'agent_settled':
+        case 'compaction_end':
+          this.contextUsageCache = null;
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  private contextUsage(): ContextUsageView | null {
+    if (!this.contextUsageCache) {
+      const usage = this.session.getContextUsage();
+      this.contextUsageCache = {
+        view: usage
+          ? {
+              tokens: usage.tokens,
+              contextWindow: usage.contextWindow,
+              percent: usage.percent,
+            }
+          : null,
+      };
+    }
+    return this.contextUsageCache.view;
   }
 
   async prompt(params: {
@@ -293,6 +340,7 @@ export class SessionAgent {
     if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
     return this.session.setModel(model as never).then(() => {
       this.settingsManager.setDefaultModelAndProvider(provider, modelId);
+      this.contextUsageCache = null;
       this.emitStatus();
     });
   }
@@ -465,6 +513,7 @@ export class SessionAgent {
     });
     this.installRebindHooks();
     this.bridge.attach(this.runtime.session);
+    this.watchContextUsage(this.runtime.session);
     await this.bindCurrentSessionExtensions();
     this.emitStatus();
   }
@@ -540,6 +589,8 @@ export class SessionAgent {
   }
 
   dispose(): void {
+    this.contextUsageOff?.();
+    this.contextUsageOff = null;
     this.dialogHost?.dispose();
     this.dialogHost = null;
     this.bridge.dispose();
@@ -578,6 +629,7 @@ export class SessionAgent {
   private installRebindHooks(): void {
     this.runtime.setRebindSession(async (session) => {
       this.bridge.attach(session);
+      this.watchContextUsage(session);
       await this.bindCurrentSessionExtensions();
       this.bridge.pushInternal({
         type: 'session_rebound',

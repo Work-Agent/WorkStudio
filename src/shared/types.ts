@@ -306,6 +306,18 @@ export interface PiEventFrame {
 
 // ─── Agent 快照与命令信封 ──────────────────────────────────
 
+/**
+ * 上下文占用：当前会话下一次请求要带上的 token 量相对模型窗口的位置。
+ *
+ * `tokens` / `percent` 为 null 表示当前值未知（刚压缩完、还没产生新的 usage），
+ * 此时只展示窗口容量。
+ */
+export interface ContextUsageView {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
+
 /** AgentHost 快照（app.sync 的 session 切片与 agent.status 共用）。 */
 export interface AgentSnapshot {
   configured: boolean;
@@ -324,6 +336,8 @@ export interface AgentSnapshot {
   pendingMessageCount: number;
   cwd: string;
   workspacePath: string;
+  /** 上下文占用；模型没有窗口信息时不出现。 */
+  contextUsage?: ContextUsageView;
 }
 
 /** 命令响应信封（ok:false 带错误码）。 */
