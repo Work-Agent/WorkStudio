@@ -153,18 +153,17 @@ export function createAgentToolsExtension(
       },
     }),
     defineTool({
-      name: 'browser_snapshot',
-      label: '采集网页',
+      name: 'browser_read',
+      label: '读取网页',
       description:
-        'Read the current page as Markdown (front matter + body + accessibility index), cache it as a site snapshot and return its ref. Prefer this over re-opening pages.',
+        'Read the current page as Markdown (body + accessibility index). Read-only: it does not create a site snapshot; snapshots come from the capture flow (web/web capture or crawl).',
       parameters: Type.Object({ id: Type.Optional(Type.String()) }),
       execute: async (_id, input) => {
-        const page = await tools.browserSnapshot(input.id);
+        const page = await tools.browserReadPage(input.id);
         return text(
           [
             `url: ${page.url}`,
             `title: ${page.title}`,
-            `ref: ${page.ref ?? '(未保存)'}`,
             '',
             page.markdown.slice(0, 4000),
           ].join('\n'),

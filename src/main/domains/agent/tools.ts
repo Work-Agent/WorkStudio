@@ -21,7 +21,6 @@ import { createLog } from '../../log.ts';
 import type { CommandInput } from '../../registry/command.ts';
 import { parseCommandLine } from '../../registry/command.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
-import type { WebCache } from '../../transport/web-cache.ts';
 import type {
   BrowserCaptureView,
   BrowserCapability,
@@ -57,7 +56,7 @@ const TOOLS: readonly ToolInfo[] = [
   { name: 'browser_click', summary: '点击网页元素', write: true },
   { name: 'browser_type', summary: '输入网页文本', write: true },
   { name: 'browser_screenshot', summary: '截取网页画面', write: false },
-  { name: 'browser_snapshot', summary: '采集网页快照', write: false },
+  { name: 'browser_read', summary: '读当前网页（不落快照）', write: false },
 ];
 
 export class ToolSurface implements ResourceAccess {
@@ -70,7 +69,6 @@ export class ToolSurface implements ResourceAccess {
     private readonly transport: TransportRouter,
     private readonly registry: DomainRegistry,
     private readonly browser: BrowserCapability,
-    private readonly cache?: WebCache,
     /** 打开入口：与侧栏点击同一条路（点位、插件页、外链都由宿主解释）。 */
     private readonly openLocation?: (
       ref: string,
@@ -253,20 +251,13 @@ export class ToolSurface implements ResourceAccess {
     return this.browser.screenshot(id);
   }
 
-  async browserSnapshot(
-    id?: string,
-  ): Promise<BrowserCaptureView & { ref?: string }> {
-    const page = await this.browser.capture(id);
-    if (!this.cache) return page;
-    await this.cache.save({
-      url: page.url,
-      title: page.title,
-      markdown: page.markdown,
-      ...(page.excerpt ? { excerpt: page.excerpt } : {}),
-      capturedAt: Date.now(),
-      ...(page.icon ? { icon: page.icon } : {}),
-    });
-    return { ...page, ref: this.cache.refOfPage(page.url) };
+  /**
+   * 读取当前网页：只取回到会话，不写快照。
+   * 快照只从采集入口（侧栏「新增采集」/ 显式 capture 命令）产生，
+   * 临时浏览过的页面不应该进站点树。
+   */
+  async browserReadPage(id?: string): Promise<BrowserCaptureView> {
+    return this.browser.capture(id);
   }
 
   async browserRead(id?: string): Promise<BrowserPageView> {

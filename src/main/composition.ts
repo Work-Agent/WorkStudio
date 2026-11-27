@@ -94,7 +94,6 @@ export function registerSystemModules(
     options.transport,
     registry,
     browser,
-    options.cache,
     options.openLocation,
   );
   const repo = new WorkspaceRepository(options.storage, options.workspaceRoot);
