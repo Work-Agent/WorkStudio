@@ -47,6 +47,8 @@ import { join } from 'node:path';
 
 export interface NextAppOptions {
   dataRoot: string;
+  /** 运行档目录（userData）：数据根指针与 Chromium 数据都在这里。 */
+  profileDir: string;
   /** 默认工作区目录；缺省时首次启动先询问。 */
   workspaceRoot?: string;
   /** 系统页产物目录（work://studio 的根）。 */
@@ -185,6 +187,7 @@ export class NextApp {
       resources,
       builtinPluginIds: this.builtinPluginIds,
       appearance: this.appearance,
+      profileDir: options.profileDir,
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
       openNode: (node, workspaceId) => this.openResourceNode(node, workspaceId),
       openLocation: (ref, locator) => this.openLocation(ref, locator),

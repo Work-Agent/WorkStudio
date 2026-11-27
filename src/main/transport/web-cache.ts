@@ -5,7 +5,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile, writeJson } from '../platform/json.ts';
 
@@ -34,6 +34,25 @@ export class WebCache {
     mkdirSync(this.directory, { recursive: true });
     writeJson(this.fileOf(doc.url), doc);
     return { ref: this.refOf(doc.url) };
+  }
+
+  /** 缓存清单：只读目录，按采集时间倒序；坏文件直接跳过。 */
+  list(): SnapshotDoc[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.directory);
+    } catch {
+      return [];
+    }
+    const docs: SnapshotDoc[] = [];
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const doc = readJsonFile<SnapshotDoc>(join(this.directory, name));
+      if (!doc || typeof doc.url !== 'string') continue;
+      if (typeof doc.markdown !== 'string') continue;
+      docs.push(doc);
+    }
+    return docs.sort((a, b) => b.capturedAt - a.capturedAt);
   }
 
   private fileOf(url: string): string {

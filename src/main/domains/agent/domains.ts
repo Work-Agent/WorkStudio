@@ -14,6 +14,7 @@ import type { SessionAgent } from './runtime/session-agent.ts';
 import type {
   ModelCatalogItem,
   ModelConfigView,
+  ModelOption,
   ModelsConfigView,
   ParsedMessage,
   PiEventFrame,
@@ -761,6 +762,8 @@ export function defineSessionsResources(
 export interface ModelsState {
   providers: ProviderInfoView[];
   models: ModelCatalogItem[];
+  /** 可用模型：只有完成登录 / 配置凭证的供应商才在这里。 */
+  available: ModelOption[];
   config: ModelsConfigView;
 }
 
@@ -776,7 +779,12 @@ export interface ModelResources {
 }
 
 export function createModelsState(): ModelsState {
-  return { providers: [], models: [], config: { providers: {} } };
+  return {
+    providers: [],
+    models: [],
+    available: [],
+    config: { providers: {} },
+  };
 }
 
 export function defineModelsResources(
@@ -790,6 +798,10 @@ export function defineModelsResources(
 
   const models = domain.resource('models');
   models.snapshot(() => state.models);
+
+  // 助手只挑可用的：目录里的模型不代表这个供应商现在能用。
+  const available = domain.resource('availableModels');
+  available.snapshot(() => state.available);
 
   const config = domain.resource('modelsConfig');
   config.snapshot(() => state.config);
@@ -974,6 +986,7 @@ export function defineModelsResources(
     }
     providers.publish();
     models.publish();
+    available.publish();
     config.publish();
     for (const providerId of Object.keys(state.config.providers)) {
       publishProviderModels(providerId);
@@ -1004,11 +1017,11 @@ export function defineModelsResources(
     run: async (input) => {
       const runtime = host?.();
       if (!runtime) throw new CallFailure('failed', 'agent runtime 未启动');
-      const added = await runtime.refreshProviderModels(
+      const result = await runtime.refreshProviderModels(
         String(input.providerId),
       );
       sync();
-      return { added };
+      return result;
     },
   });
   // 快捷登录：打开供应商登录页，等它回调本机后直接写库（主进程全程处理）。

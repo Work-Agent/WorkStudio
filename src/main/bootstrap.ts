@@ -15,6 +15,7 @@ import {
   type DataRootInfo,
 } from './platform/data-root.ts';
 import { createStorageLayout } from './platform/paths.ts';
+import { readAppFlavor, resolveProfile } from './platform/profile.ts';
 import { registerSchemes, serveProtocols } from './protocols.ts';
 import { installApplicationMenu } from './platform/menu.ts';
 import type { ShellHostOptions } from './domains/shell/native.ts';
@@ -52,34 +53,39 @@ export async function bootstrapNext(
   registerSchemes();
   applyRemoteDebugging(options.debugPort);
 
-  // 开发档与安装包必须是两个 profile：否则 dev 会话的插件、设置与工作区
+  // 开发档与安装包必须是两个 profile：否则开发会话的插件、设置与工作区
   // 会落进正式数据根，单实例锁也会互相挡。userData 必须在抢锁前定下来，
   // 锁是按 userData 划分的。
-  // 显式 `--user-data-dir`（Playwright、隔离调试）优先：那是调用方自己的
-  // profile，测试进程之间不能互相抢锁。
-  const explicitProfile = electronApp.commandLine.hasSwitch('user-data-dir');
-  const profileDir = explicitProfile
-    ? electronApp.getPath('userData')
-    : join(
-        electronApp.getPath('appData'),
-        options.devBase
-          ? `${electronApp.getName()} Dev`
-          : electronApp.getName(),
-      );
-  electronApp.setPath('userData', profileDir);
+  const profile = resolveProfile({
+    appData: electronApp.getPath('appData'),
+    appName: electronApp.getName(),
+    isPackaged: electronApp.isPackaged,
+    flavor: readAppFlavor(electronApp.getAppPath()),
+    // 显式 `--user-data-dir`（Playwright、隔离调试）优先：那是调用方自己的
+    // profile，测试进程之间不能互相抢锁。
+    explicitDir: electronApp.commandLine.hasSwitch('user-data-dir')
+      ? electronApp.getPath('userData')
+      : null,
+  });
+  // 开发档先改名：菜单、关于面板、钥匙串条目都跟着它走，系统里也是两个应用。
+  if (profile.dev) electronApp.setName(profile.name);
+  mkdirSync(join(profile.dir, 'logs'), { recursive: true });
+  electronApp.setPath('userData', profile.dir);
+  // 日志跟档走，不落系统级的 `~/Library/Logs/<app>`。
+  electronApp.setAppLogsPath(join(profile.dir, 'logs'));
 
   if (!electronApp.requestSingleInstanceLock()) {
     electronApp.quit();
     return null;
   }
   const dataRoot = resolveDataRoot({
-    pointerFile: dataRootPointerFile(profileDir),
-    defaultRoot: join(profileDir, 'data'),
+    pointerFile: dataRootPointerFile(profile.dir),
+    defaultRoot: join(profile.dir, 'data'),
     portableRoot: join(dirname(electronApp.getPath('exe')), 'data'),
   });
   mkdirSync(dataRoot.root, { recursive: true });
   // Chromium 数据与业务数据分家，避免缓存混入数据根。
-  electronApp.setPath('sessionData', join(profileDir, 'chromium'));
+  electronApp.setPath('sessionData', join(profile.dir, 'chromium'));
 
   await electronApp.whenReady();
 
@@ -89,6 +95,7 @@ export async function bootstrapNext(
   const firstRunPicker = electronApp.isPackaged ? pickWorkspace : undefined;
   const app = new NextApp({
     dataRoot: storage.dataRoot,
+    profileDir: profile.dir,
     ...(firstRunPicker
       ? { pickWorkspace: firstRunPicker }
       : { workspaceRoot: options.workspaceRoot ?? process.cwd() }),

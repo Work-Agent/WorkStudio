@@ -33,6 +33,7 @@ export interface BrowserCaptureView {
   url: string;
   title: string;
   html: string;
+  markdown: string;
 }
 
 export interface BrowserViewHandle {
@@ -261,7 +262,12 @@ export class BrowserCapability {
     const target = id ?? state.activeId;
     if (!target) throw new Error('没有活动网页');
     const page = await this.host!.captureView(windowId, target);
-    return { url: page.url, title: page.title, html: page.html };
+    return {
+      url: page.url,
+      title: page.title,
+      html: page.html,
+      markdown: page.markdown,
+    };
   }
 
   async capture(id?: string): Promise<BrowserCaptureView> {

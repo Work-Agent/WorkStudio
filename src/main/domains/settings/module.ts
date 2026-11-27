@@ -6,7 +6,6 @@
  */
 
 import { app, dialog, shell } from 'electron';
-import { join } from 'node:path';
 import { workUrl } from '../../../shared/pages.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import { CallFailure } from '../../contract.ts';
@@ -42,6 +41,8 @@ import {
 
 export interface SettingsModuleOptions {
   layout: StorageLayout;
+  /** 运行档目录（userData）：数据根指针只写在这里。 */
+  profileDir: string;
   pages?: SettingsPage[];
 }
 
@@ -155,8 +156,7 @@ export class SettingsModule implements DomainModule {
   private async pickDataRoot(selected?: string): Promise<string | null> {
     const path = selected ?? (await this.pickDirectory());
     if (!path) return null;
-    const profileDir = join(app.getPath('appData'), app.getName());
-    setDataRoot(dataRootPointerFile(profileDir), path);
+    setDataRoot(dataRootPointerFile(this.options.profileDir), path);
     return path;
   }
 

@@ -248,11 +248,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
+          # 正式档标记：应用据此使用正式 profile；缺标记时一律当开发档。
+          FLAVOR="--config.extraMetadata.wsFlavor=release"
           if [ "${{ matrix.platform }}" = "mac" ]; then
             # 双架构一次构建：合并产出唯一的 latest-mac.yml
-            pnpm exec electron-builder --mac --arm64 --x64 --publish never
+            pnpm exec electron-builder --mac --arm64 --x64 --publish never $FLAVOR
           else
-            pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+            pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never $FLAVOR
           fi
 
       - name: Verify packaged artifacts

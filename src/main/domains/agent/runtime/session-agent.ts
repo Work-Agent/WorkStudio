@@ -328,7 +328,7 @@ export class SessionAgent {
     return level;
   }
 
-  async refreshProviderModels(providerId: string): Promise<number> {
+  async refreshProviderModels(providerId: string): Promise<{ added: number }> {
     return this.app.refreshProviderModels(providerId);
   }
 

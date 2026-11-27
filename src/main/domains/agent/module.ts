@@ -460,6 +460,7 @@ export class AgentModule implements DomainModule {
     };
     this.models.providers = view.providers;
     this.models.models = view.catalog;
+    this.models.available = app.models();
     this.models.config = view.config;
     this.modelResources?.sync();
   }
@@ -571,6 +572,7 @@ export class AgentModule implements DomainModule {
     this.sessionsByWorkspace.clear();
     this.models.providers = [];
     this.models.models = [];
+    this.models.available = [];
     this.models.config = { providers: {} };
     this.modelResources = null;
     this.skills.active = new Set();

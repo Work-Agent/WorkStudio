@@ -143,6 +143,10 @@ export default defineConfig({
             'src/renderer/pages/settings/index.html',
           ),
           welcome: resolve(__dirname, 'src/renderer/pages/welcome/index.html'),
+          snapshot: resolve(
+            __dirname,
+            'src/renderer/pages/snapshot/index.html',
+          ),
           capture: resolve(__dirname, 'src/renderer/pages/capture/index.html'),
         },
       },

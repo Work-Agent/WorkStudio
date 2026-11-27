@@ -15,6 +15,7 @@ import { PluginRegistryView } from './PluginRegistryView.tsx';
 import { ResourceTree } from './ResourceTree.tsx';
 import { SearchPanel } from './SearchPanel.tsx';
 import { SidebarNav } from './SidebarNav.tsx';
+import { SnapshotsPanel } from './SnapshotsPanel.tsx';
 
 export function Sidebar() {
   const view = useSidebarStore((s) => s.view);
@@ -50,6 +51,8 @@ export function Sidebar() {
             )
           ) : view === 'plugins' ? (
             <PluginRegistryView collapsed={collapsed} onExpand={expand} />
+          ) : view === 'snapshots' ? (
+            <SnapshotsPanel collapsed={collapsed} onExpand={expand} />
           ) : collapsed ? (
             <OpenViewsRail />
           ) : (

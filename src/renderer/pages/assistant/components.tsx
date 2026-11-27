@@ -4,7 +4,7 @@ import { MoveDiagonal2 } from 'lucide-react';
 import type { ParsedMessage, ResizeDirection } from '../../../shared/types.ts';
 import { bridge } from './bridge.ts';
 import { argsPreview, resultBody } from './format.ts';
-import { renderMarkdown } from './markdown.ts';
+import { renderMarkdown } from '../../shared/markdown.ts';
 
 /**
  * 停靠态左边缘拉伸把手。

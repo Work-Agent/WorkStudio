@@ -407,7 +407,7 @@ source (catalog:<id> / URL / zip / directory)
 - **Atomic replacement**: the old package moves to `recovery/` before the new one is swapped in; interrupted swaps are restored at startup;
 - **Remote artifacts must pin sha256**: registry entries carry it, manual URLs use `#sha256=`, local zips are hashed but not compared;
 - **Zip is self-contained**: dependencies are bundled into `dist` or shipped as `node_modules`; nothing runs npm at install time;
-- **Dev build and installer are separate profiles**: the profile is chosen by how the app runs — the installer uses `WorkStudio`, `pnpm dev` uses `WorkStudio Dev` (an explicit `--user-data-dir` wins); business data can still be overridden with `--data-dir` / `WA_DATA_DIR`. Plugins, workspaces and settings created while developing never land in the shipping data root;
+- **Dev build and installer are separate profiles**: the judgement is “is it packaged” plus the build flavor — the shipping installer uses `WorkStudio` (`com.qingo.workstudio`), while source runs (`pnpm dev`, `electron .`, `preview`) and the dev bundles produced by local `pnpm package` / `make` use `WorkStudio Dev` (`com.qingo.workstudio.dev`), and an explicit `--user-data-dir` wins. The release flow stamps the shipping flavor (`wsFlavor: release`); without that stamp the build is treated as a dev build. The profile directory (userData, Chromium data, logs, data-root pointer) is resolved once and the two profiles never overlap; business data can still be overridden with `--data-dir` / `WA_DATA_DIR`;
 - **One plugin directory**: `<appData>/plugins/` holds only `installed/`, `staging/`, `recovery/`, `tmp/`, `data/`, `catalog/`; independent of workspaces and separate from pi resources under `agent/`;
 - **Uninstall**: revoke registrations, close plugin pages, delete the package directory; configuration is kept by default and removed only with an explicit purge;
 - **Tasks belong to the current process**: byte progress, verification, commit and activation are reported by phase; cancellation only applies before commit; no resume across restarts;
@@ -515,6 +515,8 @@ node node_modules/electron/install.js
 | `pnpm run verify`    | Run the same checks as CI (typecheck / lint / build)        |
 
 `pnpm verify` runs `typecheck → lint → build`, the same order as the CI `js` job.
+
+`package` / `make` produce the dev flavor: `WorkStudio Dev.app` with `com.qingo.workstudio.dev`, so data, keychain entries and system identity never touch the shipping app. Installers only come from `release` and the Release workflow.
 
 ### 7.3 Project layout
 

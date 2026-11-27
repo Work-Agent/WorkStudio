@@ -1,19 +1,19 @@
 /**
- * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件 / 搜索）。
+ * SidebarNav —— Sidebar 顶部视图切换（资源 / 插件 / 网站快照 / 搜索）。
  *
- * 设置入口在 TitleBar；搜索只有一个入口，文件 / 内容在面板内部切换。
+ * 设置入口在 TitleBar；搜索与快照都在侧栏面板内完成，不额外开标签。
  * 形态随 sidebarCollapsed：
  *   展开 = 横向图标条（直接切换）；
  *   收起（56px 图标列）= 单个「当前视图」按钮 + 原生菜单下拉。
  */
 import { useEffect } from 'react';
-import { ChevronDown, Files, Package, Search } from 'lucide-react';
+import { ChevronDown, Files, Globe, Package, Search } from 'lucide-react';
 import type { PopupMenuItem } from '../../../../../shared/types.ts';
 import { popupMenu } from '../../../../shared/api/runtime.ts';
 import { useScene } from '../../domains/scene.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
 
-type NavId = 'main' | 'plugins' | 'search';
+type NavId = 'main' | 'plugins' | 'snapshots' | 'search';
 
 /** 顶层形态（二级形态 docs / data / web 属于 main 家族）。 */
 const ITEMS = [
@@ -34,11 +34,22 @@ const SEARCH_ITEM = {
   testId: 'sidebar-nav-search',
 } as const;
 
+/** 网站快照：侧栏面板，与搜索一样不占标签。 */
+const SNAPSHOTS_ITEM = {
+  id: 'snapshots',
+  label: '网站快照',
+  icon: Globe,
+  testId: 'sidebar-nav-snapshots',
+} as const;
+
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
 const MENU_SOURCE = 'sidebar-nav';
 
 const isNavId = (value: string): value is NavId =>
-  value === 'main' || value === 'plugins' || value === 'search';
+  value === 'main' ||
+  value === 'plugins' ||
+  value === 'snapshots' ||
+  value === 'search';
 
 function navClass(active: boolean): string {
   return `h-7 w-7 shrink-0 rounded-md flex items-center justify-center transition-colors ${
@@ -70,6 +81,10 @@ export function SidebarNav() {
         id: item.id,
         label: `${view === item.id ? '✓ ' : ''}${item.label}`,
       })),
+      {
+        id: SNAPSHOTS_ITEM.id,
+        label: `${view === SNAPSHOTS_ITEM.id ? '✓ ' : ''}${SNAPSHOTS_ITEM.label}`,
+      },
       {
         id: SEARCH_ITEM.id,
         label: `${view === SEARCH_ITEM.id ? '✓ ' : ''}${SEARCH_ITEM.label}`,
@@ -117,6 +132,15 @@ export function SidebarNav() {
             );
           })}
           <div className="ml-auto flex items-center gap-0.5">
+            <button
+              data-testid={SNAPSHOTS_ITEM.testId}
+              data-active={view === 'snapshots' ? 'true' : 'false'}
+              title={SNAPSHOTS_ITEM.label}
+              onClick={() => setView('snapshots')}
+              className={navClass(view === 'snapshots')}
+            >
+              <SNAPSHOTS_ITEM.icon className="w-4 h-4" />
+            </button>
             <button
               data-testid={SEARCH_ITEM.testId}
               data-active={view === 'search' ? 'true' : 'false'}

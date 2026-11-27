@@ -38,6 +38,13 @@ import {
 } from './credentials.ts';
 import { loginViaLoopback } from './page-login.ts';
 import { isLoginOnly } from './model-catalog.ts';
+import { createLog } from '../../../log.ts';
+
+const log = createLog('agent');
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function hostOfUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
@@ -197,24 +204,32 @@ export class AgentApp {
     }));
   }
 
-  /** 该供应商是否用 OpenAI 兼容的 /models 自动发现模型。 */
+  /**
+   * 该供应商是否从自己的模型列表接口取模型。
+   *
+   * 判据统一成「有没有目录」：显式 `discoverModels` 优先；没有静态目录的
+   * 供应商（自定义端点，pi 不认识它下面有什么模型）默认走 `/models`。
+   */
   private discoversModels(providerId: string): boolean {
     const config = this.modelStore.readView().providers[providerId];
-    return config?.['discoverModels'] === true;
+    const explicit = config?.['discoverModels'];
+    if (typeof explicit === 'boolean') return explicit;
+    const provider = this.modelRuntime.getProvider(providerId);
+    if (!provider?.baseUrl) return false;
+    return provider.getModels().length === 0;
   }
 
   /**
-   * 用已存凭证拉取 `${baseUrl}/models`，把模型写进 models.json。
-   * one-api 这类 OpenAI 兼容服务只暴露脚本里的模型，靠它补齐目录。
+   * 用已存凭证拉取供应商的模型列表，直接按返回的 id 更新 models.json。
+   * 发现结果带 `origin: 'provider'`：它是供应商给的目录，不是用户自定义模型。
    */
-  async refreshProviderModels(providerId: string): Promise<number> {
-    const provider = this.modelRuntime.getProvider(providerId);
-    const baseUrl = provider?.baseUrl;
-    if (!baseUrl) throw new Error(`供应商没有 baseUrl：${providerId}`);
+  async refreshProviderModels(providerId: string): Promise<{ added: number }> {
     const credential = await this.credentials.read(providerId);
     const key =
       credential?.type === 'api_key' ? credential.key : credential?.access;
     if (!key) throw new Error(`供应商未登录：${providerId}`);
+    const baseUrl = this.modelRuntime.getProvider(providerId)?.baseUrl;
+    if (!baseUrl) throw new Error(`供应商没有 baseUrl：${providerId}`);
     const endpoint = new URL(baseUrl);
     endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/`;
     const response = await fetch(new URL('models', endpoint), {
@@ -225,20 +240,28 @@ export class AgentApp {
     const body = (await response.json()) as {
       data?: Array<{ id?: string; name?: string }>;
     };
-    let saved = 0;
+    const discovered = new Set<string>();
     for (const item of body.data ?? []) {
       const id = typeof item.id === 'string' ? item.id.trim() : '';
       if (!id) continue;
+      discovered.add(id);
       await this.modelStore.saveModel(providerId, {
         id,
+        origin: 'provider',
         ...(typeof item.name === 'string' && item.name.trim()
           ? { name: item.name.trim() }
           : {}),
       });
-      saved += 1;
+    }
+    // 供应商已经下线的模型跟着删（只清发现结果，自定义模型保留）。
+    const existing = this.modelStore.readView().providers[providerId]?.models;
+    for (const model of existing ?? []) {
+      if (model.origin !== 'provider') continue;
+      if (discovered.has(model.id)) continue;
+      await this.modelStore.deleteModel(providerId, model.id);
     }
     await this.refreshModels();
-    return saved;
+    return { added: discovered.size };
   }
 
   /**
@@ -294,7 +317,11 @@ export class AgentApp {
   }
 
   async saveModel(providerId: string, model: unknown): Promise<void> {
-    await this.modelStore.saveModel(providerId, model as never);
+    // 手工保存的模型默认算自定义；发现结果由 refreshProviderModels 标 provider。
+    await this.modelStore.saveModel(providerId, {
+      origin: 'custom',
+      ...(model as Record<string, unknown>),
+    } as never);
     await this.refreshModels();
   }
 
@@ -351,7 +378,9 @@ export class AgentApp {
       .catch(() => null);
     this.onChanged?.();
     if (this.discoversModels(providerId)) {
-      void this.refreshProviderModels(providerId).catch(() => null);
+      void this.refreshProviderModels(providerId).catch((error: unknown) => {
+        log.warn(`模型发现失败：${providerId} ${messageOf(error)}`);
+      });
     }
   }
 

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>网页快照</title>
+    <style>
+      .snapshot-body {
+        font-size: 13px;
+        line-height: 1.75;
+        word-break: break-word;
+      }
+      .snapshot-body > *:first-child {
+        margin-top: 0;
+      }
+      .snapshot-body h1,
+      .snapshot-body h2,
+      .snapshot-body h3,
+      .snapshot-body h4,
+      .snapshot-body h5,
+      .snapshot-body h6 {
+        margin: 1.4em 0 0.6em;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      .snapshot-body h1 {
+        font-size: 20px;
+      }
+      .snapshot-body h2 {
+        font-size: 17px;
+      }
+      .snapshot-body h3 {
+        font-size: 15px;
+      }
+      .snapshot-body h4,
+      .snapshot-body h5,
+      .snapshot-body h6 {
+        font-size: 13px;
+      }
+      .snapshot-body p {
+        margin: 0.7em 0;
+      }
+      .snapshot-body ul,
+      .snapshot-body ol {
+        margin: 0.7em 0;
+        padding-left: 1.4em;
+        list-style: disc;
+      }
+      .snapshot-body ol {
+        list-style: decimal;
+      }
+      .snapshot-body li {
+        margin: 0.2em 0;
+      }
+      .snapshot-body a {
+        color: #4f6bed;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .snapshot-body strong {
+        font-weight: 600;
+      }
+      .snapshot-body blockquote {
+        margin: 0.8em 0;
+        padding: 0.1em 0 0.1em 0.9em;
+        border-left: 3px solid rgba(79, 107, 237, 0.35);
+      }
+      .snapshot-body pre {
+        margin: 0.8em 0;
+        padding: 10px 12px;
+        overflow-x: auto;
+        border-radius: 8px;
+        background: rgba(127, 127, 127, 0.12);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .snapshot-body code {
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+        background: rgba(127, 127, 127, 0.14);
+        font-size: 0.92em;
+      }
+      .snapshot-body pre code {
+        padding: 0;
+        background: none;
+      }
+      .snapshot-body table {
+        margin: 0.8em 0;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .snapshot-body th,
+      .snapshot-body td {
+        padding: 4px 8px;
+        border: 1px solid rgba(127, 127, 127, 0.28);
+      }
+      .snapshot-body img {
+        max-width: 100%;
+      }
+      .snapshot-body hr {
+        margin: 1.2em 0;
+        border: 0;
+        border-top: 1px solid rgba(127, 127, 127, 0.25);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

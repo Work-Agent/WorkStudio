@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
-export type SidebarView = 'main' | 'plugins' | 'settings' | 'search';
+export type SidebarView =
+  | 'main'
+  | 'plugins'
+  | 'snapshots'
+  | 'settings'
+  | 'search';
 
 /** 搜索面板内部的两种检索：文件名 / 文件内容。 */
 export type SearchMode = 'files' | 'content';

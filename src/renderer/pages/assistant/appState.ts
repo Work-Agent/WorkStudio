@@ -138,7 +138,8 @@ export function useAppTask(): SessionTask | null {
 }
 
 export function useAppModels(): ModelOption[] | null {
-  const models = useResource<ModelOption[]>('agent', 'models', []);
+  // 只列可用模型：未登录供应商的目录模型不参与选择。
+  const models = useResource<ModelOption[]>('agent', 'availableModels', []);
   return useAppAvailable() ? models : null;
 }
 

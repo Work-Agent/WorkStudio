@@ -274,6 +274,26 @@ export function defineWebResource(
 ): void {
   const resource = registry.define('web').resource('web');
   resource.snapshot(() => ({ cache: cache.directory }));
+  resource.command('list', {
+    summary: '列出网页快照缓存',
+    args: {},
+    run: () =>
+      cache.list().map((doc) => ({
+        url: doc.url,
+        title: doc.title,
+        capturedAt: doc.capturedAt,
+        ref: cache.refOf(doc.url),
+      })),
+  });
+  resource.command('doc', {
+    summary: '读取一份快照的正文',
+    args: { url: { type: 'string', required: true } },
+    run: async (input) => {
+      const doc = await cache.get(String(input.url));
+      if (!doc) throw new CallFailure('not_found', '没有网页快照');
+      return doc;
+    },
+  });
   resource.command('capture', {
     summary: '采集网页为快照',
     args: { url: { type: 'string', required: true } },
@@ -283,7 +303,7 @@ export function defineWebResource(
       const saved = await cache.save({
         url: page.url,
         title: page.title,
-        markdown: page.html,
+        markdown: page.markdown,
         capturedAt: Date.now(),
       });
       resource.publish();

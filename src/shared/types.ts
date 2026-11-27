@@ -22,6 +22,8 @@ export interface ModelOption {
 export interface ModelConfigView {
   id: string;
   name?: string;
+  /** 来源：供应商模型列表发现（provider）或用户手工添加（custom）。 */
+  origin?: 'provider' | 'custom';
   reasoning?: boolean;
   input?: Array<'text' | 'image'>;
   contextWindow?: number;

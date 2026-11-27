@@ -6,6 +6,9 @@ import navigation from '../cases/navigation.ts';
 import pathDisplay from '../cases/path-display.ts';
 import pluginEntry from '../cases/plugin-entry.ts';
 import settingsOpen from '../cases/settings-open.ts';
+import snapshotsOpen, {
+  captureCase as snapshotsCapture,
+} from '../cases/snapshots-open.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
 import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
@@ -73,6 +76,8 @@ export const cases: readonly E2ECase[] = [
   notices,
   noticesReplay,
   settingsOpen,
+  snapshotsOpen,
+  snapshotsCapture,
   settingsSidebar,
   tabs,
   tabsIdentity,

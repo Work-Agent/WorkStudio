@@ -25,6 +25,7 @@ import {
 } from '../../../shared/titlebar.ts';
 import { hardenWebContents } from '../../platform/policy.ts';
 import { parsePluginUrl } from '../../../shared/pages.ts';
+import { capturePage } from './capture-script.ts';
 import { WORKSPACE_ARG } from '../../../shared/channels.ts';
 import type { ViewRecord, WindowRecord } from './domains.ts';
 
@@ -671,17 +672,10 @@ export class ShellHost {
     title: string;
     html: string;
     text: string;
+    markdown: string;
   }> {
-    return this.evaluateView(
-      windowId,
-      id,
-      `(() => ({
-      url: location.href,
-      title: document.title,
-      html: document.documentElement?.outerHTML ?? '',
-      text: document.body?.innerText ?? '',
-    }))()`,
-    );
+    // 提取脚本跑在页面里：DOM、可见文本与 Markdown 一次取回。
+    return this.evaluateView(windowId, id, `(${capturePage.toString()})()`);
   }
 
   async screenshotView(windowId: string, id: string): Promise<Uint8Array> {

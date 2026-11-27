@@ -38,6 +38,8 @@ export type { SettingsPage };
 
 export interface SystemModulesOptions {
   storage: StorageLayout;
+  /** 运行档目录（userData）：数据根指针写在这里，不再自行推导。 */
+  profileDir: string;
   /** App 级密钥库：插件域与供应商凭证共用一份。 */
   vault: SecretVault;
   /** 已有工作区的默认目录（开发模式 = cwd）；缺省时首次启动会先询问目录。 */
@@ -125,6 +127,7 @@ export function registerSystemModules(
   registry.registerModule(
     new SettingsModule({
       layout: options.storage,
+      profileDir: options.profileDir,
       pages: options.settingsPages ?? DEFAULT_SETTINGS_PAGES,
     }),
   );
