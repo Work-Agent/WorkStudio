@@ -8,14 +8,14 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createLog } from '../log.ts';
+import { PLUGIN_CATALOG_SOURCES } from '../../shared/plugin-sources.ts';
 import { isReservedPluginId } from './manifest.ts';
 import type { StorageLayout } from '../platform/paths.ts';
 import type { PluginFetcher } from './network.ts';
 
 const log = createLog('plugin-catalog');
 
-export const DEFAULT_CATALOG_URL =
-  'https://raw.githubusercontent.com/Work-Agent/PluginRegistry/main/index.json';
+export const DEFAULT_CATALOG_URL = PLUGIN_CATALOG_SOURCES.github;
 
 /** 旧默认地址：启动时迁移到 GitHub raw，避免继续使用 CDN / API 代理。 */
 const LEGACY_DEFAULT_URLS = new Set([

@@ -229,6 +229,15 @@ export function definePluginResources(
       return null;
     },
   });
+  pluginRegistry.command('setSource', {
+    summary: '切换插件目录来源',
+    args: { url: { type: 'string', required: true } },
+    run: async (input) => {
+      await service.setCatalogUrl(String(input.url));
+      pluginRegistry.publish();
+      return null;
+    },
+  });
   pluginRegistry.command('installSource', {
     summary: '从 URL / 文件 / 目录安装插件',
     args: { source: { type: 'string', required: true } },
@@ -374,6 +383,7 @@ function registrySnapshot(
     installed,
     available,
     catalog: {
+      url: catalog.url,
       fetchedAt: catalog.fetchedAt,
       stale: catalog.stale,
       ...(catalog.error ? { error: catalog.error } : {}),

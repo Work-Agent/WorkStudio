@@ -229,6 +229,8 @@ export function PluginRegistryView({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
+        {/* 目录来源切换（GitHub / 国内线路）暂时下线；
+            后端 plugin/registry 的 setSource 与 shared/plugin-sources.ts 保留。 */}
         <span
           className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400"
           title={
@@ -263,9 +265,7 @@ export function PluginRegistryView({
           刷新
         </button>
       </div>
-      {state.catalog.error && (
-        <p className="px-1 text-[11px] text-red-500">{state.catalog.error}</p>
-      )}
+      {/* 目录拉取失败的提示暂时不展示：离线缓存可用，失败原因留在快照里。 */}
 
       {manualOpen && (
         <div

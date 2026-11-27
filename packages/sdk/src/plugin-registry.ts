@@ -39,6 +39,8 @@ export interface PluginTaskView {
 }
 
 export interface PluginCatalogView {
+  /** 当前目录地址：来源下拉框据此回显。 */
+  url?: string;
   fetchedAt: number | null;
   stale: boolean;
   error?: string;
