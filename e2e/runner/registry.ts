@@ -21,6 +21,7 @@ import shellCapture from '../cases/shell-capture.ts';
 import pluginSave from '../cases/plugin-save.ts';
 import pluginContent from '../cases/plugin-content.ts';
 import assistantSessions from '../cases/assistant-sessions.ts';
+import assistantTabs from '../cases/assistant-tabs.ts';
 import pluginInstall from '../cases/plugin-install.ts';
 import pluginCatalog from '../cases/plugin-catalog.ts';
 import pluginRegistry from '../cases/plugin-registry.ts';
@@ -102,6 +103,7 @@ export const cases: readonly E2ECase[] = [
   welcome,
   assistantBridge,
   assistantSessions,
+  assistantTabs,
   settingsModels,
   tabsBulk,
   tabsCloseOthers,

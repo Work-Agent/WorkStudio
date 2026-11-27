@@ -6,6 +6,8 @@
  * agent 模块只是生命周期，不是地址前缀。
  */
 
+import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { CallFailure } from '../../contract.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import { AgentContext } from './context.ts';
@@ -295,6 +297,30 @@ export function defineSessionsResources(
     };
   };
 
+  /**
+   * 打开的标签必须对应真实会话文件：文件被删掉（或从未落盘）时，
+   * 把标签清掉并落回一个可用的会话，避免点开时被当成新会话。
+   */
+  const pruneOpened = (state: SessionsState): boolean => {
+    if (state.opened.length === 0) return false;
+    const kept = state.opened.filter((file) => existsSync(file));
+    if (kept.length === state.opened.length) return false;
+    state.opened = kept;
+    const current = state.current;
+    if (current) {
+      let decoded = current;
+      try {
+        decoded = decodeURIComponent(current);
+      } catch {
+        /* 保持原值 */
+      }
+      if (isAbsolute(decoded) && !existsSync(decoded)) {
+        state.current = kept[0] ? encodeURIComponent(kept[0]) : null;
+      }
+    }
+    return true;
+  };
+
   const defineSession = (workspaceId: string, key: string): void => {
     const name = `${workspaceId}/session/${key}`;
     if (domain.resourceOf(name)) return;
@@ -390,8 +416,13 @@ export function defineSessionsResources(
         const file = agent.getSnapshot().sessionFile;
         if (file) await agent.deleteSession(file);
         await port.disposeAgent(workspaceId, key);
-        state.opened = state.opened.filter((item) => item !== key);
-        if (state.current === key) state.current = state.opened[0] ?? null;
+        // opened 存的是文件地址，current 存的是地址键：两者别混着比。
+        state.opened = state.opened.filter((item) => item !== (file ?? key));
+        if (state.current === key) {
+          state.current = state.opened[0]
+            ? encodeURIComponent(state.opened[0])
+            : null;
+        }
         domain.remove(name);
         state.items = await port
           .listItems(workspaceId)
@@ -468,6 +499,17 @@ export function defineSessionsResources(
       run: async (input) => {
         const file = String(input.id ?? input.sessionId ?? '');
         if (!file) throw new CallFailure('invalid', '缺少会话文件');
+        // 文件不在了：只清掉这个标签，不新建会话（否则点击等于开新任务）。
+        if (!existsSync(file)) {
+          state.opened = state.opened.filter((item) => item !== file);
+          if (state.current === encodeURIComponent(file)) {
+            state.current = state.opened[0]
+              ? encodeURIComponent(state.opened[0])
+              : null;
+          }
+          publish(workspaceId);
+          throw new CallFailure('not_found', '会话文件不存在');
+        }
         const agent = await port.ensureAgent(workspaceId, {
           sessionFile: file,
         });
@@ -487,6 +529,7 @@ export function defineSessionsResources(
       summary: '刷新会话投影',
       args: {},
       run: async () => {
+        pruneOpened(state);
         state.items = await port
           .listItems(workspaceId)
           .catch(() => state.items);
