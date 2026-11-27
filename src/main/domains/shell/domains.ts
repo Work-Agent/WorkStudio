@@ -1342,6 +1342,12 @@ export interface NoticeState {
   notices: NoticeRecord[];
 }
 
+/**
+ * 队列上限：通知是瞬时事件，队列只为「刚推送、订阅者还没读到」的增量服务。
+ * 旧条目留在快照里只会被新挂载的页面重播。
+ */
+const NOTICE_QUEUE_LIMIT = 20;
+
 /** 通知跟随窗口：每个窗口一份状态与 `shell/<wsId>/notices` 资源。 */
 export interface NoticeStates {
   readonly byWindow: Map<string, NoticeState>;
@@ -1392,7 +1398,7 @@ export function defineNoticesResources(
           message: String(input.message),
           ...(typeof input.source === 'string' ? { source: input.source } : {}),
         };
-        state.notices = [...state.notices, notice];
+        state.notices = [...state.notices, notice].slice(-NOTICE_QUEUE_LIMIT);
         resource.publish();
         return notice;
       },

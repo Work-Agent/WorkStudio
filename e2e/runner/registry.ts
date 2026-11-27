@@ -36,6 +36,7 @@ import workspaceSwitch from '../cases/workspace-switch.ts';
 import settingsCards from '../cases/settings-cards.ts';
 import workspaceRegistry from '../cases/workspace-registry.ts';
 import notices from '../cases/notices.ts';
+import noticesReplay from '../cases/notices-replay.ts';
 import dialogInput from '../cases/dialog-input.ts';
 import tabsActions from '../cases/tabs-actions.ts';
 import panelToggle from '../cases/panel-toggle.ts';
@@ -69,6 +70,7 @@ export const cases: readonly E2ECase[] = [
   dialogInput,
   dialogSelect,
   notices,
+  noticesReplay,
   settingsOpen,
   settingsSidebar,
   tabs,

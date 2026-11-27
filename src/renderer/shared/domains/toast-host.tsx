@@ -12,7 +12,10 @@ export function ToastHost() {
   const dismiss = useNotificationsStore((state) => state.dismiss);
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-24 right-5 z-[90] flex flex-col gap-2 items-end pointer-events-none">
+    <div
+      data-testid="toast-host"
+      className="fixed bottom-24 right-5 z-[90] flex flex-col gap-2 items-end pointer-events-none"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
