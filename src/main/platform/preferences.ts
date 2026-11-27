@@ -5,7 +5,13 @@
  * 用户偏好写数据根，工作区策略写 workspaces/<id>/settings.json。
  */
 
-import { writeNamespace, readNamespace, readJson, writeJson } from './json.ts';
+import {
+  writeNamespace,
+  readNamespace,
+  readJson,
+  writeJson,
+  isRecord,
+} from './json.ts';
 import type { StorageLayout } from './paths.ts';
 
 export const SETTINGS_NAMESPACE = 'workspaceStudio';
@@ -16,7 +22,6 @@ export type UpdateSource = 'github' | 'cos';
 export interface UserPreferences {
   locale: string | null;
   proxy: string | null;
-  githubToken: string | null;
   updateSource: UpdateSource;
 }
 
@@ -33,12 +38,18 @@ export function readUserPreferences(layout: StorageLayout): UserPreferences {
       typeof raw['proxy'] === 'string' && raw['proxy'].trim()
         ? raw['proxy'].trim()
         : null,
-    githubToken:
-      typeof raw['githubToken'] === 'string' && raw['githubToken'].trim()
-        ? raw['githubToken'].trim()
-        : null,
     updateSource: raw['updateSource'] === 'cos' ? 'cos' : 'github',
   };
+}
+
+/** 仓库转公开后，清掉旧版本曾写入的 GitHub 访问令牌。 */
+export function clearLegacyGithubToken(layout: StorageLayout): void {
+  const file = layout.userSettingsFile;
+  const document = readJson(file);
+  const namespace = document[SETTINGS_NAMESPACE];
+  if (!isRecord(namespace) || !('githubToken' in namespace)) return;
+  delete namespace.githubToken;
+  writeJson(file, document);
 }
 
 export function writeUserPreferences(

@@ -7,14 +7,11 @@ directories:
   output: dist
 
 # 更新 feed 来源：构建时生成 app-update.yml 内嵌到应用，
-# 运行期 electron-updater（mac）据此定位 GitHub Releases。
-# private: true 让 electron-updater 运行期从 GH_TOKEN 环境变量取访问令牌
-# （私有仓库，由更新服务在检查前注入用户配置的 Token）。
+# 运行期 electron-updater（mac）据此定位 GitHub Releases（公开仓库）。
 publish:
   provider: github
   owner: Work-Agent
   repo: WorkStudio
-  private: true
 
 # 只打包 electron-vite 的产物，不含源码与开发依赖
 files:

@@ -59,14 +59,12 @@ export function definePagesResource(
 export interface PreferencesState {
   locale: string | null;
   proxy: string | null;
-  githubToken: string | null;
   updateSource: UpdateSource;
 }
 
 export interface PreferenceValues {
   locale: string | null;
   proxy: string | null;
-  githubToken: string | null;
   updateSource: UpdateSource;
 }
 
@@ -74,7 +72,6 @@ export function createPreferencesState(): PreferencesState {
   return {
     locale: null,
     proxy: null,
-    githubToken: null,
     updateSource: 'github',
   };
 }
@@ -88,7 +85,6 @@ export function definePreferencesResource(
   const snapshot = (): PreferenceValues => ({
     locale: state.locale,
     proxy: state.proxy,
-    githubToken: state.githubToken,
     updateSource: state.updateSource,
   });
   resource.snapshot(snapshot);
@@ -97,15 +93,11 @@ export function definePreferencesResource(
     args: {
       locale: { type: 'string' },
       proxy: { type: 'string' },
-      githubToken: { type: 'string' },
       updateSource: { type: 'string' },
     },
     run: (input) => {
       if (typeof input.locale === 'string') state.locale = input.locale;
       if (typeof input.proxy === 'string') state.proxy = input.proxy;
-      if (typeof input.githubToken === 'string') {
-        state.githubToken = input.githubToken;
-      }
       if (input.updateSource === 'github' || input.updateSource === 'cos') {
         state.updateSource = input.updateSource;
       }
@@ -114,7 +106,6 @@ export function definePreferencesResource(
       resource.patch({
         locale: values.locale,
         proxy: values.proxy,
-        githubToken: values.githubToken,
         updateSource: values.updateSource,
       });
       return values;

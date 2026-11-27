@@ -15,6 +15,7 @@ import { activeWindowId } from '../shell/domains.ts';
 import { UpdatesService } from './updates.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import {
+  clearLegacyGithubToken,
   readUserPreferences,
   writeUserPreferences,
 } from '../../platform/preferences.ts';
@@ -94,9 +95,9 @@ export class SettingsModule implements DomainModule {
     if (!registry) return;
 
     const preferences = readUserPreferences(this.options.layout);
+    clearLegacyGithubToken(this.options.layout);
     this.preferences.locale = preferences.locale;
     this.preferences.proxy = preferences.proxy;
-    this.preferences.githubToken = preferences.githubToken;
     this.preferences.updateSource = preferences.updateSource;
 
     const initial = registry.snapshot({
@@ -138,7 +139,6 @@ export class SettingsModule implements DomainModule {
     this.settings.pages.clear();
     this.preferences.locale = null;
     this.preferences.proxy = null;
-    this.preferences.githubToken = null;
     this.preferences.updateSource = 'github';
     this.updates.status = 'idle';
     this.updates.version = null;

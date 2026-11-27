@@ -141,7 +141,6 @@ interface PreferencesView {
   theme: 'light' | 'dark';
   locale: string | null;
   proxy: string | null;
-  githubToken: string | null;
   updateSource: UpdateSource;
 }
 
@@ -1463,7 +1462,6 @@ function PreferencesCard() {
     theme: 'dark',
     locale: null,
     proxy: null,
-    githubToken: null,
     updateSource: 'github',
   });
   const [locale, setLocale] = useState('');
@@ -1700,7 +1698,6 @@ function UpdatesCard() {
     theme: 'dark',
     locale: null,
     proxy: null,
-    githubToken: null,
     updateSource: 'github',
   });
   // macOS 安装版且来源为 GitHub 时走静默更新（electron-updater / Squirrel）：
@@ -1709,11 +1706,9 @@ function UpdatesCard() {
   const silentUpdate = status.silent;
   const [source, setSource] = useState<UpdateSource>('github');
   const [busy, setBusy] = useState(false);
-  const [token, setToken] = useState('');
   useEffect(() => {
     setSource(preferences.updateSource);
   }, [preferences]);
-  useEffect(() => setToken(preferences.githubToken ?? ''), [preferences]);
   const changeSource = (next: UpdateSource): void => {
     if (next === source || busy) return;
     setSource(next);
@@ -1773,26 +1768,6 @@ function UpdatesCard() {
         </p>
       )}
       {status.file && <Row label="安装包" value={status.file} monospace />}
-      {source === 'github' && (
-        <div className="flex items-center gap-2 text-[12px]">
-          GitHub Token
-          <input
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="ghp_…"
-            className="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[12px] dark:border-[#303436] dark:bg-[#1c1e1f]"
-          />
-          <Button
-            onClick={() =>
-              void run('settings', 'preferences', 'set', {
-                githubToken: token.trim() || null,
-              })
-            }
-          >
-            保存 Token
-          </Button>
-        </div>
-      )}
       <div className="flex items-center justify-end gap-3">
         {status.phase === 'downloading' && !silentUpdate && (
           <button

@@ -8,9 +8,8 @@
  * - cos：腾讯云 COS 镜像——读 latest.json 清单，所有平台统一走 HTTP 下载，
  *   下载完成后交给系统打开安装包（不走 Squirrel 静默替换）。
  *
- * 私有仓库：静默链路经 GH_TOKEN 环境变量注入令牌（electron-updater GitHub
- * provider 在首次检查时读取并缓存，之后改 Token 需重启生效）；HTTP 链路每次
- * 请求携带令牌头，并统一走默认 session 的 fetch 以复用用户代理设置。
+ * 仓库公开：两条链路都匿名访问；HTTP 链路统一走默认 session 的 fetch
+ * 以复用用户代理设置。
  */
 
 import { app, session, shell } from 'electron';
@@ -46,7 +45,7 @@ export type Phase =
   | 'error';
 
 export interface UpdateAsset {
-  /** 资产所属来源：GitHub 资产直链需要令牌，COS 为公开读。 */
+  /** 资产所属来源：GitHub 与 COS 均为公开读。 */
   source: UpdateSource;
   name: string;
   /** 资产来源（HTTP 管线为 API 端点 / COS 直链；静默链路为 feed 内文件名）。 */
@@ -76,7 +75,7 @@ interface ReleaseInfo {
   tag_name?: unknown;
   assets?: Array<{
     name?: unknown;
-    /** 资产的 API 端点（私有仓库经此 + Accept: octet-stream 下载）。 */
+    /** 资产的 API 端点（Accept: octet-stream 下载）。 */
     url?: unknown;
     size?: unknown;
   }>;
@@ -87,34 +86,20 @@ interface ResolvedUpdate {
   asset: UpdateAsset;
 }
 
-/** 令牌认证头（未配置时为空对象）。 */
-function authHeaders(token: string | null): Record<string, string> {
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-/** 还原被临时覆盖的环境变量（undefined 表示原本不存在）。 */
-function restoreEnv(key: string, value: string | undefined): void {
-  if (value === undefined) delete process.env[key];
-  else process.env[key] = value;
-}
-
-/** HTTP 错误转译：私有仓库未配置令牌时 404 无法区分「不存在」与「无权限」。 */
+/** HTTP 错误转译。 */
 function apiErrorMessage(status: number): string {
-  if (status === 404) return '仓库不存在或为私有（请在下方配置 GitHub Token）';
-  if (status === 403) return 'GitHub API 限流或令牌无效，稍后再试';
-  if (status === 401) return 'GitHub Token 无效或已过期';
+  if (status === 404) return '仓库或 Release 不存在';
+  if (status === 403) return 'GitHub API 限流，稍后再试';
   return `更新检查失败：HTTP ${status}`;
 }
 
 /** 静默链路错误转译（electron-updater 错误消息较底层）。 */
-function autoErrorMessage(message: string, hasToken: boolean): string {
+function autoErrorMessage(message: string): string {
   if (message.includes('404') || message.includes('ENOTFOUND')) {
-    return hasToken
-      ? '私有仓库拉取更新失败：令牌可能无效，或 Release 缺少 latest-mac.yml'
-      : '私有仓库需在下方配置 GitHub Token（配置后需重启应用生效）';
+    return '拉取更新失败：Release 可能缺少 latest-mac.yml';
   }
   if (message.includes('401') || message.includes('403')) {
-    return 'GitHub Token 无效、过期或限流，稍后再试';
+    return 'GitHub 拒绝访问或限流，稍后再试';
   }
   if (
     message.includes('EPERM') ||
@@ -257,8 +242,7 @@ export class UpdatesService {
   }
 
   /**
-   * 静默检查：令牌注入环境变量（provider 首次检查时读取并缓存），
-   * session 代理就位后查 feed；semver 比对落 available / current。
+   * 静默检查：session 代理就位后查 feed；semver 比对落 available / current。
    */
   private async checkAuto(): Promise<UpdateStatus> {
     if (this.busy) return this.current();
@@ -275,15 +259,6 @@ export class UpdatesService {
         ? { latest: null, asset: null, received: 0, total: 0, file: null }
         : {}),
     });
-    // electron-updater 在首次检查时创建 provider 并从环境变量取令牌；
-    // 用完立即还原，避免令牌随进程环境泄漏给后续 spawn 的子进程。
-    const token = this.token();
-    const previousGhToken = process.env['GH_TOKEN'];
-    const previousGithubToken = process.env['GITHUB_TOKEN'];
-    if (token) {
-      process.env['GH_TOKEN'] = token;
-      process.env['GITHUB_TOKEN'] = token;
-    }
     try {
       await applySessionProxy(this.layout);
       autoUpdater.autoDownload = false;
@@ -313,14 +288,10 @@ export class UpdatesService {
             : this.status.asset
               ? 'available'
               : 'idle',
-        message: autoErrorMessage(message, Boolean(token)),
+        message: autoErrorMessage(message),
       });
       throw error;
     } finally {
-      if (token) {
-        restoreEnv('GH_TOKEN', previousGhToken);
-        restoreEnv('GITHUB_TOKEN', previousGithubToken);
-      }
       this.busy = false;
     }
   }
@@ -358,7 +329,7 @@ export class UpdatesService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log.warn(`mac update download failed: ${message}`);
-      this.patch({ phase: 'error', message: autoErrorMessage(message, true) });
+      this.patch({ phase: 'error', message: autoErrorMessage(message) });
       throw error;
     } finally {
       this.busy = false;
@@ -430,8 +401,6 @@ export class UpdatesService {
         headers: {
           'User-Agent': 'work-studio',
           Accept: 'application/octet-stream',
-          // GitHub 资产需要令牌；COS 公开读，带上令牌反而可能触发签名冲突。
-          ...(asset.source === 'github' ? authHeaders(this.token()) : {}),
         },
         signal: AbortSignal.any([
           this.controller.signal,
@@ -517,7 +486,6 @@ export class UpdatesService {
       headers: {
         'User-Agent': 'work-studio',
         Accept: 'application/vnd.github+json',
-        ...authHeaders(this.token()),
       },
       signal: AbortSignal.timeout(20_000),
     });
@@ -592,14 +560,6 @@ export class UpdatesService {
       };
     }
     return null;
-  }
-
-  private token(): string | null {
-    return (
-      process.env['GITHUB_TOKEN'] ??
-      readUserPreferences(this.layout).githubToken ??
-      null
-    );
   }
 
   private patch(patch: Partial<UpdateStatus>): void {
