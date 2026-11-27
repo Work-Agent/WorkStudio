@@ -55,6 +55,17 @@ export class WebCache {
     rmSync(this.fileOf(sourceUrlOf(url)), { force: true });
   }
 
+  /** 删除某个域名的全部快照（缓存文件）。 */
+  removeDomain(domain: string): void {
+    for (const doc of this.list()) {
+      try {
+        if (new URL(doc.url).hostname === domain) this.remove(doc.url);
+      } catch {
+        /* 坏地址跳过 */
+      }
+    }
+  }
+
   /** 缓存清单：只读目录，按采集时间倒序；坏文件直接跳过。 */
   list(): SnapshotDoc[] {
     let names: string[];

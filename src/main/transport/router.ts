@@ -178,6 +178,15 @@ export class TransportRouter {
     return locator ? { ref, locator } : { ref };
   }
 
+  /** 结构操作：重命名 / 删除，只对本地文件有效。 */
+  rename(ref: string, name: string): Promise<{ ref: string }> {
+    return this.workspace.renameRef(ref, name);
+  }
+
+  remove(ref: string): Promise<void> {
+    return this.workspace.removeRef(ref);
+  }
+
   /** 插件上下文的原始字节读写；不经过格式层。 */
   readBytes(ref: string): Promise<Uint8Array> {
     return this.workspace.readBytes(ref);

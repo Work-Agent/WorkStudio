@@ -5,6 +5,7 @@
  * web 是独立的内建 Biz Domain：读快照、检索、采集与保存。
  */
 
+import { snapshotTitle } from '../../../shared/snapshots.ts';
 import { CallFailure } from '../../contract.ts';
 import type { TransportRouter } from '../../transport/router.ts';
 import type { ResourceAdapter } from '../../transport/resource.ts';
@@ -271,9 +272,15 @@ export function defineWebResource(
   cache: WebCache,
   browser?: BrowserCapability,
   save?: (url: string, ref?: string) => Promise<{ ref: string }>,
+  removeSite?: (domain: string) => Promise<void>,
 ): void {
   const resource = registry.define('web').resource('web');
-  resource.snapshot(() => ({ cache: cache.directory }));
+  /** 站点采集的进行中状态：清单与面板都从快照里读。 */
+  let crawl: { url: string; done: number; total: number } | null = null;
+  resource.snapshot(() => ({
+    cache: cache.directory,
+    ...(crawl ? { crawl } : {}),
+  }));
   resource.command('list', {
     summary: '列出网页快照缓存',
     args: {},
@@ -292,7 +299,7 @@ export function defineWebResource(
       }
       return cache.list().map((doc) => ({
         url: doc.url,
-        title: doc.title,
+        title: snapshotTitle(doc),
         capturedAt: doc.capturedAt,
         ref: doc.fileRef ?? cache.refOf(doc.url),
         ...(doc.icon ? { icon: doc.icon } : {}),
@@ -313,6 +320,57 @@ export function defineWebResource(
     args: { url: { type: 'string', required: true } },
     run: (input) => {
       cache.remove(String(input.url));
+      resource.publish();
+      return null;
+    },
+  });
+  resource.command('crawl', {
+    summary: '采集整个站点',
+    args: {
+      url: { type: 'string', required: true },
+      max: { type: 'number' },
+    },
+    run: async (input) => {
+      if (!browser) throw new CallFailure('failed', '浏览器宿主未接入');
+      if (!save) throw new CallFailure('failed', '工作区写入未接入');
+      if (crawl) throw new CallFailure('failed', '已有采集任务在运行');
+      const url = String(input.url);
+      const max = Math.min(Math.max(Number(input.max) || 50, 1), 200);
+      crawl = { url, done: 0, total: 0 };
+      resource.publish();
+      try {
+        const captured = await browser.crawl(
+          url,
+          max,
+          async (page, done, total) => {
+            await cache.save({
+              url: page.url,
+              title: page.title,
+              markdown: page.markdown,
+              ...(page.excerpt ? { excerpt: page.excerpt } : {}),
+              capturedAt: Date.now(),
+              ...(page.icon ? { icon: page.icon } : {}),
+            });
+            const file = await save(page.url);
+            cache.attachFile(page.url, file.ref);
+            crawl = { url, done, total };
+            resource.publish();
+          },
+        );
+        return { captured };
+      } finally {
+        crawl = null;
+        resource.publish();
+      }
+    },
+  });
+  resource.command('removeSite', {
+    summary: '删除一个站点的全部快照',
+    args: { domain: { type: 'string', required: true } },
+    run: async (input) => {
+      const domain = String(input.domain);
+      cache.removeDomain(domain);
+      await removeSite?.(domain);
       resource.publish();
       return null;
     },

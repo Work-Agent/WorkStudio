@@ -12,7 +12,7 @@ import type { DomainRegistry } from '../../registry/registry.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import { session } from 'electron';
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -126,8 +126,12 @@ export class BrowserModule implements DomainModule {
       this.capability,
     );
     this.captureResources = defineCaptureResources(registry, this.capture);
-    defineWebResource(registry, this.cache, this.capability, (url, ref) =>
-      this.saveSnapshot(url, ref),
+    defineWebResource(
+      registry,
+      this.cache,
+      this.capability,
+      (url, ref) => this.saveSnapshot(url, ref),
+      (domain) => this.removeSite(domain),
     );
   }
 
@@ -255,6 +259,30 @@ export class BrowserModule implements DomainModule {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, snapshotMarkdown(doc));
     return { ref: target };
+  }
+
+  /** 删除一个站点在所有已知工作区里的快照目录。 */
+  private async removeSite(domain: string): Promise<void> {
+    const layout = this.layout;
+    if (!layout) return;
+    const snapshot = this.registry?.snapshot({
+      domain: 'workspace',
+      resource: 'registry',
+    }) as {
+      current?: { id?: string } | null;
+      workspaces?: Array<{ id: string }>;
+    } | null;
+    const ids = new Set(
+      (snapshot?.workspaces ?? []).map((workspace) => workspace.id),
+    );
+    const current = snapshot?.current?.id;
+    if (current) ids.add(current);
+    for (const id of ids) {
+      await rm(join(layout.sitesDir(id), domain), {
+        recursive: true,
+        force: true,
+      });
+    }
   }
 
   private loadPolicy(): void {

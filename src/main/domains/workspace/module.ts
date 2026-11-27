@@ -216,6 +216,7 @@ export class WorkspaceModule implements DomainModule {
         return { workspaceId, workspacePath: meta?.path ?? '' };
       },
       this.openNode,
+      this.transport,
     );
   }
 

@@ -64,6 +64,7 @@ export default defineCase({
     // 底部新增按钮展开地址输入，空地址时采集不可用。
     await ctx.clickTestId('snapshots-add');
     await ctx.expect.visible('[data-testid="snapshots-url"]');
+    await ctx.expect.visible('[data-testid="snapshots-max"]');
     await ctx.expect.poll(
       async () =>
         ctx.evaluate(() => {
@@ -241,16 +242,40 @@ export const captureCase = defineCase({
         }
       }
 
-      // 删除快照后清单不再包含它。
-      await ctx.evaluate(async (target) => {
-        const result = await window.workStudio.command('web', 'web', 'remove', {
-          url: target as string,
+      // 同域的第二个页面：站点删除要一次清掉整棵站点。
+      const second = `${url}?page=2`;
+      await ctx.evaluate(async (input) => {
+        const windowId = window.workStudio.workspaceId;
+        await window.workStudio.command('browser', `${windowId}/tabs`, 'open', {
+          url: input as string,
         });
-        if (!result.ok) throw new Error(result.error.message);
-      }, url);
+      }, second);
       await ctx.expect.poll(
         async () =>
-          ctx.evaluate(async (target) => {
+          ctx.evaluate(async () => {
+            const windowId = window.workStudio.workspaceId;
+            const page = (await window.workStudio.command(
+              'browser',
+              `${windowId}/tabs`,
+              'read',
+              {},
+            )) as { ok: boolean; data?: { text?: string } };
+            return page.ok && (page.data?.text ?? '').includes('季度报告');
+          }),
+        '第二个网页没有就绪',
+      );
+      await ctx.evaluate(async (target) => {
+        const result = await window.workStudio.command(
+          'web',
+          'web',
+          'capture',
+          { url: target as string },
+        );
+        if (!result.ok) throw new Error(result.error.message);
+      }, second);
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async () => {
             const result = await window.workStudio.command(
               'web',
               'web',
@@ -259,9 +284,49 @@ export const captureCase = defineCase({
             );
             if (!result.ok) return false;
             const items = result.data as Array<{ url: string }>;
-            return !items.some((item) => item.url === target);
-          }, url),
-        '快照没有被删除',
+            return items.filter((item) => item.url.includes(':')).length >= 2;
+          }),
+        '第二个快照没有进入清单',
+      );
+
+      // 删除整个站点：清单与文件一起清空。
+      await ctx.evaluate(async () => {
+        const result = await window.workStudio.command(
+          'web',
+          'web',
+          'removeSite',
+          { domain: '127.0.0.1' },
+        );
+        if (!result.ok) throw new Error(result.error.message);
+      });
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async () => {
+            const result = await window.workStudio.command(
+              'web',
+              'web',
+              'list',
+              {},
+            );
+            if (!result.ok) return false;
+            const items = result.data as Array<{ url: string }>;
+            return !items.some((item) =>
+              item.url.startsWith('http://127.0.0.1'),
+            );
+          }),
+        '删除站点后清单里仍有快照',
+      );
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async (ref) => {
+            try {
+              await window.workStudio.read(ref as string);
+              return false;
+            } catch {
+              return true;
+            }
+          }, captured.ref),
+        '删除站点后快照文件仍在',
       );
     } finally {
       server.close();

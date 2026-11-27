@@ -1,4 +1,28 @@
 /**
+ * 等页面稳定：首屏完成且已经有标题或足够的正文（客户端渲染常在 load 之后）。
+ * 超时也返回，采集继续。
+ */
+export function waitForPageReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const done = (): boolean => {
+      if (document.readyState !== 'complete') return false;
+      const title = (document.title || '').trim();
+      const text = (document.body?.innerText || '').trim();
+      return title.length > 0 || text.length > 120;
+    };
+    const tick = (): void => {
+      if (done() || Date.now() - started > 2500) {
+        resolve(true);
+        return;
+      }
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+}
+
+/**
  * 采集脚本：在页面内把 DOM 读成 Markdown，和标题 / 地址一次取回。
  *
  * 只能在页面里运行（没有 Node、没有外部依赖），宿主用
@@ -335,9 +359,25 @@ export function capturePage(): {
     }
   };
 
+  // 标题兜底：SPA 常常没有 document.title，用 og / 首个 h1 补上。
+  const title = (() => {
+    const direct = (document.title || '').trim();
+    if (direct) return direct;
+    const meta =
+      document
+        .querySelector('meta[property="og:title"]')
+        ?.getAttribute('content') ||
+      document
+        .querySelector('meta[name="twitter:title"]')
+        ?.getAttribute('content') ||
+      '';
+    if (meta.trim()) return meta.trim();
+    return (document.querySelector('h1')?.textContent || '').trim();
+  })();
+
   return {
     url: location.href,
-    title: document.title,
+    title,
     excerpt,
     html: document.documentElement?.outerHTML ?? '',
     text: document.body?.innerText ?? '',

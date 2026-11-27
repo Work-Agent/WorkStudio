@@ -5,7 +5,9 @@
  * 调用方沿用「活动窗口」的便捷方法，内部仍然落到具体窗口。
  */
 
+import { net } from 'electron';
 import { notImplemented } from '../../contract.ts';
+import { discoverPages, linksOf, normalizePageUrl } from './crawl.ts';
 import type { ShellHost } from '../shell/native.ts';
 
 export interface BrowserTab {
@@ -272,6 +274,80 @@ export class BrowserCapability {
       markdown: page.markdown,
       icon: page.icon,
     };
+  }
+
+  /**
+   * 站点采集：先发现页树（sitemap + 页面链接），再用同一个标签逐页抓取。
+   * onPage 负责落盘；返回值是实际采到的页数。
+   */
+  async crawl(
+    seed: string,
+    max: number,
+    onPage: (
+      page: BrowserCaptureView,
+      done: number,
+      total: number,
+    ) => Promise<void> | void,
+  ): Promise<number> {
+    const windowId = this.activeWindow();
+    return this.crawlIn(windowId, seed, max, onPage);
+  }
+
+  async crawlIn(
+    windowId: string,
+    seed: string,
+    max: number,
+    onPage: (
+      page: BrowserCaptureView,
+      done: number,
+      total: number,
+    ) => Promise<void> | void,
+  ): Promise<number> {
+    this.requireHost('browser/crawl');
+    const seeds = await discoverPages(seed, max, (url) => net.fetch(url));
+    if (seeds.length === 0) return 0;
+    const origin = new URL(seeds[0]!).origin;
+    const queue = [...seeds];
+    const seen = new Set(queue);
+    const tab = await this.openIn(windowId, queue[0]!);
+    let done = 0;
+    // 广度优先：sitemap / 链接发现之外，再从渲染后的 DOM 里补链接。
+    while (queue.length > 0 && done < max) {
+      const url = queue.shift()!;
+      seen.add(url);
+      if (process.env['WA_DEBUG_CRAWL']) console.log('[crawl] nav', url);
+      // 走 shell 的 open：地址栏 / 标签跟着导航走，再等首屏与客户端渲染稳定。
+      if (this.openView) {
+        await this.openView(windowId, {
+          id: tab.id,
+          type: 'web',
+          title: url,
+          url,
+        });
+      } else {
+        this.host!.navigateView(windowId, tab.id, url);
+      }
+      const loaded = await this.host!.waitForLoad(windowId, tab.id, url);
+      if (process.env['WA_DEBUG_CRAWL'])
+        console.log('[crawl] loaded', url, loaded);
+      if (!loaded) continue;
+      await this.host!.waitForSettle(windowId, tab.id);
+      if (process.env['WA_DEBUG_CRAWL']) console.log('[crawl] settled', url);
+      const page = await this.captureIn(windowId, tab.id);
+      done += 1;
+      // 总量随发现增长：已采 + 队列里已知的页面。
+      await onPage(page, done, done + queue.length);
+      for (const href of linksOf(page.html, url)) {
+        const next = normalizePageUrl(href);
+        if (!next || seen.has(next) || new URL(next).origin !== origin) {
+          continue;
+        }
+        seen.add(next);
+        queue.push(next);
+      }
+      if (done >= max) break;
+    }
+    return done;
   }
 
   async capture(id?: string): Promise<BrowserCaptureView> {

@@ -20,6 +20,7 @@ import { PluginModule } from './domains/plugin/module.ts';
 import type { SettingsPage } from './domains/settings/domains.ts';
 import { DEFAULT_SETTINGS_PAGES } from './domains/settings/pages.ts';
 import { SettingsModule } from './domains/settings/module.ts';
+import { snapshotTitle } from '../shared/snapshots.ts';
 import { ShellModule } from './domains/shell/module.ts';
 import type { ShellHost } from './domains/shell/native.ts';
 import { WorkspaceModule } from './domains/workspace/module.ts';
@@ -117,6 +118,7 @@ export function registerSystemModules(
       () =>
         options.cache.list().map((doc) => ({
           ...doc,
+          title: snapshotTitle(doc),
           ref: doc.fileRef ?? options.cache.refOf(doc.url),
         })),
     ),

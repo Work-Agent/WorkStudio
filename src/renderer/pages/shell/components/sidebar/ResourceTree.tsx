@@ -4,7 +4,7 @@
  * 每个 ResourceGroup 是一棵树；整个侧栏是森林。
  * 分组、目录可折叠，文件/条目点击走 workspace/<wsId>/resources 的 open action。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronRight,
   FileText,
@@ -18,11 +18,47 @@ import type {
   ResourceNode,
 } from '../../../../../shared/resources.ts';
 import { command } from '../../../../shared/api/bridge.ts';
+import { popupMenu } from '../../../../shared/api/runtime.ts';
+import { askConfirm, askInput } from '../../../../shared/api/dialog.ts';
 import { openResourceNode } from '../../../../shared/domains/resources.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
 import { useActiveWorkspaceId } from '../../domains/windows.ts';
 import { groupIconOf } from './groupIcon.ts';
 import { formatTime } from './time.ts';
+
+/** 原生菜单来源；节点/分组由打开菜单时记下。 */
+const MENU_SOURCE = 'resource-tree';
+
+interface MenuTarget {
+  node?: ResourceNode;
+  group?: ResourceGroup;
+}
+
+function menuItemsOf(target: MenuTarget): Array<{
+  id: string;
+  label: string;
+}> {
+  const { node, group } = target;
+  if (!node) {
+    const items: Array<{ id: string; label: string }> = [];
+    if (group?.definitionId === 'sites') {
+      items.push({ id: 'removeSite', label: '删除站点' });
+    }
+    items.push({ id: 'refresh', label: '刷新列表' });
+    return items;
+  }
+  const ref = typeof node.meta?.['ref'] === 'string' ? node.meta['ref'] : '';
+  const items = [{ id: 'open', label: '打开' }];
+  if (ref.startsWith('file://')) {
+    items.push(
+      { id: 'reveal', label: '在文件管理器中显示' },
+      { id: 'copy', label: '复制路径' },
+      { id: 'rename', label: '重命名' },
+      { id: 'remove', label: '删除' },
+    );
+  }
+  return items;
+}
 
 function openNode(node: ResourceNode): void {
   if (node.state?.disabled === true) return;
@@ -88,6 +124,7 @@ function NodeRow({
   wsId,
   expanded,
   onToggle,
+  onMenu,
 }: {
   node: ResourceNode;
   group: ResourceGroup;
@@ -95,6 +132,7 @@ function NodeRow({
   wsId: string | null;
   expanded: (key: string, fallback: boolean) => boolean;
   onToggle: (key: string, next: boolean) => void;
+  onMenu: (event: React.MouseEvent, target: MenuTarget) => void;
 }) {
   const branch = node.type === 'dir' && Boolean(node.children?.length);
   const isOpen = branch ? expanded(`n:${node.key}`, false) : false;
@@ -111,6 +149,10 @@ function NodeRow({
         onClick={() =>
           branch ? onToggle(`n:${node.key}`, !isOpen) : openNode(node)
         }
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onMenu(event, { node, group });
+        }}
         className={`group relative flex items-center pr-1.5 min-h-[32px] rounded-md cursor-pointer transition-colors ${
           active
             ? 'bg-zinc-200/70 dark:bg-[#2a2d2e]'
@@ -167,6 +209,7 @@ function NodeRow({
               wsId={wsId}
               expanded={expanded}
               onToggle={onToggle}
+              onMenu={onMenu}
             />
           ))}
         </div>
@@ -196,11 +239,13 @@ function GroupBlock({
   wsId,
   expanded,
   onToggle,
+  onMenu,
 }: {
   group: ResourceGroup;
   wsId: string | null;
   expanded: (key: string, fallback: boolean) => boolean;
   onToggle: (key: string, next: boolean) => void;
+  onMenu: (event: React.MouseEvent, target: MenuTarget) => void;
 }) {
   const key = `g:${group.id}`;
   const isOpen = expanded(key, true);
@@ -210,6 +255,10 @@ function GroupBlock({
         data-testid="sidebar-tree-group"
         data-group={group.id}
         onClick={() => onToggle(key, !isOpen)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onMenu(event, { group });
+        }}
         className="group relative flex items-center min-h-[32px] rounded-md cursor-pointer px-1.5 transition-colors hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]"
       >
         <span className="shrink-0 w-4 flex items-center justify-center">
@@ -257,6 +306,7 @@ function GroupBlock({
                 wsId={wsId}
                 expanded={expanded}
                 onToggle={onToggle}
+                onMenu={onMenu}
               />
             ))
           )}
@@ -275,6 +325,87 @@ export function ResourceTree({
 }) {
   const wsId = useActiveWorkspaceId();
   const [state, setState] = useState<Record<string, boolean>>({});
+  const menuTarget = useRef<MenuTarget | null>(null);
+
+  const runMenu = async (actionId: string): Promise<void> => {
+    const target = menuTarget.current;
+    menuTarget.current = null;
+    if (!target || !wsId) return;
+    const resource = `${wsId}/resources`;
+    const ref =
+      typeof target.node?.meta?.['ref'] === 'string'
+        ? (target.node.meta['ref'] as string)
+        : '';
+    try {
+      if (actionId === 'open' && target.node) {
+        await openResourceNode(target.node);
+        return;
+      }
+      if (actionId === 'reveal') {
+        await command('shell', 'native', 'reveal', { ref });
+        return;
+      }
+      if (actionId === 'copy') {
+        await command('shell', 'native', 'copyPath', { ref });
+        return;
+      }
+      if (actionId === 'rename' && target.node) {
+        const name = await askInput(wsId, {
+          title: '重命名',
+          prefill: target.node.title,
+        });
+        if (name && name !== target.node.title) {
+          await command('workspace', resource, 'rename', { ref, name });
+        }
+        return;
+      }
+      if (actionId === 'remove' && target.node) {
+        const confirmed = await askConfirm(wsId, {
+          title: '删除',
+          message: `确定删除「${target.node.title}」？`,
+        });
+        if (confirmed) {
+          await command('workspace', resource, 'remove', { ref });
+        }
+        return;
+      }
+      if (actionId === 'refresh') {
+        await command('workspace', resource, 'refresh', {});
+        return;
+      }
+      if (actionId === 'removeSite' && target.group) {
+        const domain = target.group.label;
+        const confirmed = await askConfirm(wsId, {
+          title: '删除站点',
+          message: `删除 ${domain} 的全部快照？`,
+        });
+        if (confirmed) {
+          await command('web', 'web', 'removeSite', { domain });
+        }
+      }
+    } catch (error) {
+      notifyError(
+        error instanceof Error ? error.message : String(error),
+        'resources',
+      );
+    }
+  };
+
+  const runRef = useRef(runMenu);
+  useEffect(() => {
+    runRef.current = runMenu;
+  });
+  useEffect(() => {
+    return popupMenu.onSelect((event) => {
+      if (event.source !== MENU_SOURCE) return;
+      void runRef.current(event.actionId);
+    });
+  }, []);
+
+  const openMenu = (event: React.MouseEvent, target: MenuTarget): void => {
+    menuTarget.current = target;
+    void popupMenu.show({ source: MENU_SOURCE, items: menuItemsOf(target) });
+  };
   const expanded = (key: string, fallback: boolean): boolean =>
     state[key] ?? fallback;
   const onToggle = (key: string, next: boolean): void => {
@@ -306,6 +437,7 @@ export function ResourceTree({
           wsId={wsId}
           expanded={expanded}
           onToggle={onToggle}
+          onMenu={openMenu}
         />
       ))}
     </div>

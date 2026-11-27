@@ -9,6 +9,7 @@ import settingsOpen from '../cases/settings-open.ts';
 import snapshotsOpen, {
   captureCase as snapshotsCapture,
 } from '../cases/snapshots-open.ts';
+import snapshotsCrawl from '../cases/snapshots-crawl.ts';
 import settingsSidebar from '../cases/settings-sidebar.ts';
 import siteOpen from '../cases/site-open.ts';
 import tabs from '../cases/tabs.ts';
@@ -79,6 +80,7 @@ export const cases: readonly E2ECase[] = [
   settingsOpen,
   snapshotsOpen,
   snapshotsCapture,
+  snapshotsCrawl,
   settingsSidebar,
   tabs,
   tabsIdentity,

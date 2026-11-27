@@ -18,6 +18,27 @@ export interface SnapshotDomainGroup {
   items: SnapshotEntry[];
 }
 
+/** 展示标题：记录标题 → 正文首个标题行 → URL 路径（老缓存 title 可能为空）。 */
+export function snapshotTitle(entry: {
+  title?: string;
+  markdown?: string;
+  url: string;
+}): string {
+  const direct = (entry.title ?? '').trim();
+  if (direct) return direct;
+  const heading = (entry.markdown ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /^#{1,6}\s+\S/.test(line));
+  if (heading) return heading.replace(/^#{1,6}\s+/, '');
+  try {
+    const url = new URL(entry.url);
+    return `${url.hostname}${url.pathname}`;
+  } catch {
+    return entry.url;
+  }
+}
+
 export function snapshotDomain(url: string): string {
   try {
     return new URL(url).hostname || url;

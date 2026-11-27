@@ -9,6 +9,7 @@ import {
   BrowserWindow,
   Menu,
   WebContentsView,
+  clipboard,
   dialog,
   nativeTheme,
   screen,
@@ -17,6 +18,7 @@ import {
 import type { BrowserWindowConstructorOptions, WebContents } from 'electron';
 import type { Origins } from '../../ipc/origins.ts';
 import type { ViewType } from '../../contract.ts';
+import { fileURLToPath } from 'node:url';
 import type { LayoutSnapshot } from '../../../shared/types.ts';
 import { defaultLayout } from './layout.ts';
 import {
@@ -25,7 +27,7 @@ import {
 } from '../../../shared/titlebar.ts';
 import { hardenWebContents } from '../../platform/policy.ts';
 import { parsePluginUrl } from '../../../shared/pages.ts';
-import { capturePage } from './capture-script.ts';
+import { capturePage, waitForPageReady } from './capture-script.ts';
 import { WORKSPACE_ARG } from '../../../shared/channels.ts';
 import type { ViewRecord, WindowRecord } from './domains.ts';
 
@@ -73,6 +75,21 @@ interface ViewEntry {
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
+
+/** OAuth 授权回传地址：本机回调路径或带 code 参数。 */
+function isLoopbackCallback(value: string): boolean {
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1):\d+\//i.test(value)) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return (
+      /(?:^|\/)callback$/i.test(url.pathname) || url.searchParams.has('code')
+    );
+  } catch {
+    return false;
+  }
+}
 
 export class ShellHost {
   private readonly windows = new Map<string, WindowEntry>();
@@ -274,6 +291,16 @@ export class ShellHost {
     await shell.openPath(path);
   }
 
+  /** 在系统文件管理器中定位；只接受 file:// 引用。 */
+  revealRef(ref: string): void {
+    shell.showItemInFolder(fileURLToPath(ref));
+  }
+
+  /** 复制文件路径到剪贴板；只接受 file:// 引用。 */
+  copyPath(ref: string): void {
+    clipboard.writeText(fileURLToPath(ref));
+  }
+
   /** 保存对话框：只返回用户选定的目标路径，是否真的写入由调用方决定。 */
   async showSaveDialog(defaultName?: string): Promise<string | null> {
     const options = {
@@ -393,6 +420,9 @@ export class ShellHost {
       // 对话框 / 捕获层是覆盖在壳层之上的透明层，不能用自己的底色盖住页面。
       view.setBackgroundColor('#00000000');
       view.setVisible(false);
+    } else if (input.type === 'web') {
+      // 外部站点自己决定页面底色；透明页面露出的是浏览器的白底，不是应用主题色。
+      view.setBackgroundColor('#ffffff');
     } else {
       // WebContentsView 默认白底；深色模式下新页面首帧会先露出白色。
       view.setBackgroundColor(this.backgroundColor());
@@ -421,9 +451,10 @@ export class ShellHost {
       ...(pluginUrl?.ref ? { ref: pluginUrl.ref } : {}),
     });
     if (input.type === 'web') {
-      // 本地回调（OAuth loopback）命中后收尾：给服务一点时间响应，再关标签页。
+      // OAuth loopback 回调命中后收尾：给服务一点时间响应，再关标签页。
+      // 只认回调路径 / 带 code 的地址——不能把本地开发的普通页面一起关掉。
       view.webContents.on('did-navigate', (_event: unknown, url: string) => {
-        if (!/^https?:\/\/(localhost|127\.0\.0\.1):\d+\//i.test(url)) return;
+        if (!isLoopbackCallback(url)) return;
         setTimeout(() => this.closeView(windowId, id), 1200);
       });
     }
@@ -641,6 +672,52 @@ export class ShellHost {
   applyLayout(windowId: string, layout: LayoutSnapshot): void {
     this.layouts.set(windowId, layout);
     this.resizeWindow(windowId);
+  }
+
+  /** 等首屏加载结束（不触发导航）：采集在 open 之后用它等页面。 */
+  waitForLoad(
+    windowId: string,
+    id: string,
+    url: string,
+    timeoutMs = 8000,
+  ): Promise<boolean> {
+    const entry = this.viewOf(windowId, id);
+    if (!entry) return Promise.resolve(false);
+    const contents = entry.view.webContents;
+    const target = (() => {
+      try {
+        const value = new URL(url);
+        value.hash = '';
+        return value.toString();
+      } catch {
+        return url;
+      }
+    })();
+    const started = Date.now();
+    const poll = async (): Promise<boolean> => {
+      while (Date.now() - started < timeoutMs) {
+        if (contents.isDestroyed()) return false;
+        const current = (contents.getURL() || '').split('#')[0] ?? '';
+        if (current === target && !contents.isLoading()) return true;
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+      return false;
+    };
+    return poll();
+  }
+
+  /** 等页面稳定（首屏完成 + 有标题或正文）：采集逐页走这里。 */
+  async waitForSettle(windowId: string, id: string): Promise<void> {
+    const settle = this.evaluateView(
+      windowId,
+      id,
+      `(${waitForPageReady.toString()})()`,
+    ).catch(() => undefined);
+    // 页面中途被销毁时 executeJavaScript 的 Promise 可能永远不结算。
+    await Promise.race([
+      settle,
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
   }
 
   navigateView(windowId: string, id: string, url: string): void {

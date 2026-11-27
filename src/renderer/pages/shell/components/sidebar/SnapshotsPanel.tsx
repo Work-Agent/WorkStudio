@@ -23,16 +23,20 @@ import {
 } from '../../../../../shared/snapshots.ts';
 import {
   command,
+  useResource,
   useWorkspaceId,
   workStudio,
 } from '../../../../shared/api/bridge.ts';
 import { notifyError } from '../../../../shared/domains/notices.ts';
+import { askConfirm } from '../../../../shared/api/dialog.ts';
 import { openResourceNode } from '../../../../shared/domains/resources.ts';
 import { popupMenu } from '../../../../shared/api/runtime.ts';
 import { useSidebarStore } from '../../domains/sidebar.ts';
 
 /** 行操作的 popup 菜单来源。 */
 const MENU_SOURCE = 'snapshots-row';
+/** 域名行的 popup 菜单来源。 */
+const DOMAIN_MENU_SOURCE = 'snapshots-domain';
 
 function hostOf(url: string): string {
   try {
@@ -125,10 +129,16 @@ export function SnapshotsPanel({
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState('');
+  const [maxPages, setMaxPages] = useState(50);
   const [busy, setBusy] = useState<'open' | 'capture' | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const menuItem = useRef<SnapshotEntry | null>(null);
+  const menuDomain = useRef<string | null>(null);
   const groups = useMemo(() => groupSnapshots(items), [items]);
+  const webState = useResource<{
+    crawl?: { url: string; done: number; total: number };
+  }>('web', 'web', {});
+  const crawling = webState.crawl ?? null;
 
   const reload = useCallback((): void => {
     void command<SnapshotEntry[]>('web', 'web', 'list', {})
@@ -185,7 +195,7 @@ export function SnapshotsPanel({
     }).catch((reason: unknown) => notifyError(errorText(reason), 'snapshots'));
   };
 
-  /** 采集：打开实时页 → 写入缓存 → 打开快照页。 */
+  /** 采集站点：发现页树（sitemap + 链接）后逐页抓取，最多 max 页。 */
   const capture = async (): Promise<void> => {
     if (!wsId) return;
     const url = normalizeUrl(value);
@@ -195,14 +205,18 @@ export function SnapshotsPanel({
     }
     setBusy('capture');
     try {
-      await command('browser', `${wsId}/tabs`, 'open', { url });
-      const saved = await command<{ ref: string }>('web', 'web', 'capture', {
+      await command('web', 'web', 'crawl', {
         url,
+        max: Math.max(1, Math.min(Number(maxPages) || 50, 200)),
       });
       setAdding(false);
       setValue('');
       reload();
-      openSnapshot({ url, title: url, capturedAt: Date.now(), ref: saved.ref });
+      const list = await command<SnapshotEntry[]>('web', 'web', 'list', {});
+      const seed =
+        list.find((item) => item.url === url) ??
+        list.find((item) => item.url.startsWith(url));
+      if (seed) openSnapshot(seed);
     } catch (reason) {
       notifyError(errorText(reason), 'snapshots');
     } finally {
@@ -272,6 +286,47 @@ export function SnapshotsPanel({
     });
   }, []);
 
+  /** 站点级删除：删掉这个域名的全部快照。 */
+  const removeSite = async (domain: string): Promise<void> => {
+    if (!wsId) return;
+    const confirmed = await askConfirm(wsId, {
+      title: '删除站点',
+      message: `删除 ${domain} 的全部快照？`,
+    });
+    if (!confirmed) return;
+    try {
+      await command('web', 'web', 'removeSite', { domain });
+      reload();
+    } catch (reason) {
+      notifyError(errorText(reason), 'snapshots');
+    }
+  };
+
+  const showDomainMenu = (domain: string): void => {
+    menuDomain.current = domain;
+    void popupMenu.show({
+      source: DOMAIN_MENU_SOURCE,
+      items: [
+        { id: 'capture', label: '采集此站点' },
+        { id: 'remove', label: '删除站点' },
+      ],
+    });
+  };
+
+  useEffect(() => {
+    return popupMenu.onSelect((event) => {
+      if (event.source !== DOMAIN_MENU_SOURCE) return;
+      const domain = menuDomain.current;
+      menuDomain.current = null;
+      if (!domain) return;
+      if (event.actionId === 'capture') {
+        setValue(`https://${domain}/`);
+        setAdding(true);
+      }
+      if (event.actionId === 'remove') void removeSite(domain);
+    });
+  }, [wsId]);
+
   const showMenu = (item: SnapshotEntry): void => {
     menuItem.current = item;
     void popupMenu.show({
@@ -285,7 +340,10 @@ export function SnapshotsPanel({
   };
 
   const ready =
-    busy === null && normalizeUrl(value) !== null && value.trim() !== '';
+    busy === null &&
+    crawling === null &&
+    normalizeUrl(value) !== null &&
+    value.trim() !== '';
 
   const toggleDomain = (domain: string): void => {
     setCollapsedDomains((current) => {
@@ -371,28 +429,46 @@ export function SnapshotsPanel({
               const open = !collapsedDomains.has(group.domain);
               return (
                 <div key={group.domain}>
-                  <button
-                    type="button"
-                    data-testid="snapshots-domain"
-                    data-domain={group.domain}
-                    onClick={() => toggleDomain(group.domain)}
-                    className="group flex w-full items-center gap-1 rounded-md px-1 py-1 text-left transition-colors hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]"
-                  >
-                    <ChevronRight
-                      className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform dark:text-zinc-500 ${
-                        open ? 'rotate-90' : ''
-                      }`}
-                    />
-                    <DomainFavicon
-                      icon={group.items.find((item) => item.icon)?.icon}
-                    />
-                    <span className="ml-0.5 min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-700 dark:text-zinc-200">
-                      {group.domain}
-                    </span>
-                    <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">
-                      {group.items.length}
-                    </span>
-                  </button>
+                  <div className="group flex w-full items-center rounded-md pr-0.5 transition-colors hover:bg-zinc-200/60 dark:hover:bg-[#2a2d2e]">
+                    <button
+                      type="button"
+                      data-testid="snapshots-domain"
+                      data-domain={group.domain}
+                      onClick={() => toggleDomain(group.domain)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        showDomainMenu(group.domain);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-1 py-1 pl-1 text-left"
+                    >
+                      <ChevronRight
+                        className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform dark:text-zinc-500 ${
+                          open ? 'rotate-90' : ''
+                        }`}
+                      />
+                      <DomainFavicon
+                        icon={group.items.find((item) => item.icon)?.icon}
+                      />
+                      <span className="ml-0.5 min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-700 dark:text-zinc-200">
+                        {group.domain}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">
+                        {group.items.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="snapshots-domain-menu"
+                      title="站点操作"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        showDomainMenu(group.domain);
+                      }}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-zinc-700 dark:hover:text-zinc-200"
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   {open &&
                     group.items.map((item) => (
                       <div
@@ -473,6 +549,21 @@ export function SnapshotsPanel({
               autoComplete="off"
               className="mb-1 h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 font-mono text-[11px] outline-none transition-colors placeholder:text-zinc-400 focus:border-[#4F6BED] dark:border-[#303436] dark:bg-[#101214]"
             />
+            <label className="mb-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+              最多页数
+              <input
+                data-testid="snapshots-max"
+                type="number"
+                min={1}
+                max={200}
+                value={maxPages}
+                onChange={(event) =>
+                  setMaxPages(Number(event.target.value) || 1)
+                }
+                className="h-6 w-14 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-[11px] outline-none focus:border-[#4F6BED] dark:border-[#303436] dark:bg-[#101214]"
+              />
+              <span>页</span>
+            </label>
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -481,12 +572,16 @@ export function SnapshotsPanel({
                 onClick={() => void capture()}
                 className="flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-[#4F6BED] text-[11px] font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {busy === 'capture' ? (
+                {busy === 'capture' || crawling ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
                 ) : (
                   <ScanLine className="h-3 w-3" />
                 )}
-                采集
+                {crawling
+                  ? `${crawling.done}/${crawling.total}`
+                  : busy === 'capture'
+                    ? '采集中'
+                    : '采集'}
               </button>
               <button
                 type="button"

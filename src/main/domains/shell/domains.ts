@@ -945,6 +945,22 @@ export function defineNativeResource(
       return null;
     },
   });
+  resource.command('reveal', {
+    summary: '在文件管理器中显示',
+    args: { ref: { type: 'string', required: true } },
+    run: (input) => {
+      host?.revealRef(String(input.ref));
+      return null;
+    },
+  });
+  resource.command('copyPath', {
+    summary: '复制文件路径',
+    args: { ref: { type: 'string', required: true } },
+    run: (input) => {
+      host?.copyPath(String(input.ref));
+      return null;
+    },
+  });
   resource.command('popupMenu', {
     summary: '弹出原生菜单',
     args: {},

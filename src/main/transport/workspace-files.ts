@@ -6,7 +6,15 @@
  */
 
 import type { Stats } from 'node:fs';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CallFailure } from '../contract.ts';
@@ -149,6 +157,30 @@ export class WorkspaceFiles implements ResourceAdapter {
       return true;
     });
     return result;
+  }
+
+  /** 重命名同目录下的条目；只允许可写根内的路径。 */
+  async renameRef(ref: string, name: string): Promise<{ ref: string }> {
+    const value = name.trim();
+    if (!value || value === '.' || value === '..' || /[\\/]/.test(value)) {
+      throw new CallFailure('invalid', `文件名不合法：${name}`);
+    }
+    const path = this.pathOf(ref, 'write');
+    const target = join(dirname(path), value);
+    if (target === path) return { ref };
+    if (!isWithin(dirname(path), target)) {
+      throw new CallFailure('denied', `不能移出当前目录：${name}`);
+    }
+    const exists = await stat(target).catch(() => null);
+    if (exists) throw new CallFailure('invalid', `同名已存在：${value}`);
+    await rename(path, target);
+    return { ref: this.refOf(target) };
+  }
+
+  /** 删除条目；目录递归删除，只在可写根内生效。 */
+  async removeRef(ref: string): Promise<void> {
+    const path = this.pathOf(ref, 'write');
+    await rm(path, { recursive: true, force: false });
   }
 
   async readBytes(ref: string): Promise<Uint8Array> {

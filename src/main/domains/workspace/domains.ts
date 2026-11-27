@@ -277,6 +277,11 @@ export function defineWorkspaceResourcesResource(
   service: import('./resources.ts').ResourceForestService,
   context: () => import('./resources.ts').ResourceContext,
   openNode?: (node: ResourceNode, workspaceId: string) => Promise<unknown>,
+  /** 结构操作（重命名 / 删除）交给传输层，域本身不碰文件系统。 */
+  files?: {
+    rename(ref: string, name: string): Promise<{ ref: string }>;
+    remove(ref: string): Promise<void>;
+  },
 ): void {
   const resource = registry
     .define('workspace')
@@ -289,6 +294,31 @@ export function defineWorkspaceResourcesResource(
       const snapshot = await service.refresh(context());
       resource.publish();
       return snapshot;
+    },
+  });
+  resource.command('rename', {
+    summary: '重命名资源',
+    args: {
+      ref: { type: 'string', required: true },
+      name: { type: 'string', required: true },
+    },
+    run: async (input) => {
+      if (!files) throw new CallFailure('failed', '文件操作未接入');
+      const result = await files.rename(String(input.ref), String(input.name));
+      await service.refresh(context());
+      resource.publish();
+      return result;
+    },
+  });
+  resource.command('remove', {
+    summary: '删除资源',
+    args: { ref: { type: 'string', required: true } },
+    run: async (input) => {
+      if (!files) throw new CallFailure('failed', '文件操作未接入');
+      await files.remove(String(input.ref));
+      await service.refresh(context());
+      resource.publish();
+      return null;
     },
   });
   resource.command('action', {
