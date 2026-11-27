@@ -406,6 +406,7 @@ source（catalog:<id> / URL / zip / 目录）
 - **原子替换**：旧包先移入 `recovery/`，新包换入后再清理；启动时恢复中断的替换；
 - **远程必须带 sha256**：注册表条目显式给出；手动 URL 用 `#sha256=`；本地 zip 只计算不比对；
 - **zip 自包含**：依赖 bundle 进 `dist` 或随 zip 带 `node_modules`；安装时不跑 npm；
+- **开发档与安装包分档**：profile 按运行方式分开——安装包用 `WorkStudio`，`pnpm dev` 用 `WorkStudio Dev`（显式 `--user-data-dir` 优先）；业务数据仍可用 `--data-dir` / `WA_DATA_DIR` 覆盖。开发时的插件、工作区与设置不会落进正式数据根；
 - **插件目录统一**：`<appData>/plugins/` 下只有 `installed/`、`staging/`、`recovery/`、`tmp/`、`data/`、`catalog/`；与工作区无关，和 `agent/` 下的 pi 资源分开；
 - **卸载**：撤销注册、关闭插件页面、删除包目录；配置默认保留，显式清除才删 `data/<id>`；
 - **任务只属于当前进程**：下载字节进度、校验、提交、激活分阶段报告；取消只在提交前生效，不承诺重启续传；

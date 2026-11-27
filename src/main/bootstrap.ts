@@ -42,15 +42,26 @@ export async function bootstrapNext(
   registerSchemes();
   applyRemoteDebugging(options.debugPort);
 
+  // 开发档与安装包必须是两个 profile：否则 dev 会话的插件、设置与工作区
+  // 会落进正式数据根，单实例锁也会互相挡。userData 必须在抢锁前定下来，
+  // 锁是按 userData 划分的。
+  // 显式 `--user-data-dir`（Playwright、隔离调试）优先：那是调用方自己的
+  // profile，测试进程之间不能互相抢锁。
+  const explicitProfile = electronApp.commandLine.hasSwitch('user-data-dir');
+  const profileDir = explicitProfile
+    ? electronApp.getPath('userData')
+    : join(
+        electronApp.getPath('appData'),
+        options.devBase
+          ? `${electronApp.getName()} Dev`
+          : electronApp.getName(),
+      );
+  electronApp.setPath('userData', profileDir);
+
   if (!electronApp.requestSingleInstanceLock()) {
     electronApp.quit();
     return null;
   }
-
-  const profileDir = join(
-    electronApp.getPath('appData'),
-    electronApp.getName(),
-  );
   const dataRoot = resolveDataRoot({
     pointerFile: dataRootPointerFile(profileDir),
     defaultRoot: join(profileDir, 'data'),
