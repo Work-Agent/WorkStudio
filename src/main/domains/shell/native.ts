@@ -407,13 +407,14 @@ export class ShellHost {
       pinned: false,
     };
     if (activate) {
-      for (const [otherKey, entry] of this.views) {
+      for (const entry of this.views.values()) {
         if (entry.windowId !== windowId) continue;
         if (entry.record.type !== 'page' && entry.record.type !== 'web') {
           continue;
         }
+        // 宿主自己的 active 标记要和壳层记录同步，否则等待加载时会露出旧页面。
+        entry.record.active = false;
         entry.view.setVisible(false);
-        this.views.set(otherKey, entry);
       }
     }
     if (input.type === 'overlay' || input.type === 'capture') {
@@ -593,9 +594,9 @@ export class ShellHost {
       if (other.record.type !== 'page' && other.record.type !== 'web') {
         continue;
       }
-      other.view.setVisible(
-        key === ShellHost.viewKey(windowId, id) && other.ready,
-      );
+      const active = key === ShellHost.viewKey(windowId, id);
+      other.record.active = active;
+      other.view.setVisible(active && other.ready);
     }
     entry.window.contentView.addChildView(entry.view);
     this.resizeWindow(windowId);
@@ -821,7 +822,11 @@ export class ShellHost {
       const bounds = this.boundsOf(entry, layout, windowEntry.window);
       entry.view.setBounds(bounds);
       if (entry.record.type === 'page' || entry.record.type === 'web') {
-        entry.view.setVisible(entry.record.active && entry.ready);
+        entry.view.setVisible(
+          entry.record.type === 'web'
+            ? entry.record.active
+            : entry.record.active && entry.ready,
+        );
       } else if (entry.record.type === 'assistant') {
         entry.view.setVisible(layout.assistantVisible);
       }
