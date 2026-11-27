@@ -149,11 +149,15 @@ export class ToolSurface implements ResourceAccess {
   }
 
   async bash(argv: readonly string[]): Promise<CommandOutcome> {
+    const target = argv[1];
+    if (argv[0] === 'ws' && (target === '--help' || target === 'help')) {
+      return { stdout: this.helpLines(argv[2]), exitCode: 0 };
+    }
     const parsed = parseCommandLine(argv);
     if (!parsed) {
       throw new CallFailure(
         'invalid',
-        '命令格式：ws <domain>/<resource> <action> <ref> [--arg value]',
+        '命令格式：ws <domain>/<resource> <action> <ref> [--arg value]；用 ws --help 看命令表',
       );
     }
     return this.dispatch(
@@ -162,6 +166,32 @@ export class ToolSurface implements ResourceAccess {
       parsed.input,
       'bash',
     );
+  }
+
+  /** `ws --help [domain/resource]`：直接给出命令表，省掉试错。 */
+  private helpLines(target?: string): string {
+    const scoped = this.commandList().filter(
+      (row) =>
+        !target ||
+        `${row.domain}/${row.resource}` === target ||
+        row.domain === target,
+    );
+    if (scoped.length === 0) {
+      return `没有匹配的命令：${target ?? ''}；用 ws --help 看全部命令`;
+    }
+    return scoped
+      .slice(0, 200)
+      .map((row) => {
+        const args =
+          row.args && typeof row.args === 'object'
+            ? Object.keys(row.args as Record<string, unknown>)
+            : [];
+        const suffix = args.length
+          ? ' ' + args.map((name) => `--${name}`).join(' ')
+          : '';
+        return `${row.domain}/${row.resource} ${row.action}${suffix} · ${row.summary}`;
+      })
+      .join('\n');
   }
 
   /**
@@ -227,13 +257,16 @@ export class ToolSurface implements ResourceAccess {
     id?: string,
   ): Promise<BrowserCaptureView & { ref?: string }> {
     const page = await this.browser.capture(id);
-    const saved = await this.cache?.save({
+    if (!this.cache) return page;
+    await this.cache.save({
       url: page.url,
       title: page.title,
-      markdown: page.html,
+      markdown: page.markdown,
+      ...(page.excerpt ? { excerpt: page.excerpt } : {}),
       capturedAt: Date.now(),
+      ...(page.icon ? { icon: page.icon } : {}),
     });
-    return saved ? { ...page, ref: saved.ref } : page;
+    return { ...page, ref: this.cache.refOfPage(page.url) };
   }
 
   async browserRead(id?: string): Promise<BrowserPageView> {

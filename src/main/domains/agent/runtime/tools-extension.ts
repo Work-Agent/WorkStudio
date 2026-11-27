@@ -107,7 +107,10 @@ export function createAgentToolsExtension(
       parameters: Type.Object({ url: Type.String() }),
       execute: async (_id, input) => {
         const tab = await tools.browserOpen(input.url);
-        return text(`opened: ${tab.url}`, tab);
+        return text(
+          `opened id=${tab.id} url=${tab.url} title=${tab.title}`,
+          tab,
+        );
       },
     }),
     defineTool({
@@ -152,11 +155,21 @@ export function createAgentToolsExtension(
     defineTool({
       name: 'browser_snapshot',
       label: '采集网页',
-      description: 'Capture URL/title/HTML for the web domain cache.',
+      description:
+        'Read the current page as Markdown (front matter + body + accessibility index), cache it as a site snapshot and return its ref. Prefer this over re-opening pages.',
       parameters: Type.Object({ id: Type.Optional(Type.String()) }),
       execute: async (_id, input) => {
         const page = await tools.browserSnapshot(input.id);
-        return text(page.html.slice(0, 8000), page);
+        return text(
+          [
+            `url: ${page.url}`,
+            `title: ${page.title}`,
+            `ref: ${page.ref ?? '(未保存)'}`,
+            '',
+            page.markdown.slice(0, 4000),
+          ].join('\n'),
+          page,
+        );
       },
     }),
   ];
