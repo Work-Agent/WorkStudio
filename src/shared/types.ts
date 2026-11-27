@@ -10,7 +10,8 @@ export type ThinkingLevel =
   | 'low'
   | 'medium'
   | 'high'
-  | 'xhigh';
+  | 'xhigh'
+  | 'max';
 
 export interface ModelOption {
   provider: string;

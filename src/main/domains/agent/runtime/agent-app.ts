@@ -71,6 +71,17 @@ const DEFAULT_PROVIDERS: Record<string, ProviderConfigView> = {
   },
 };
 
+/** pi 的思考档位：`thinkingLevelMap` 的键就是这一组。 */
+const THINKING_LEVELS = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+
 export interface AgentAppOptions {
   storage: StorageLayout;
   /** App 级密钥库；供应商凭证落在 `agent` 域。 */
@@ -238,18 +249,35 @@ export class AgentApp {
     });
     if (!response.ok) throw new Error(`模型列表请求失败：${response.status}`);
     const body = (await response.json()) as {
-      data?: Array<{ id?: string; name?: string }>;
+      data?: Array<{
+        id?: string;
+        name?: string;
+        effort?: { supported_levels?: string[] } | null;
+      }>;
     };
     const discovered = new Set<string>();
     for (const item of body.data ?? []) {
       const id = typeof item.id === 'string' ? item.id.trim() : '';
       if (!id) continue;
       discovered.add(id);
+      // 供应商的 effort.supported_levels 直接落成 pi 的 reasoning + thinkingLevelMap。
+      const levels = item.effort?.supported_levels ?? [];
       await this.modelStore.saveModel(providerId, {
         id,
         origin: 'provider',
         ...(typeof item.name === 'string' && item.name.trim()
           ? { name: item.name.trim() }
+          : {}),
+        ...(levels.length > 0
+          ? {
+              reasoning: true,
+              thinkingLevelMap: Object.fromEntries(
+                THINKING_LEVELS.map((level) => [
+                  level,
+                  levels.includes(level) ? level : null,
+                ]),
+              ),
+            }
           : {}),
       });
     }
