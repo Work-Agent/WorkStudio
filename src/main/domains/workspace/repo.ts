@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { basename, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
 import {
@@ -44,7 +44,8 @@ export class WorkspaceRepository {
     const result: WorkspaceMeta[] = [];
     for (const id of readdirSync(root)) {
       const meta = this.metaOf(id);
-      if (meta) result.push(meta);
+      // 文件系统根不是工作区：安装包首次启动时 cwd 是 `/`，不能把它记成工作区。
+      if (meta && !isFilesystemRoot(meta.path)) result.push(meta);
     }
     return result.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
   }
@@ -71,6 +72,8 @@ export class WorkspaceRepository {
   }
 
   register(path: string): WorkspaceMeta {
+    if (isFilesystemRoot(path))
+      throw new Error('不能把文件系统根目录作为工作区');
     if (!isDirectory(path)) throw new Error('工作区目录不存在或不可访问');
     const id = workspaceIdOf(path);
     const base = this.layout.workspaceBase(id);
@@ -129,6 +132,12 @@ export class WorkspaceRepository {
   private fileOf(id: string): string {
     return join(this.layout.workspaceBase(id), 'workspace.json');
   }
+}
+
+/** 根目录（`/`、`C:\\`）不是工作区：枚举它既无意义也没权限。 */
+export function isFilesystemRoot(path: string): boolean {
+  const normalized = resolve(path);
+  return dirname(normalized) === normalized;
 }
 
 export function workspaceIdOf(path: string): string {

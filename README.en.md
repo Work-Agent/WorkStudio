@@ -483,6 +483,8 @@ pnpm install
 pnpm dev      # development mode (Vite HMR)
 ```
 
+On its very first launch the installer has no workspace yet, so it opens a native directory panel (which is also how macOS grants folder access); cancelling falls back to `~/WorkStudio`, created on demand. The filesystem root is never registered as a workspace — an app launched from Finder starts with `/` as its cwd. Development mode uses the repository directory as the workspace.
+
 The first install downloads the Electron binary. If that download is slow or fails, use a mirror or a proxy before running `pnpm install` (mainland China mirror settings are documented in the [Chinese README](./README.md#71-环境与启动)):
 
 ```bash

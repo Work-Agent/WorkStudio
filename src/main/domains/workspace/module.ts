@@ -5,6 +5,9 @@
  * 域只声明资源与命令，切换 / 释放由模块生命周期驱动。
  */
 
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { DomainModule } from '../../registry/module.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type { ResourceNode } from '../../../shared/resources.ts';
@@ -45,6 +48,8 @@ export class WorkspaceModule implements DomainModule {
       node: ResourceNode,
       workspaceId: string,
     ) => Promise<unknown>,
+    /** 首次启动没有工作区时询问目录；返回 null 表示用户取消。 */
+    private readonly pickWorkspace?: () => Promise<string | null>,
   ) {
     this.scope = new WorkspaceScope(repo, transport);
   }
@@ -61,6 +66,7 @@ export class WorkspaceModule implements DomainModule {
 
   async start(): Promise<void> {
     this.scope.restore();
+    if (!this.scope.current) await this.openFirstWorkspace();
     const registry = this.registry;
     if (registry) {
       this.offWorkspace = registry.onUpdate((update) => {
@@ -109,6 +115,26 @@ export class WorkspaceModule implements DomainModule {
       this.resources.forget(workspaceId);
     this.resourceWorkspaces.clear();
     this.registry = null;
+  }
+
+  /**
+   * 首次启动：先让人选目录（原生面板同时给出目录访问授权），
+   * 取消就落到 `~/WorkStudio`。绝不能拿安装包的 cwd（`/`）当工作区。
+   */
+  private async openFirstWorkspace(): Promise<void> {
+    let picked: string | null = null;
+    try {
+      picked = (await this.pickWorkspace?.()) ?? null;
+    } catch (error) {
+      this.log.warn(`选择工作区失败：${String(error)}`);
+    }
+    const fallback = join(homedir(), 'WorkStudio');
+    try {
+      mkdirSync(fallback, { recursive: true });
+      this.scope.open(picked ?? fallback);
+    } catch (error) {
+      this.log.warn(`打开工作区失败：${String(error)}`);
+    }
   }
 
   private async openWindow(meta: WorkspaceMeta | null): Promise<void> {

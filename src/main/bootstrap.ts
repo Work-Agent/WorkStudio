@@ -7,7 +7,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { app as electronApp, BrowserWindow, session } from 'electron';
+import { app as electronApp, BrowserWindow, dialog, session } from 'electron';
 import { NextApp } from './app.ts';
 import {
   dataRootPointerFile,
@@ -34,6 +34,16 @@ export interface BootstrapOptions {
 export interface BootstrapResult {
   app: NextApp;
   dataRoot: DataRootInfo;
+}
+
+/** 首次启动选择工作区：原生面板就是 macOS 的目录授权入口。 */
+async function pickWorkspace(): Promise<string | null> {
+  const picked = await dialog.showOpenDialog({
+    title: '选择工作区目录',
+    buttonLabel: '打开',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return picked.canceled ? null : (picked.filePaths[0] ?? null);
 }
 
 export async function bootstrapNext(
@@ -74,9 +84,14 @@ export async function bootstrapNext(
   await electronApp.whenReady();
 
   const storage = createStorageLayout(dataRoot.root);
+  // 安装包首次启动没有工作区：先弹原生目录面板（同时完成目录授权），
+  // 不能像开发 / 测试那样把 cwd（安装包启动时是 `/`）当工作区。
+  const firstRunPicker = electronApp.isPackaged ? pickWorkspace : undefined;
   const app = new NextApp({
     dataRoot: storage.dataRoot,
-    workspaceRoot: options.workspaceRoot ?? process.cwd(),
+    ...(firstRunPicker
+      ? { pickWorkspace: firstRunPicker }
+      : { workspaceRoot: options.workspaceRoot ?? process.cwd() }),
     rendererRoot:
       options.rendererRoot ?? join(process.cwd(), 'out', 'renderer'),
     ...(options.devBase ? { devBase: options.devBase } : {}),

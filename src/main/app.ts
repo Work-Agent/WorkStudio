@@ -47,7 +47,8 @@ import { join } from 'node:path';
 
 export interface NextAppOptions {
   dataRoot: string;
-  workspaceRoot: string;
+  /** 默认工作区目录；缺省时首次启动先询问。 */
+  workspaceRoot?: string;
   /** 系统页产物目录（work://studio 的根）。 */
   rendererRoot: string;
   /** 开发模式的 vite 地址；有值时页面请求代理过去。 */
@@ -57,6 +58,8 @@ export interface NextAppOptions {
   builtinPluginsRoot?: string;
   /** 打开 IPC 请求日志。 */
   ipcLog?: boolean;
+  /** 首次启动选工作区目录（原生面板）。 */
+  pickWorkspace?: () => Promise<string | null>;
   /** 覆盖默认 IPC 投递（测试或自定义通道）。 */
   sendUpdate?(viewId: string, update: DomainUpdate): void;
   /** Electron shell 宿主；不传则只保留结构投影。 */
@@ -120,7 +123,7 @@ export class NextApp {
     this.protocols = new Protocols(options.rendererRoot, options.devBase);
     this.cache = new WebCache(this.storage.webCacheRoot);
 
-    const files = new WorkspaceFiles(options.workspaceRoot);
+    const files = new WorkspaceFiles(options.workspaceRoot ?? process.cwd());
     this.transport = new TransportRouter(files);
     // 工作区文件是内建传输适配器；内容读取经由 ref → 域 → adapter。
     this.transport.register('files', files, [{ prefixes: ['file://'] }]);
@@ -185,6 +188,9 @@ export class NextApp {
       ...(this.shellHost ? { shellHost: this.shellHost } : {}),
       openNode: (node, workspaceId) => this.openResourceNode(node, workspaceId),
       openLocation: (ref, locator) => this.openLocation(ref, locator),
+      ...(options.pickWorkspace
+        ? { pickWorkspace: options.pickWorkspace }
+        : {}),
       ...(options.settingsPages
         ? { settingsPages: options.settingsPages }
         : {}),

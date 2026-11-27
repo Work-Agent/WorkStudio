@@ -40,7 +40,8 @@ export interface SystemModulesOptions {
   storage: StorageLayout;
   /** App 级密钥库：插件域与供应商凭证共用一份。 */
   vault: SecretVault;
-  workspaceRoot: string;
+  /** 已有工作区的默认目录（开发模式 = cwd）；缺省时首次启动会先询问目录。 */
+  workspaceRoot?: string;
   protocols: Protocols;
   transport: TransportRouter;
   cache: WebCache;
@@ -55,6 +56,8 @@ export interface SystemModulesOptions {
   shellHost?: ShellHost;
   openNode?: (node: ResourceNode, workspaceId: string) => Promise<unknown>;
   openLocation?: (ref: string, locator?: string) => Promise<unknown>;
+  /** 首次启动选目录（原生面板，顺带完成目录授权）。 */
+  pickWorkspace?: () => Promise<string | null>;
   settingsPages?: SettingsPage[];
 }
 
@@ -108,6 +111,7 @@ export function registerSystemModules(
       options.transport,
       options.resources,
       options.openNode,
+      options.pickWorkspace,
     ),
   );
   registry.registerModule(
