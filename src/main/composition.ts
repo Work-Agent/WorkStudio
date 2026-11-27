@@ -114,6 +114,11 @@ export function registerSystemModules(
       options.resources,
       options.openNode,
       options.pickWorkspace,
+      () =>
+        options.cache.list().map((doc) => ({
+          ...doc,
+          ref: doc.fileRef ?? options.cache.refOf(doc.url),
+        })),
     ),
   );
   registry.registerModule(

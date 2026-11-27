@@ -15,7 +15,7 @@ import { useSidebarStore } from '../../domains/sidebar.ts';
 
 type NavId = 'main' | 'plugins' | 'snapshots' | 'search';
 
-/** 顶层形态（二级形态 docs / data / web 属于 main 家族）。 */
+/** 顶层形态：资源 / 插件 / 网站快照（都在左侧，同一组图标）。 */
 const ITEMS = [
   { id: 'main', label: '资源', icon: Files, testId: 'sidebar-nav-resources' },
   {
@@ -23,6 +23,12 @@ const ITEMS = [
     label: '插件',
     icon: Package,
     testId: 'sidebar-nav-plugins',
+  },
+  {
+    id: 'snapshots',
+    label: '网站快照',
+    icon: Globe,
+    testId: 'sidebar-nav-snapshots',
   },
 ] as const;
 
@@ -32,14 +38,6 @@ const SEARCH_ITEM = {
   label: '搜索',
   icon: Search,
   testId: 'sidebar-nav-search',
-} as const;
-
-/** 网站快照：侧栏面板，与搜索一样不占标签。 */
-const SNAPSHOTS_ITEM = {
-  id: 'snapshots',
-  label: '网站快照',
-  icon: Globe,
-  testId: 'sidebar-nav-snapshots',
 } as const;
 
 /** popup 菜单 source 标识（路由回本组件处理器）。 */
@@ -65,7 +63,9 @@ export function SidebarNav() {
   const { scene } = useScene();
   const collapsed = scene.sidebarCollapsed ?? false;
   const active =
-    view === 'plugins' ? ITEMS[1] : view === 'search' ? SEARCH_ITEM : ITEMS[0];
+    view === 'search'
+      ? SEARCH_ITEM
+      : (ITEMS.find((item) => item.id === view) ?? ITEMS[0]);
 
   // 收起态：原生菜单选中回执（source 路由）
   useEffect(() => {
@@ -81,10 +81,6 @@ export function SidebarNav() {
         id: item.id,
         label: `${view === item.id ? '✓ ' : ''}${item.label}`,
       })),
-      {
-        id: SNAPSHOTS_ITEM.id,
-        label: `${view === SNAPSHOTS_ITEM.id ? '✓ ' : ''}${SNAPSHOTS_ITEM.label}`,
-      },
       {
         id: SEARCH_ITEM.id,
         label: `${view === SEARCH_ITEM.id ? '✓ ' : ''}${SEARCH_ITEM.label}`,
@@ -132,15 +128,6 @@ export function SidebarNav() {
             );
           })}
           <div className="ml-auto flex items-center gap-0.5">
-            <button
-              data-testid={SNAPSHOTS_ITEM.testId}
-              data-active={view === 'snapshots' ? 'true' : 'false'}
-              title={SNAPSHOTS_ITEM.label}
-              onClick={() => setView('snapshots')}
-              className={navClass(view === 'snapshots')}
-            >
-              <SNAPSHOTS_ITEM.icon className="w-4 h-4" />
-            </button>
             <button
               data-testid={SEARCH_ITEM.testId}
               data-active={view === 'search' ? 'true' : 'false'}

@@ -9,9 +9,11 @@
 export function capturePage(): {
   url: string;
   title: string;
+  excerpt: string;
   html: string;
   text: string;
   markdown: string;
+  icon: string;
 } {
   const SKIP = new Set([
     'SCRIPT',
@@ -218,15 +220,128 @@ export function capturePage(): {
     document.querySelector('main') ??
     document.body;
   walk(root, 0, blocks);
+  const body = blocks
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const visible = (element: Element): boolean => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  // 结构索引用的选择器：id 优先，否则最多向上三代（带 class / nth-of-type）。
+  const selectorOf = (element: Element): string => {
+    const parts: string[] = [];
+    let node: Element | null = element;
+    for (let depth = 0; node && depth < 3; depth += 1) {
+      if (node.id) {
+        parts.unshift(`#${node.id}`);
+        break;
+      }
+      const tag = node.tagName;
+      let part = tag.toLowerCase();
+      const first = node.classList.item(0);
+      if (first) part += `.${first}`;
+      const parent: Element | null = node.parentElement;
+      if (parent) {
+        const same = Array.from(parent.children).filter(
+          (child: Element) => child.tagName === tag,
+        );
+        if (same.length > 1) part += `:nth-of-type(${same.indexOf(node) + 1})`;
+      }
+      parts.unshift(part);
+      node = parent;
+    }
+    return parts.join(' > ');
+  };
+
+  // 可访问性结构：landmark → 标题层级 → 交互元素，只做索引，不复制正文。
+  const structure: string[] = [];
+  const seen = new Set<Element>();
+  const push = (element: Element): void => {
+    if (structure.length >= 40 || seen.has(element) || !visible(element))
+      return;
+    seen.add(element);
+    const role = (
+      element.getAttribute('role') || element.tagName.toLowerCase()
+    ).trim();
+    const interactive = element.matches(
+      'a, button, input, select, textarea, [role="button"]',
+    );
+    const heading = element.querySelector('h1, h2, h3, h4, h5, h6');
+    const raw =
+      element.getAttribute('aria-label') ||
+      element.getAttribute('alt') ||
+      (/^H[1-6]$/.test(element.tagName) ? element.textContent : '') ||
+      (heading ? heading.textContent : '') ||
+      (interactive ? element.textContent : '') ||
+      element.getAttribute('placeholder') ||
+      element.getAttribute('title') ||
+      '';
+    const name = squash(raw).slice(0, 60);
+    structure.push(`${role}  "${name}"  ${selectorOf(element)}`);
+  };
+  for (const element of Array.from(
+    document.querySelectorAll(
+      'main, nav, header, footer, aside, form, article, section[aria-label], [role]',
+    ),
+  )) {
+    push(element);
+  }
+  for (const element of Array.from(
+    document.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+  )) {
+    push(element);
+  }
+  for (const element of Array.from(
+    document.querySelectorAll(
+      'a[href], button, input, select, textarea, [role="button"]',
+    ),
+  )) {
+    push(element);
+  }
+
+  const withStructure = structure.length
+    ? `${body}\n\n## 可访问性结构\n\n\`\`\`text\n${structure.join('\n')}\n\`\`\``
+    : body;
+
+  // 概述：页面声明的 description 优先，否则取正文第一段。
+  const described =
+    document
+      .querySelector('meta[name="description"]')
+      ?.getAttribute('content') ||
+    document
+      .querySelector('meta[property="og:description"]')
+      ?.getAttribute('content') ||
+    body
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line && !/^(#|```|>|[-*+]\s|\d+[.)]\s)/.test(line)) ||
+    '';
+  const excerpt = squash(described).slice(0, 160);
+
+  // 站点图标：页面声明的 icon 优先，缺省回落到站点根 favicon。
+  const iconOf = (): string => {
+    const link = document.querySelector(
+      'link[rel~="icon"], link[rel="apple-touch-icon"]',
+    );
+    const href = link?.getAttribute('href');
+    try {
+      if (href) return new URL(href, location.href).href;
+      return new URL('/favicon.ico', location.href).href;
+    } catch {
+      return '';
+    }
+  };
 
   return {
     url: location.href,
     title: document.title,
+    excerpt,
     html: document.documentElement?.outerHTML ?? '',
     text: document.body?.innerText ?? '',
-    markdown: blocks
-      .join('\n\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
+    markdown: withStructure,
+    icon: iconOf(),
   };
 }

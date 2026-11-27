@@ -20,6 +20,7 @@ import '../../shared/styles/index.css';
 interface SnapshotDoc {
   url: string;
   title: string;
+  excerpt?: string;
   markdown: string;
   capturedAt: number;
 }
@@ -113,6 +114,11 @@ function Snapshot() {
           >
             {doc?.title || '网页快照'}
           </h1>
+          {doc?.excerpt ? (
+            <p className="mt-2 text-[12px] leading-5 text-zinc-500 dark:text-zinc-400">
+              {doc.excerpt}
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className="inline-flex items-center gap-1">
               <Globe className="h-3 w-3" />

@@ -670,9 +670,11 @@ export class ShellHost {
   ): Promise<{
     url: string;
     title: string;
+    excerpt: string;
     html: string;
     text: string;
     markdown: string;
+    icon: string;
   }> {
     // 提取脚本跑在页面里：DOM、可见文本与 Markdown 一次取回。
     return this.evaluateView(windowId, id, `(${capturePage.toString()})()`);

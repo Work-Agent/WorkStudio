@@ -32,8 +32,10 @@ export interface BrowserPageView {
 export interface BrowserCaptureView {
   url: string;
   title: string;
+  excerpt: string;
   html: string;
   markdown: string;
+  icon: string;
 }
 
 export interface BrowserViewHandle {
@@ -265,8 +267,10 @@ export class BrowserCapability {
     return {
       url: page.url,
       title: page.title,
+      excerpt: page.excerpt,
       html: page.html,
       markdown: page.markdown,
+      icon: page.icon,
     };
   }
 

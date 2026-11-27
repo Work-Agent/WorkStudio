@@ -277,13 +277,27 @@ export function defineWebResource(
   resource.command('list', {
     summary: '列出网页快照缓存',
     args: {},
-    run: () =>
-      cache.list().map((doc) => ({
+    run: async () => {
+      // 老缓存只有 JSON：清单一律补写成工作区里的 .md，打开即 markdown。
+      if (save) {
+        for (const doc of cache.list()) {
+          if (doc.fileRef) continue;
+          try {
+            const file = await save(doc.url);
+            cache.attachFile(doc.url, file.ref);
+          } catch {
+            /* 写不进去就保留旧地址，读取不受影响 */
+          }
+        }
+      }
+      return cache.list().map((doc) => ({
         url: doc.url,
         title: doc.title,
         capturedAt: doc.capturedAt,
-        ref: cache.refOf(doc.url),
-      })),
+        ref: doc.fileRef ?? cache.refOf(doc.url),
+        ...(doc.icon ? { icon: doc.icon } : {}),
+      }));
+    },
   });
   resource.command('doc', {
     summary: '读取一份快照的正文',
@@ -292,6 +306,15 @@ export function defineWebResource(
       const doc = await cache.get(String(input.url));
       if (!doc) throw new CallFailure('not_found', '没有网页快照');
       return doc;
+    },
+  });
+  resource.command('remove', {
+    summary: '删除网页快照',
+    args: { url: { type: 'string', required: true } },
+    run: (input) => {
+      cache.remove(String(input.url));
+      resource.publish();
+      return null;
     },
   });
   resource.command('capture', {
@@ -304,8 +327,17 @@ export function defineWebResource(
         url: page.url,
         title: page.title,
         markdown: page.markdown,
+        ...(page.excerpt ? { excerpt: page.excerpt } : {}),
         capturedAt: Date.now(),
+        ...(page.icon ? { icon: page.icon } : {}),
       });
+      // 同时落成工作区里的 Markdown：清单条目打开时走 markdown 编辑器。
+      if (save) {
+        const file = await save(page.url);
+        cache.attachFile(page.url, file.ref);
+        resource.publish();
+        return file;
+      }
       resource.publish();
       return saved;
     },

@@ -1,8 +1,8 @@
 /**
- * 系统资源组：docs / temp / sessions / settings。
+ * 系统资源组：docs / sites / temp / sessions / settings。
  *
- * 文件列表是森林；docs 是一棵 transport 树，其余组是只有叶子的树。
- * 插件注册表是 App 级独立资源，不在资源森林里。
+ * 文件列表是森林；docs 是一棵 transport 树，sites 是「域 → 页」两层，
+ * 其余组是只有叶子的树。插件注册表是 App 级独立资源，不在资源森林里。
  */
 
 import type {
@@ -18,11 +18,15 @@ import {
   fileRef,
   makeResourceGroup,
 } from './resource-tree.ts';
+import type { SnapshotEntry } from '../../../shared/snapshots.ts';
+import { groupSnapshots } from '../../../shared/snapshots.ts';
 import type { ResourceContext, ResourceGroupRegistry } from './resources.ts';
 
 export interface SystemResourceDeps {
   registry: DomainRegistry;
   transport: TransportRouter;
+  /** 网页快照清单（web cache）；由组合根注入，工作区模块不直接持有缓存。 */
+  snapshots?: () => readonly SnapshotEntry[];
 }
 
 const OPEN_ACTION: ResourceActionSpec = {
@@ -51,6 +55,25 @@ export const docsDefinition: ResourceGroupDefinition = {
   fields: DOC_FIELDS,
   actions: [OPEN_ACTION],
   empty: { icon: 'folder', text: '暂无本地文档' },
+};
+
+/** 网站快照：域 → 页两层，条目打开实时网页（不是快照正文）。 */
+export const sitesDefinition: ResourceGroupDefinition = {
+  id: 'sites',
+  label: '网站快照',
+  icon: 'globe',
+  tone: 'bg-sky-500 text-sky-50 dark:bg-sky-600 dark:text-sky-100',
+  unit: '页',
+  order: 20,
+  sourceScope: 'workspace',
+  deps: [{ domain: 'web', resource: 'web' }],
+  itemType: 'link',
+  fields: [
+    { key: 'title', type: 'text' },
+    { key: 'subtitle', type: 'text' },
+  ],
+  actions: [OPEN_ACTION],
+  empty: { icon: 'globe', text: '暂无网站快照' },
 };
 
 export const tempDefinition: ResourceGroupDefinition = {
@@ -109,6 +132,7 @@ export function registerSystemResources(
   deps: SystemResourceDeps,
 ): void {
   resources.register(docsDefinition, (ctx) => docsGroup(deps, ctx), 'system');
+  resources.register(sitesDefinition, () => sitesGroup(deps), 'system');
   resources.register(tempDefinition, (ctx) => tempGroup(deps, ctx), 'system');
   resources.register(
     sessionsDefinition,
@@ -116,6 +140,40 @@ export function registerSystemResources(
     'system',
   );
   resources.register(settingsDefinition, () => settingsGroup(deps), 'system');
+}
+
+/** 每采集过一个站点就是一棵根树：域名做组名与图标，页面直接挂在下面。 */
+async function sitesGroup(deps: SystemResourceDeps): Promise<ResourceGroup[]> {
+  const entries = deps.snapshots?.() ?? [];
+  return groupSnapshots(entries).map((group) => {
+    const roots: ResourceNode[] = group.items.map((item) => ({
+      key: `web:${item.url}`,
+      type: 'item',
+      title: item.title || item.url,
+      subtitle: item.url,
+      ...(item.icon ? { icon: item.icon } : {}),
+      meta: { url: item.url },
+      actions: ['open'],
+    }));
+    const icon = group.items.find((item) => item.icon)?.icon ?? 'globe';
+    return {
+      id: `sites:${group.domain}`,
+      definitionId: sitesDefinition.id,
+      section: sitesDefinition.section ?? 'resources',
+      label: group.domain,
+      icon,
+      ...(sitesDefinition.tone ? { tone: sitesDefinition.tone } : {}),
+      ...(sitesDefinition.unit ? { unit: sitesDefinition.unit } : {}),
+      count: roots.length,
+      countLabel: `${roots.length} ${sitesDefinition.unit ?? '页'}`,
+      updatedAt: Math.max(...group.items.map((item) => item.capturedAt)),
+      order: sitesDefinition.order ?? 20,
+      state: 'ready',
+      fields: sitesDefinition.fields,
+      actions: sitesDefinition.actions,
+      roots,
+    };
+  });
 }
 
 async function docsGroup(

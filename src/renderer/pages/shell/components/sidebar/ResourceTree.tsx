@@ -40,6 +40,21 @@ function closeNode(node: ResourceNode, wsId: string | null): void {
   }
 }
 
+function Favicon({ url }: { url: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return <FileText className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />;
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      onError={() => setBroken(true)}
+      className="w-4 h-4 rounded-sm object-contain"
+    />
+  );
+}
+
 function NodeIcon({
   node,
   group,
@@ -49,6 +64,7 @@ function NodeIcon({
   group: ResourceGroup;
   expanded: boolean;
 }) {
+  if (node.icon) return <Favicon url={node.icon} />;
   if (node.type === 'dir') {
     return expanded ? (
       <FolderOpen className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
@@ -161,8 +177,16 @@ function NodeRow({
 
 function GroupIcon({ group }: { group: ResourceGroup }) {
   const { Icon, iconUrl } = groupIconOf(group);
-  if (iconUrl) {
-    return <img src={iconUrl} alt="" className="w-4 h-4 object-contain" />;
+  const [broken, setBroken] = useState(false);
+  if (iconUrl && !broken) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        onError={() => setBroken(true)}
+        className="w-4 h-4 rounded-sm object-contain"
+      />
+    );
   }
   return <Icon className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />;
 }

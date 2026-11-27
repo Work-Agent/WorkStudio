@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DomainModule } from '../../registry/module.ts';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
+import type { SnapshotEntry } from '../../../shared/snapshots.ts';
 import type { ResourceNode } from '../../../shared/resources.ts';
 import { createLog } from '../../log.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
@@ -50,6 +51,8 @@ export class WorkspaceModule implements DomainModule {
     ) => Promise<unknown>,
     /** 首次启动没有工作区时询问目录；返回 null 表示用户取消。 */
     private readonly pickWorkspace?: () => Promise<string | null>,
+    /** 网页快照清单；资源组 providers 从这里取数。 */
+    private readonly snapshots?: () => readonly SnapshotEntry[],
   ) {
     this.scope = new WorkspaceScope(repo, transport);
   }
@@ -60,6 +63,7 @@ export class WorkspaceModule implements DomainModule {
     registerSystemResources(this.resources.registry, {
       registry,
       transport: this.transport,
+      ...(this.snapshots ? { snapshots: this.snapshots } : {}),
     });
     defineWorkspaceRegistryResource(registry, this.scope);
   }

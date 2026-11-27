@@ -41,6 +41,12 @@ export default defineCase({
     await ctx.expect.visible('[data-testid="snapshots-panel"]');
     await ctx.expect.visible('[data-testid="snapshots-add"]');
 
+    // 面板自带返回资源树的入口。
+    await ctx.clickTestId('sidebar-back');
+    await ctx.expect.visible('[data-testid="sidebar-tree-group"]');
+    await ctx.clickTestId('sidebar-nav-snapshots');
+    await ctx.expect.visible('[data-testid="snapshots-panel"]');
+
     // 快照面板是侧栏视图，不新开标签。
     await ctx.expect.poll(
       async () =>
@@ -125,11 +131,47 @@ export const captureCase = defineCase({
         if (!result.ok) throw new Error(result.error.message);
         return result.data as { ref: string };
       }, url);
-      if (!captured.ref.startsWith('work://studio/snapshot?url=')) {
-        throw new Error(`快照地址不对：${captured.ref}`);
+      if (
+        !captured.ref.startsWith('file://') ||
+        !captured.ref.endsWith('.md')
+      ) {
+        throw new Error(`快照文件地址不对：${captured.ref}`);
       }
 
-      // 侧栏面板里能点开这条快照。
+      // 文件资源树里出现同一个「域 → 页」分组：点页面走实时网页。
+      await ctx.clickTestId('sidebar-nav-resources');
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(() => {
+            // 每个站点一棵根树：组就是域名，页面直接挂在组下。
+            const group = document.querySelector<HTMLElement>(
+              '[data-testid="sidebar-tree-group"][data-group="sites:127.0.0.1"]',
+            );
+            if (!group?.parentElement) return false;
+            const items = [
+              ...group.parentElement.querySelectorAll<HTMLElement>(
+                '[data-testid="sidebar-tree-item"]',
+              ),
+            ].map((node) => node.title);
+            return items.includes('E2E 快照');
+          }),
+        '资源树没有站点根节点',
+      );
+      await ctx.evaluate(() => {
+        const nodes = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-testid="sidebar-tree-item"]',
+          ),
+        ];
+        const target = nodes.find((node) => node.title === 'E2E 快照');
+        target?.click();
+      });
+      const livePage = await ctx.waitForPage(new RegExp(String(address.port)));
+      if (!livePage.url().includes('/report')) {
+        throw new Error(`实时页地址不对：${livePage.url()}`);
+      }
+
+      // 侧栏面板里能点开这条快照（Markdown 正文）。
       await ctx.clickTestId('sidebar-nav-snapshots');
       await ctx.expect.visible('[data-testid="snapshots-list"]');
       await ctx.expect.poll(
@@ -148,19 +190,79 @@ export const captureCase = defineCase({
         '快照没有进入清单',
       );
 
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(() =>
+            Boolean(
+              document.querySelector(
+                '[data-testid="snapshots-domain"][data-domain="127.0.0.1"]',
+              ) && document.querySelector('[data-testid="snapshots-row-menu"]'),
+            ),
+          ),
+        '面板没有按域名分组或缺少行操作',
+      );
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(() =>
+            Boolean(document.querySelector('[data-testid="snapshots-row"]')),
+          ),
+        '面板里没有快照条目',
+      );
       await ctx.evaluate(() => {
         document
           .querySelector<HTMLButtonElement>('[data-testid="snapshots-row"]')
           ?.click();
       });
-      const snapshotPage = await ctx.waitForPage(
-        /^work:\/\/studio\/snapshot\?/,
+      // 快照文件是 .md：条目打开后由 markdown 编辑器承接。
+      const editorPage = await ctx.waitForPage(
+        /^plugin:\/\/markdown-editor\/content/,
       );
-      await snapshotPage.expect.visible('[data-testid="snapshot-body"]');
-      const body = await snapshotPage.text('[data-testid="snapshot-body"]');
-      if (!body.includes('季度报告') || !body.includes('收入')) {
-        throw new Error(`快照正文不对：${body.slice(0, 120)}`);
+      await ctx.expect.poll(async () => {
+        const text = await editorPage.text('body');
+        return text.includes('季度报告') && text.includes('收入');
+      }, 'markdown 编辑器没有显示快照正文');
+
+      // 快照文件本身带来源头部。
+      const head = await ctx.evaluate(async (target) => {
+        const items = (await window.workStudio.read(
+          target as string,
+        )) as unknown as Array<{ text?: string }>;
+        return items[0]?.text ?? '';
+      }, captured.ref);
+      for (const part of [
+        '---',
+        'url: ',
+        'title: ',
+        'excerpt:',
+        '## 可访问性结构',
+      ]) {
+        if (!head.includes(part)) {
+          throw new Error(`快照文件缺少「${part}」：${head.slice(0, 160)}`);
+        }
       }
+
+      // 删除快照后清单不再包含它。
+      await ctx.evaluate(async (target) => {
+        const result = await window.workStudio.command('web', 'web', 'remove', {
+          url: target as string,
+        });
+        if (!result.ok) throw new Error(result.error.message);
+      }, url);
+      await ctx.expect.poll(
+        async () =>
+          ctx.evaluate(async (target) => {
+            const result = await window.workStudio.command(
+              'web',
+              'web',
+              'list',
+              {},
+            );
+            if (!result.ok) return false;
+            const items = result.data as Array<{ url: string }>;
+            return !items.some((item) => item.url === target);
+          }, url),
+        '快照没有被删除',
+      );
     } finally {
       server.close();
     }

@@ -5,7 +5,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile, writeJson } from '../platform/json.ts';
 
@@ -14,6 +14,12 @@ export interface SnapshotDoc {
   title: string;
   markdown: string;
   capturedAt: number;
+  /** Readability 式概述（description 或正文首段）。 */
+  excerpt?: string;
+  /** 站点图标（页面声明或 /favicon.ico）；旧缓存没有这一项。 */
+  icon?: string;
+  /** 工作区里的 Markdown 快照文件；写成功后才有可能有。 */
+  fileRef?: string;
 }
 
 export class WebCache {
@@ -34,6 +40,19 @@ export class WebCache {
     mkdirSync(this.directory, { recursive: true });
     writeJson(this.fileOf(doc.url), doc);
     return { ref: this.refOf(doc.url) };
+  }
+
+  /** 记录快照文件地址：清单打开时优先用文件，旧缓存没有就走只读视图。 */
+  attachFile(url: string, fileRef: string): void {
+    const key = this.fileOf(sourceUrlOf(url));
+    const doc = readJsonFile<SnapshotDoc>(key);
+    if (!doc) return;
+    writeJson(key, { ...doc, fileRef });
+  }
+
+  /** 删除一份缓存快照；不存在也算成功。 */
+  remove(url: string): void {
+    rmSync(this.fileOf(sourceUrlOf(url)), { force: true });
   }
 
   /** 缓存清单：只读目录，按采集时间倒序；坏文件直接跳过。 */
