@@ -5,9 +5,15 @@
  * 业务模块由 NextApp / composition 装配；App 不直接认识具体模块。
  */
 
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { app as electronApp, BrowserWindow, dialog, session } from 'electron';
+import {
+  app as electronApp,
+  BrowserWindow,
+  dialog,
+  nativeImage,
+  session,
+} from 'electron';
 import { NextApp } from './app.ts';
 import {
   dataRootPointerFile,
@@ -88,6 +94,7 @@ export async function bootstrapNext(
   electronApp.setPath('sessionData', join(profile.dir, 'chromium'));
 
   await electronApp.whenReady();
+  applyDevDockIcon();
 
   const storage = createStorageLayout(dataRoot.root);
   // 安装包首次启动没有工作区：先弹原生目录面板（同时完成目录授权），
@@ -123,6 +130,18 @@ export async function bootstrapNext(
   });
 
   return { app, dataRoot };
+}
+
+/**
+ * 开发态没有应用包，Dock 会显示 Electron 默认图标；用设计稿生成的一档位图兜底。
+ * 安装包的图标由 electron-builder 写进 bundle，这里只管源码运行。
+ */
+function applyDevDockIcon(): void {
+  if (electronApp.isPackaged || process.platform !== 'darwin') return;
+  const icon = join(electronApp.getAppPath(), 'build', 'icon.png');
+  if (!existsSync(icon)) return;
+  const image = nativeImage.createFromPath(icon);
+  if (!image.isEmpty()) electronApp.dock?.setIcon(image);
 }
 
 function focusWindow(): void {

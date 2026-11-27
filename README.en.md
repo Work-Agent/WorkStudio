@@ -507,6 +507,7 @@ node node_modules/electron/install.js
 | `pnpm run preview`   | Start the app from built output (verify production build)   |
 | `pnpm run package`   | Package an unpacked app directory into `dist/`              |
 | `pnpm plugins:sync`  | Sync registry `builtin` plugins into `out/plugins/`         |
+| `pnpm icons`         | Regenerate platform icons and bitmaps from `build/icon.svg` |
 | `pnpm run make`      | Build the installer for the current platform into `dist/`   |
 | `pnpm run release`   | Build and publish (needs publish credentials)               |
 | `pnpm run typecheck` | TypeScript type check                                       |
@@ -532,7 +533,8 @@ node node_modules/electron/install.js
 │   │   ├── pages/                 # shell / assistant / overlay / settings / welcome
 │   │   └── shared/                # cross-page API, domains and styles
 │   └── shared/                    # types and styles shared by main / renderer
-├── scripts/                       # release and built-in plugin sync scripts
+├── scripts/                       # release, built-in plugin sync and icon scripts
+├── build/                         # app icons: icon.svg is the design source, the rest is generated
 ├── RELEASING.md                   # release and SDK publishing rules
 ├── docs/                          # systematic design (architecture / plugin-registry)
 ├── electron.vite.config.ts        # build config for main / preload / renderer
@@ -543,6 +545,7 @@ node node_modules/electron/install.js
 ### 7.4 Build and packaging
 
 - Build output `out/{main,preload,renderer}` and packaging output `dist/` are not committed.
+- The design source for app icons is `build/icon.svg`; `pnpm icons` generates `icon.icns` / `icon.ico` / `icons/*.png` plus `icon.png` for the dev Dock. Generated files are committed, so packaging and CI need no rasterizer (regenerating needs `rsvg-convert`).
 - To see built-in plugins in local development, run `pnpm plugins:sync` once (needs network, proxy allowed): `out/plugins/` is written only by that script (cleared before each sync), and neither `pnpm build` nor `pnpm dev` touches it.
 - macOS builds are signed with a **Developer ID Application** certificate (hardened runtime + notarization): local builds discover the certificate from the keychain (create it in Apple Developer and import first); CI imports the p12 from secrets in the Release workflow. Fuses rewrite the binary and electron-builder re-signs afterwards. Signing is a prerequisite for in-app silent updates — Squirrel.Mac verifies that the update bundle's code signature matches the running app (Team ID); ad-hoc signed copies cannot silently upgrade to a signed version.
 - Installers are produced on the matching platform (or in CI): a macOS host builds mac targets only by default; Windows / Linux targets belong to CI.

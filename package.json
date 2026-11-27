@@ -21,6 +21,7 @@
     "make": "pnpm build && pnpm plugins:sync && electron-builder --config.appId=com.qingo.workstudio.dev --config.productName=\"WorkStudio Dev\" --config.extraMetadata.wsFlavor=dev",
     "release": "pnpm build && pnpm plugins:sync && electron-builder --publish always --config.extraMetadata.wsFlavor=release",
     "plugins:sync": "node scripts/sync-builtin-plugins.mjs",
+    "icons": "node scripts/make-icons.mjs",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "tsc --noEmit",

@@ -33,8 +33,11 @@ electronFuses:
 
 # 安装包文件名不含版本号：Release 资产名保持稳定，
 # README 里的 /releases/latest/download/<name> 直链可以长期指向最新版本。
+# 应用图标：设计源 build/icon.svg，`pnpm icons` 生成 icon.icns / icon.ico / icons/。
+# 下方 icon 路径相对 buildResources（默认 build/），由 `pnpm icons` 一并产出。
 mac:
   category: public.app-category.productivity
+  icon: icon.icns
   artifactName: ${productName}-mac-${arch}.${ext}
   # Developer ID 签名：不指定 identity，electron-builder 自动从钥匙串
   # 发现 Developer ID Application 证书（CI 由 release workflow 导入 p12）。
@@ -46,6 +49,7 @@ mac:
     - zip
 
 win:
+  icon: icon.ico
   artifactName: ${productName}-win-${arch}.${ext}
   target:
     - nsis
@@ -56,6 +60,7 @@ nsis:
 
 linux:
   category: Utility
+  icon: icons
   maintainer: qingo <97383102@qq.com>
   artifactName: ${productName}-linux-${arch}.${ext}
   target:

@@ -506,6 +506,7 @@ node node_modules/electron/install.js
 | `pnpm run preview`   | 用已编译产物启动应用（验证生产构建）             |
 | `pnpm run package`   | 打包为未压缩应用目录，输出到 `dist/`             |
 | `pnpm plugins:sync`  | 按注册表 `builtin` 同步内置插件到 `out/plugins/` |
+| `pnpm icons`         | 由 `build/icon.svg` 重生成各平台图标与位图       |
 | `pnpm run make`      | 生成当前平台的安装包，输出到 `dist/`             |
 | `pnpm run release`   | 构建并发布（需配置 publish 凭据）                |
 | `pnpm run typecheck` | TypeScript 类型检查                              |
@@ -531,7 +532,8 @@ node node_modules/electron/install.js
 │   │   ├── pages/                 # shell / assistant / overlay / settings / welcome
 │   │   └── shared/                # 跨页面 API、domain 与样式
 │   └── shared/                    # 主/渲染共享类型与样式
-├── scripts/                       # 发版 / 内置插件同步等构建脚本
+├── scripts/                       # 发版 / 内置插件同步 / 图标生成等构建脚本
+├── build/                         # 应用图标：icon.svg 为设计源，其余为生成产物
 ├── RELEASING.md                   # 发版与 SDK 发布规则
 ├── docs/                          # 系统化设计（architecture / plugin-registry）
 ├── electron.vite.config.ts        # 三端构建配置（main / preload / renderer）
@@ -542,6 +544,7 @@ node node_modules/electron/install.js
 ### 7.4 构建与打包
 
 - 构建产物 `out/{main,preload,renderer}` 与打包产物 `dist/` 都不进版本库。
+- 应用图标的设计源是 `build/icon.svg`，`pnpm icons` 由它生成 `icon.icns` / `icon.ico` / `icons/*.png` 与开发态 Dock 用的 `icon.png`；生成物一并提交，打包与 CI 不需要光栅化环境（重新生成需 `rsvg-convert`）。
 - 打包前会执行 `pnpm plugins:sync`：读取注册表 `index.json`，把 `builtin: true` 的条目下载并校验到 `out/plugins/`；应用首次启动再播种到数据根的 `plugins/installed/`。
 - 本地开发要看到内置插件，先执行一次 `pnpm plugins:sync`（需要网络，可走代理）：`out/plugins/` 只由该脚本写入（每次同步前清空），`pnpm build` 与 `pnpm dev` 都不动它。
 - macOS 构建使用 **Developer ID Application** 证书签名（hardened runtime + 公证）：本地构建从钥匙串自动发现证书（需先在 Apple Developer 创建并导入）；CI 由 Release workflow 从 secrets 导入 p12。fuses 会改写二进制，electron-builder 在改写后重签。签名是应用内静默更新的前置条件——Squirrel.Mac 校验更新包与当前应用的代码签名一致（Team ID），ad-hoc 签名的副本无法静默升级到签名版本。
