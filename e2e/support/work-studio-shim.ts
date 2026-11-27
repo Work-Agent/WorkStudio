@@ -23,13 +23,6 @@ export function installWorkStudioBridgeShim(): void {
   const next = scope.workStudio;
   if (!next) return;
 
-  const active = async (): Promise<string> => {
-    const state = (await next.subscribe('shell', 'windows')) as {
-      active?: string | null;
-    };
-    if (!state.active) throw new Error('workspace is not ready');
-    return state.active;
-  };
   const call = async (path: string, input?: unknown) => {
     const value = (input ?? {}) as Record<string, unknown>;
     if (path === '/workspaces/current') {

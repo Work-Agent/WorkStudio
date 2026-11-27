@@ -11,13 +11,11 @@ import type { DomainRegistry } from '../../registry/registry.ts';
 import { AgentContext } from './context.ts';
 import type { ToolSurface } from './tools.ts';
 import type { SessionAgent } from './runtime/session-agent.ts';
-import type { BrowserCapability } from '../browser/capability.ts';
 import type {
   ModelCatalogItem,
   ModelConfigView,
   ModelsConfigView,
   ParsedMessage,
-  ProviderCredentialInput,
   PiEventFrame,
   ProviderInfoView,
   SessionMeta,
@@ -785,7 +783,6 @@ export function defineModelsResources(
   registry: DomainRegistry,
   state: ModelsState,
   host?: () => SessionAgent | null,
-  browser?: BrowserCapability,
 ): ModelResources {
   const domain = registry.define('agent');
   const providers = domain.resource('providers');

@@ -17,15 +17,6 @@ import type {
 import type { DomainUpdate } from '@work-studio/sdk';
 import type { SessionTask } from '../../../shared/session-task.ts';
 
-interface SessionListItem {
-  id: string;
-  path: string;
-  name: string;
-  preview?: string;
-  createdAt: number;
-  messageCount?: number;
-}
-
 interface SessionToolState {
   id: string;
   name: string;

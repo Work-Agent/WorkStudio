@@ -127,7 +127,6 @@ export class ShellHost {
       return existing.record;
     }
     const isMac = process.platform === 'darwin';
-    const dev = Boolean(process.env['ELECTRON_RENDERER_URL']);
     const theme =
       this.options.window?.theme ??
       (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');

@@ -19,7 +19,6 @@ import type { ShellHost, ViewOpenInput } from './native.ts';
 import type {
   InteractionPreview,
   LayoutSnapshot,
-  UiState,
 } from '../../../shared/types.ts';
 import {
   beginInteraction,
@@ -31,7 +30,6 @@ import {
   type NativeScene,
 } from './interaction.ts';
 import { DEFAULT_UI } from './layout.ts';
-import { pending } from '../../registry/command.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 
 // ─── window ──────────────────────────────────────────────────
@@ -415,7 +413,7 @@ export function defineViewsResources(
       run: (input) => {
         const keep = String(input.id);
         if (!records.has(keep)) return [...records.values()];
-        for (const id of [...records.keys()]) {
+        for (const id of records.keys()) {
           if (id === keep) continue;
           host?.closeView(windowId, id);
           records.delete(id);
@@ -447,7 +445,7 @@ export function defineViewsResources(
       summary: '关闭全部视图',
       args: {},
       run: () => {
-        for (const id of [...records.keys()]) {
+        for (const id of records.keys()) {
           host?.closeView(windowId, id);
           records.delete(id);
           registry.define('shell').remove(viewResourceName(windowId, id));
@@ -522,7 +520,7 @@ export function defineViewsResources(
     remove: (windowId: string) => {
       const records = state.records.get(windowId);
       if (records) {
-        for (const viewId of [...records.keys()]) {
+        for (const viewId of records.keys()) {
           registry.define('shell').remove(viewResourceName(windowId, viewId));
         }
       }

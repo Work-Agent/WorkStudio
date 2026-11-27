@@ -199,11 +199,8 @@ export class AgentModule implements DomainModule {
       this.thinking,
       (workspaceId, key) => this.agents.get(workspaceId, key),
     );
-    this.modelResources = defineModelsResources(
-      registry,
-      this.models,
-      () => this.host(),
-      this.browser,
+    this.modelResources = defineModelsResources(registry, this.models, () =>
+      this.host(),
     );
     defineSkillsResource(registry, this.skills, () => this.host());
     defineToolsResource(registry, this.tools);

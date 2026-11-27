@@ -9,7 +9,7 @@
  * 用法：`workstudio-plugin <plugin-root>`。
  */
 
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArgSpec, CommandDescriptor } from './command.ts';
@@ -40,6 +40,8 @@ export async function buildPlugin(root: string): Promise<BuildResult> {
   if (!manifest.pages?.content) {
     throw new Error(`插件缺少内容页：${manifest.id}`);
   }
+  // 技能目录在打包期就要成形：缺 SKILL.md 或 frontmatter 的插件不要发出去。
+  await validateSkills(root, manifest);
 
   const entry = entryOf(pkg.exports);
   if (!entry) {

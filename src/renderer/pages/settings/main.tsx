@@ -51,16 +51,6 @@ interface AppearanceSnapshot {
   effectiveTheme: 'light' | 'dark';
 }
 
-interface StorageView {
-  dataRoot: string;
-  appPath: string;
-  workspacePath: string;
-  workspaceId: string;
-  sceneFile: string;
-  sessionsDir: string;
-  versions: { app: string; electron: string; chrome: string; node: string };
-}
-
 interface SkillView {
   name: string;
   description: string;
@@ -77,13 +67,6 @@ interface ModelConfig {
   input?: Array<'text' | 'image'>;
   contextWindow?: number;
   maxTokens?: number;
-}
-
-interface BindingView {
-  transport: string;
-  mime: string;
-  codec?: string;
-  presenter?: string;
 }
 
 interface SessionItem {
@@ -157,29 +140,6 @@ interface PreferencesView {
   locale: string | null;
   proxy: string | null;
   githubToken: string | null;
-}
-
-interface AdvancedView {
-  settings: {
-    global: Record<string, unknown>;
-    project: Record<string, unknown>;
-    effective: Record<string, unknown>;
-    paths: { global: string; project: string };
-  } | null;
-  bindings: BindingView[];
-}
-
-interface ExtensionView {
-  source: string;
-  scope: 'user' | 'project';
-  installedPath?: string;
-}
-
-interface CatalogPackage {
-  name: string;
-  description?: string;
-  type?: string;
-  version?: string;
 }
 
 interface UpdateView {
