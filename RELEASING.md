@@ -30,6 +30,35 @@
    - `publish`：等 `build` 和 `sdk` 都成功后再公开 Release，并在 release notes 里标注 SDK 版本。
 6. 如果 `sdk` 失败，Release 保持 draft；修复后重跑对应 tag 的 workflow。
 
+## 腾讯云 COS 镜像
+
+Release 在发布 GitHub Release 的同时把安装包镜像到腾讯云 COS，客户端可在设置页切换更新源（海外 GitHub / 中国大陆 COS）。
+
+- bucket `ai-1301618848`，region `ap-nanjing`，对象前缀 `data/`；
+- 对象以公有读写入，客户端无需签名即可下载；
+- 布局：
+
+| 对象                                | 内容                                                          |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `data/latest.json`                  | 最新版本清单：`version` / `tag` / `assets[<platform>-<arch>]` |
+| `data/<tag>/<安装包>`               | 该版本安装包（mac dmg、win exe、linux AppImage）              |
+| `data/<tag>/assets-<platform>.json` | 各平台构建 job 写入的片段，供清单汇总                         |
+
+仓库需要配置 Actions secrets `COS_SECRET_ID`、`COS_SECRET_KEY`；缺失时 workflow 跳过镜像上传，只发布 GitHub Release。
+
+镜像只提供安装包下载，不包含 `latest-mac.yml`；因此 macOS 已签名安装版的静默替换仍只在 GitHub 源下可用，切换 COS 时走下载 dmg 后打开的流程。
+
+手动补发或重跑：
+
+```bash
+export COS_SECRET_ID=...
+export COS_SECRET_KEY=...
+node scripts/cos-release.mjs upload --tag v0.3.5 --platform mac --files dist/*.dmg
+node scripts/cos-release.mjs upload --tag v0.3.5 --platform win --files dist/*.exe
+node scripts/cos-release.mjs upload --tag v0.3.5 --platform linux --files dist/*.AppImage
+node scripts/cos-release.mjs manifest --tag v0.3.5
+```
+
 ## SDK 发布判定
 
 `scripts/release-sdk.mjs` 在 `verify` 里运行，规则：

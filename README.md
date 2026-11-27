@@ -557,7 +557,7 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-workflow 先跑与 CI 相同的 verify（typecheck / lint / build），并判定 SDK 是否需要发布；通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。
+workflow 先跑与 CI 相同的 verify（typecheck / lint / build），并判定 SDK 是否需要发布；通过后在 macOS（单 job 双架构，产出唯一 `latest-mac.yml` 更新 feed）、Windows、Linux 上分别打包，汇总为该 tag 的 GitHub Release。tag 名含 `-`（如 `v0.2.0-beta.1`）时标记为 prerelease，不会成为下载按钮指向的最新版本。合入 workflow 后推首个 tag 即产出首个 Release。配置了 COS 凭据时，安装包同时镜像到腾讯云 COS，供中国大陆用户切换更新源。
 
 SDK 只在其 `packages/sdk` 版本高于 npm 已发布版本时发布；没有变化的 release 跳过 npm。发布判定、版本规则与 npm 认证（Trusted Publisher，无需 token）见 [RELEASING.md](RELEASING.md)。
 
@@ -573,9 +573,11 @@ macOS 构建需要仓库配置以下 Actions secrets：
 
 SDK 发布走 npm Trusted Publisher（OIDC），不需要 `NPM_TOKEN` 之类的 token secret。
 
+中国大陆更新镜像可选配置 `COS_SECRET_ID` / `COS_SECRET_KEY`（腾讯云 COS 访问密钥）；缺失时跳过镜像上传，只发布 GitHub Release。
+
 CI 在打包之后会验证签名身份（Developer ID Application）与 Gatekeeper 放行结果：公证凭据缺失或签名回退为 ad-hoc 时构建直接失败，避免发出无法静默更新的安装包。本地手动打包不注入公证凭据，因此只完成签名、不做公证。
 
-macOS 安装版的应用内更新为静默替换：electron-updater（Squirrel.Mac）下载 zip 后，退出应用时自动替换，或在设置页点「重启并安装」立即更新。`latest-mac.yml` 随 Release 发布，是更新 feed；首次从 ad-hoc 版本升级需手动 dmg 安装一次签名版。
+应用内更新在设置页「关于与更新」检查版本并下载安装包，更新源可在 GitHub Releases 与腾讯云 COS 镜像之间切换：海外走 GitHub，中国大陆走 COS。COS 镜像以 `data/latest.json` 为清单，按平台与架构定位安装包，安装包与清单均为公有读。首次从 ad-hoc 版本升级需手动安装一次签名版。
 
 ### 7.5 技术栈
 

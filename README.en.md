@@ -557,7 +557,7 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (a single dual-arch job producing the one `latest-mac.yml` update feed), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Once the workflows are merged, pushing the first tag produces the first Release.
+The workflow first runs the same verify as CI (typecheck / lint / build), then packages on macOS (a single dual-arch job producing the one `latest-mac.yml` update feed), Windows and Linux, and collects everything into the GitHub Release for that tag. A tag containing `-` (e.g. `v0.2.0-beta.1`) is marked as a prerelease and does not become the release the download button points at. Once the workflows are merged, pushing the first tag produces the first Release. With COS credentials configured, installers are also mirrored to Tencent Cloud COS so users in mainland China can switch the update source.
 
 The macOS build requires the following repository Actions secrets:
 
@@ -571,7 +571,9 @@ The macOS build requires the following repository Actions secrets:
 
 After packaging, CI verifies the signing identity (Developer ID Application) and the Gatekeeper verdict, so a missing notarization credential or an ad-hoc fallback fails the build instead of shipping an installer that cannot update silently. Local manual packaging does not inject notarization credentials, so it signs but does not notarize.
 
-In-app updates on macOS installed builds are silent replacements: electron-updater (Squirrel.Mac) downloads the zip, replaces the app automatically on quit, or updates immediately via "Restart and Install" on the settings page. `latest-mac.yml` ships with the Release as the update feed; the first upgrade from an ad-hoc build requires installing a signed dmg manually once.
+The mainland-China mirror is optional: configure `COS_SECRET_ID` / `COS_SECRET_KEY` (Tencent Cloud COS credentials). Without them the mirror upload is skipped and only the GitHub Release is published.
+
+In-app updates check for versions and download installers from the settings page, with the source switchable between GitHub Releases and the Tencent Cloud COS mirror: GitHub overseas, COS in mainland China. The COS mirror uses `data/latest.json` as its manifest and resolves installers by platform and architecture; both installers and the manifest are publicly readable. The first upgrade from an ad-hoc build requires installing a signed build manually once.
 
 ### 7.5 Stack
 

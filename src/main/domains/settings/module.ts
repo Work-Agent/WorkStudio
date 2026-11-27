@@ -97,6 +97,7 @@ export class SettingsModule implements DomainModule {
     this.preferences.locale = preferences.locale;
     this.preferences.proxy = preferences.proxy;
     this.preferences.githubToken = preferences.githubToken;
+    this.preferences.updateSource = preferences.updateSource;
 
     const initial = registry.snapshot({
       domain: 'workspace',
@@ -138,6 +139,7 @@ export class SettingsModule implements DomainModule {
     this.preferences.locale = null;
     this.preferences.proxy = null;
     this.preferences.githubToken = null;
+    this.preferences.updateSource = 'github';
     this.updates.status = 'idle';
     this.updates.version = null;
     this.updates.progress = 0;

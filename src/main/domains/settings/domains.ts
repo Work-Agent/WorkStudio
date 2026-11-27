@@ -9,6 +9,7 @@
 import { join } from 'node:path';
 import type { WorkspaceMeta } from '../../../shared/app.ts';
 import type { StorageLayout } from '../../platform/paths.ts';
+import type { UpdateSource } from '../../platform/preferences.ts';
 import type { UpdatesService } from './updates.ts';
 import { pending } from '../../registry/command.ts';
 import { CallFailure } from '../../contract.ts';
@@ -59,16 +60,23 @@ export interface PreferencesState {
   locale: string | null;
   proxy: string | null;
   githubToken: string | null;
+  updateSource: UpdateSource;
 }
 
 export interface PreferenceValues {
   locale: string | null;
   proxy: string | null;
   githubToken: string | null;
+  updateSource: UpdateSource;
 }
 
 export function createPreferencesState(): PreferencesState {
-  return { locale: null, proxy: null, githubToken: null };
+  return {
+    locale: null,
+    proxy: null,
+    githubToken: null,
+    updateSource: 'github',
+  };
 }
 
 export function definePreferencesResource(
@@ -77,17 +85,20 @@ export function definePreferencesResource(
   persist?: (values: PreferenceValues) => void,
 ): void {
   const resource = registry.define('settings').resource('preferences');
-  resource.snapshot(() => ({
+  const snapshot = (): PreferenceValues => ({
     locale: state.locale,
     proxy: state.proxy,
     githubToken: state.githubToken,
-  }));
+    updateSource: state.updateSource,
+  });
+  resource.snapshot(snapshot);
   resource.command('set', {
     summary: '更新全局偏好',
     args: {
       locale: { type: 'string' },
       proxy: { type: 'string' },
       githubToken: { type: 'string' },
+      updateSource: { type: 'string' },
     },
     run: (input) => {
       if (typeof input.locale === 'string') state.locale = input.locale;
@@ -95,21 +106,18 @@ export function definePreferencesResource(
       if (typeof input.githubToken === 'string') {
         state.githubToken = input.githubToken;
       }
-      persist?.({
-        locale: state.locale,
-        proxy: state.proxy,
-        githubToken: state.githubToken,
-      });
+      if (input.updateSource === 'github' || input.updateSource === 'cos') {
+        state.updateSource = input.updateSource;
+      }
+      const values = snapshot();
+      persist?.(values);
       resource.patch({
-        locale: state.locale,
-        proxy: state.proxy,
-        githubToken: state.githubToken,
+        locale: values.locale,
+        proxy: values.proxy,
+        githubToken: values.githubToken,
+        updateSource: values.updateSource,
       });
-      return {
-        locale: state.locale,
-        proxy: state.proxy,
-        githubToken: state.githubToken,
-      };
+      return values;
     },
   });
 }
@@ -233,24 +241,24 @@ export function defineUpdatesResource(
   service?: UpdatesService,
 ): void {
   const resource = registry.define('settings').resource('updates');
-  resource.snapshot(() => {
-    if (!service) {
-      return {
-        status: state.status,
-        version: state.version,
-        progress: state.progress,
-      };
-    }
-    const current = service.current();
-    return {
-      status: current.phase,
-      version: current.latest,
-      progress:
-        current.total > 0
-          ? Math.round((current.received / current.total) * 100)
-          : 0,
-    };
-  });
+  // 快照直接透出服务状态：静默链路的 silent / message / 安装包路径、更新源
+  // 与资产都只由主进程判定，渲染层不再自行推断。
+  resource.snapshot(() =>
+    service
+      ? service.current()
+      : {
+          phase: state.status,
+          silent: false,
+          source: 'github',
+          current: '',
+          latest: state.version,
+          asset: null,
+          received: 0,
+          total: 0,
+          file: null,
+          message: null,
+        },
+  );
   resource.command('check', {
     summary: '检查更新',
     args: {},
@@ -265,6 +273,11 @@ export function defineUpdatesResource(
     summary: '取消更新',
     args: {},
     run: service ? () => service.cancel() : pending('updates/cancel'),
+  });
+  resource.command('install', {
+    summary: '重启并安装更新（macOS 静默链路）',
+    args: {},
+    run: service ? () => service.install() : pending('updates/install'),
   });
   resource.command('open', {
     summary: '打开已下载的更新包',

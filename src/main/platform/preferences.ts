@@ -10,10 +10,14 @@ import type { StorageLayout } from './paths.ts';
 
 export const SETTINGS_NAMESPACE = 'workspaceStudio';
 
+/** 更新包来源：GitHub Releases 或腾讯云 COS 镜像。 */
+export type UpdateSource = 'github' | 'cos';
+
 export interface UserPreferences {
   locale: string | null;
   proxy: string | null;
   githubToken: string | null;
+  updateSource: UpdateSource;
 }
 
 export interface WorkspacePolicy {
@@ -33,6 +37,7 @@ export function readUserPreferences(layout: StorageLayout): UserPreferences {
       typeof raw['githubToken'] === 'string' && raw['githubToken'].trim()
         ? raw['githubToken'].trim()
         : null,
+    updateSource: raw['updateSource'] === 'cos' ? 'cos' : 'github',
   };
 }
 
