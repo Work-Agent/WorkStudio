@@ -32,7 +32,12 @@
 
 ## 腾讯云 COS 镜像
 
-Release 在发布 GitHub Release 的同时把安装包镜像到腾讯云 COS，客户端可在设置页切换更新源（海外 GitHub / 中国大陆 COS）。
+客户端可在设置页切换更新源（海外 GitHub / 中国大陆 COS）。
+
+镜像默认关闭：跨境上传很慢（GitHub 美国 runner → `ap-nanjing` 实测约 0.2MB/s，一个版本要占用 runner 近一小时），会拖住其他 workflow。需要时可二选一：
+
+- 把仓库变量 `COS_MIRROR` 设为 `true` 后重跑该 tag 的 workflow；
+- 或用下面的手动命令在本地补发（国内网络上传更快）。
 
 - bucket `ai-1301618848`，region `ap-nanjing`，对象前缀 `data/`；
 - 对象以公有读写入，客户端无需签名即可下载；

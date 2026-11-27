@@ -367,10 +367,11 @@ jobs:
 
   mirror:
     name: Mirror installers to COS
-    # 跨境上传很慢（GitHub 美国 runner → 腾讯云 ap-nanjing），因此放在 Release
-    # 公开之后单独跑：GitHub 用户先拿到更新，镜像补齐后再切换 latest.json。
+    # 跨境上传很慢（GitHub 美国 runner → 腾讯云 ap-nanjing，实测约 0.2MB/s），
+    # 一个版本要占用 runner 近一小时，因此默认关闭；需要时把仓库变量
+    # COS_MIRROR 设为 true 再重跑，或按 RELEASING.md 在本地补发镜像。
     # 预发布（tag 含 `-`）不进镜像，与 GitHub 的 latest 语义一致。
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && vars.COS_MIRROR == 'true' }}
     needs: [publish]
     runs-on: ubuntu-latest
     timeout-minutes: 300
