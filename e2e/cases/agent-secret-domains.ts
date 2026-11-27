@@ -37,16 +37,16 @@ export default defineCase({
   title: '插件密钥按域隔离：只能读写自己的域',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ensureFixturePlugin(ctx, 'html-viewer');
+    await ensureFixturePlugin(ctx, 'probe-host');
     await ensureFixturePlugin(ctx, 'secret-peer');
 
     // 密钥域会跨轮保留：先清干净，否则上一轮的写入会把隔离断言弄假。
-    for (const pluginId of ['html-viewer', 'secret-peer']) {
+    for (const pluginId of ['probe-host', 'secret-peer']) {
       await probe(ctx, { pluginId, action: 'clear' });
     }
 
     const setOwn = await probe(ctx, {
-      pluginId: 'html-viewer',
+      pluginId: 'probe-host',
       action: 'set',
       value: 'owner-A',
     });
@@ -77,7 +77,7 @@ export default defineCase({
       throw new Error(`第二个插件写自己的域失败：${setOther.error?.message}`);
     }
     const ownRead = await probe(ctx, {
-      pluginId: 'html-viewer',
+      pluginId: 'probe-host',
       action: 'get',
     });
     if (!ownRead.ok || ownRead.data?.value !== 'owner-A') {

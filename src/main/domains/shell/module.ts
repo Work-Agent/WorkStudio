@@ -12,7 +12,6 @@ import type { PluginFiles } from '../../plugin/files.ts';
 import type { Protocols } from '../../protocols.ts';
 import type { ShellHost } from './native.ts';
 import { createLog } from '../../log.ts';
-import { CallFailure } from '../../contract.ts';
 import type { DomainModule } from '../../registry/module.ts';
 import type { DomainRegistry } from '../../registry/registry.ts';
 import {
@@ -34,7 +33,6 @@ import {
   defineNoticesResources,
   defineNativeResource,
   definePagesResource,
-  activeWindowId,
   defineViewsResources,
   viewResourceName,
   defineWindowsResource,

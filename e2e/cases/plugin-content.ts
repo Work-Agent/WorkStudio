@@ -2,7 +2,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defineCase } from '../runner/contract.ts';
-import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+import { ensureBuiltinPlugin } from '../support/plugin-fixture.ts';
 
 interface AccessProbe {
   own: boolean;
@@ -15,7 +15,7 @@ export default defineCase({
   title: 'HTML 文件由插件认领并在插件页打开',
   tags: ['dev', 'ci', 'mutating'],
   async run(ctx) {
-    await ensureHtmlFixture(ctx);
+    await ensureBuiltinPlugin(ctx, 'html-editor');
     const workspace = (await ctx.evaluate(() =>
       window.workStudio.subscribe('workspace', 'registry'),
     )) as { current?: { path: string } | null };
@@ -53,8 +53,7 @@ export default defineCase({
           : { ok: false, error: response.error.message };
       }, ref);
       if (!result.ok) throw new Error(result.error);
-      const page = await ctx.waitForPage(/^plugin:\/\/html-viewer\//);
-      await page.expect.text('h1', 'HTML 阅读器');
+      const page = await ctx.waitForPage(/^plugin:\/\/html-editor\/content/);
       await page.expect.text('body', 'PLUGIN CONTENT');
 
       // 内容页能读自己这个 ref（新旧两种地址名都认），读不到别的 ref。

@@ -1,5 +1,5 @@
 import { defineCase } from '../runner/contract.ts';
-import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+import { ensureBuiltinPlugin } from '../support/plugin-fixture.ts';
 
 interface SkillInfo {
   name: string;
@@ -12,7 +12,7 @@ export default defineCase({
   title: '插件技能进入 agent 技能目录并可激活',
   tags: ['dev', 'ci', 'mutating'],
   async run(ctx) {
-    await ensureHtmlFixture(ctx);
+    await ensureBuiltinPlugin(ctx, 'text-editor');
     await ctx.expect.poll(async () => {
       const state = (await ctx.evaluate(() =>
         window.workStudio.subscribe('agent', 'skills'),
@@ -20,20 +20,20 @@ export default defineCase({
       return Boolean(
         state?.catalog?.some(
           (skill) =>
-            skill.name === 'html-viewer' && skill.pluginId === 'html-viewer',
+            skill.name === 'text-editor' && skill.pluginId === 'text-editor',
         ),
       );
     }, '插件技能未进入目录');
     await ctx.evaluate(async () => {
       await window.workStudio.command('agent', 'skills', 'setActive', {
-        names: ['html-viewer'],
+        names: ['text-editor'],
       });
     });
     await ctx.expect.poll(async () => {
       const state = (await ctx.evaluate(() =>
         window.workStudio.subscribe('agent', 'skills'),
       )) as { active?: string[] } | null;
-      return state?.active?.includes('html-viewer') === true;
+      return state?.active?.includes('text-editor') === true;
     }, '插件技能未激活');
     await ctx.evaluate(async () => {
       await window.workStudio.command('agent', 'skills', 'setActive', {

@@ -1,6 +1,6 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import {
   _electron as electron,
   type ElectronApplication,
@@ -17,7 +17,6 @@ export interface AppFixture {
 export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
   const dataDir =
     existingDataDir ?? mkdtempSync(join(tmpdir(), 'work-studio-e2e-'));
-  seedTestPlugin(dataDir);
   const app = await electron.launch({
     // 主题断言必须跟随 Electron nativeTheme，不能让 Playwright 默认的
     // colorScheme=light 覆盖 prefers-color-scheme。
@@ -38,13 +37,6 @@ export async function launchApp(existingDataDir?: string): Promise<AppFixture> {
     },
   });
   return { app, dataDir };
-}
-
-function seedTestPlugin(dataDir: string): void {
-  const source = resolve('e2e/fixtures/html-viewer');
-  const target = join(dataDir, 'plugins', 'installed', 'html-viewer');
-  mkdirSync(join(dataDir, 'plugins', 'installed'), { recursive: true });
-  cpSync(source, target, { recursive: true });
 }
 
 export async function windowByUrl(

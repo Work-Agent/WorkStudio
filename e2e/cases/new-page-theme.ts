@@ -55,11 +55,11 @@ export default defineCase({
       // 插件页由主进程协议层注入同一份首帧底色。
       await ctx.evaluate(async () => {
         await window.workStudio.command('plugin', 'installed', 'open', {
-          id: 'html-viewer',
+          id: 'text-editor',
         });
       });
       const pluginPage = await ctx.waitForPage(
-        /^plugin:\/\/html-viewer\/settings/,
+        /^plugin:\/\/text-editor\/settings/,
       );
       await ctx.expect.poll(async () => {
         const state = await pluginPage.evaluate(() => ({

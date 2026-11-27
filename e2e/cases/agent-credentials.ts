@@ -1,5 +1,5 @@
 import { defineCase } from '../runner/contract.ts';
-import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+import { ensureFixturePlugin } from '../support/plugin-fixture.ts';
 
 interface ProbeResult {
   ok: boolean;
@@ -12,12 +12,12 @@ export default defineCase({
   title: '插件写凭证受清单白名单与 provider 存在性双重限制',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ensureHtmlFixture(ctx);
+    await ensureFixturePlugin(ctx, 'probe-host');
 
     const result = (await ctx.evaluate(() =>
       window.workStudio.command(
-        'html-viewer',
-        'html-viewer',
+        'probe-host',
+        'probe-host',
         'credentialProbe',
         {},
       ),

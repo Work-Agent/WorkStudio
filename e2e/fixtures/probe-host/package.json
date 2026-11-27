@@ -1,0 +1,21 @@
+{
+  "name": "@work-studio/e2e-probe-host",
+  "version": "0.0.0",
+  "description": "E2E 探针：凭证白名单与密钥域边界（只提供命令，没有页面）",
+  "license": "MIT",
+  "type": "module",
+  "workstudio": {
+    "id": "probe-host",
+    "label": "探针宿主",
+    "credentials": [
+      "probe-host-provider"
+    ],
+    "icon": "key",
+    "pages": {
+      "content": "index.html"
+    }
+  },
+  "exports": {
+    "./workstudio": "./engine.js"
+  }
+}

@@ -30,6 +30,17 @@ e2e/
 共享 case 只依赖 `e2e/runner/contract.ts` 的 `E2EContext`。  
 Playwright 和 CDP 各自实现点击、等待、截图，case 本身不感知执行器。
 
+## 插件用例用谁
+
+插件行为用例跑**仓库真实的内置插件**（`out/plugins`，由 `pnpm plugins:sync` 同步，
+启动时播种到数据根），不在 e2e 里维护一份影子插件：
+
+- 落笔 / 页面 / 设置页 / 注册表 / 技能 / 首帧主题 → `text-editor`、`html-editor`；
+- 缺同步产物时用例直接报错，提示先跑 `pnpm plugins:sync`，不会悄悄换插件。
+
+`e2e/fixtures/` 只留**测试专用探针**（`probe-host`、`secret-peer`）：凭证白名单与
+密钥域隔离这类边界需要只能由测试触发的命令，产品插件不提供。
+
 ## dev extension
 
 ```text

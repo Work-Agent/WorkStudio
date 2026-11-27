@@ -1,14 +1,14 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineCase } from '../runner/contract.ts';
-import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+import { ensureBuiltinPlugin } from '../support/plugin-fixture.ts';
 
 export default defineCase({
   id: 'plugin.save',
   title: '插件命令可写回认领资源',
   tags: ['dev', 'ci', 'mutating'],
   async run(ctx) {
-    await ensureHtmlFixture(ctx);
+    await ensureBuiltinPlugin(ctx, 'html-editor');
     const workspace = (await ctx.evaluate(() =>
       window.workStudio.subscribe('workspace', 'registry'),
     )) as { current?: { path: string } | null };
@@ -20,8 +20,8 @@ export default defineCase({
       const ref = `file://${file}`;
       const result = await ctx.evaluate(async (target) => {
         const response = await window.workStudio.command(
-          'html-viewer',
-          'html-viewer',
+          'html-editor',
+          'html-editor',
           'save',
           { ref: target, content: '<h1>after</h1>' },
         );

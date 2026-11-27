@@ -1,5 +1,5 @@
 import { defineCase } from '../runner/contract.ts';
-import { ensureHtmlFixture } from '../support/plugin-fixture.ts';
+import { ensureBuiltinPlugin } from '../support/plugin-fixture.ts';
 
 interface RegistrySnapshot {
   installed: Array<{ id: string; state: string }>;
@@ -11,13 +11,13 @@ export default defineCase({
   title: '插件注册表在侧栏独立展示已安装与可安装',
   tags: ['dev', 'ci'],
   async run(ctx) {
-    await ensureHtmlFixture(ctx);
+    await ensureBuiltinPlugin(ctx, 'text-editor');
     await ctx.expect.poll(async () => {
       const state = (await ctx.evaluate(() =>
         window.workStudio.subscribe('plugin', 'registry'),
       )) as RegistrySnapshot | null;
       return Boolean(
-        state?.installed.some((item) => item.id === 'html-viewer'),
+        state?.installed.some((item) => item.id === 'text-editor'),
       );
     }, '插件注册表未包含已安装插件');
 
@@ -38,12 +38,12 @@ export default defineCase({
         ...document.querySelectorAll(
           '[data-testid="plugin-registry-installed"]',
         ),
-      ].find((item) => item.getAttribute('data-plugin-id') === 'html-viewer');
-      if (!row) throw new Error('插件注册表缺少 html-viewer');
+      ].find((item) => item.getAttribute('data-plugin-id') === 'text-editor');
+      if (!row) throw new Error('插件注册表缺少 text-editor');
       (row as HTMLElement).click();
     });
-    const page = await ctx.waitForPage(/html-viewer\/settings/);
-    await page.expect.text('body', 'HTML 阅读器');
+    const page = await ctx.waitForPage(/text-editor\/settings/);
+    await page.expect.text('body', '纯文本编辑器');
     await ctx.clickTestId('sidebar-nav-resources');
   },
 });
